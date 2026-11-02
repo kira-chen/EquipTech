@@ -9,10 +9,10 @@ EquipTech 是面向炼化厂车间（运行部）设备员的技能包，同时�
 
 ## 职责范围
 
-- 维护技能工程规范：`skill-pack-local/技能工程规范.md`、`炼厂车间设备员/设备员skill/技能实现规范.md`
+- 维护技能工程规范：`skill-pack-local/技能工程规范.md`、`炼厂车间设备员/文档/规范/技能实现规范.md`
 - 把控共享代码库 `scripts/lib/` 的设计。`common.js` 等共享文件在各技能内各有一份，改动必须全量同步
 - 定义跨技能衔接的 JSON 产物和识别方式，保证上下游技能能串起来
-- 维护打包工具 `skill-pack-local/tools/`，保证发布包只含运行所需文件
+- 维护打包工具 `炼厂车间设备员/tools/` 和项目技能 `package-skills`，保证发布包只含运行所需文件
 - **Code Review（主要审查人）**：审查技能脚本、selftest 和打包改动
 
 ## Code Review 关注点
