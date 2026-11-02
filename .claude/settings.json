@@ -16,9 +16,6 @@
       "Bash(rmdir:*)",
       "Bash(unlink:*)",
       "Bash(git rm:*)"
-    ],
-    "deny": [
-      "Bash(git push:*)"
     ]
   }
 }
