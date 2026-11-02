@@ -1,0 +1,64 @@
+{
+  "meta": {
+    "workshop": "常减压车间",
+    "period": "weekly",
+    "periodCn": "周报",
+    "from": "2026-09-14",
+    "to": "2026-09-20",
+    "rulesSource": "默认口径（references/metrics-rules.md）"
+  },
+  "counts": {
+    "faults": 8,
+    "downtimeCount": 8,
+    "maintPlanned": 6,
+    "ordersDue": 8
+  },
+  "metrics": {
+    "intactRate": 90,
+    "majorRate": 85.7,
+    "standbyRate": 50,
+    "staticLeakRate": 0.42,
+    "dynamicLeakRate": 1.67,
+    "planRate": 50,
+    "planRateOverhaul": 0,
+    "planRateRoutine": 100,
+    "orderRate": 62.5,
+    "mttr": 3.48,
+    "downtime": 24.9,
+    "downtimeCount": 8,
+    "unplannedShutdowns": 1,
+    "faultCount": 8,
+    "newDefects": 6,
+    "openDefects": 2,
+    "basedOn": "基于 5 天数据（应为 7 天）"
+  },
+  "failures": {
+    "total": 8,
+    "top": [
+      {
+        "tag": "P-1101B",
+        "name": "常压塔顶回流泵B",
+        "count": 3
+      }
+    ]
+  },
+  "highlights": [
+    {
+      "type": "故障频发设备",
+      "text": "P-1101B（常压塔顶回流泵B） 区间内故障 3 次，累计停机 11.2 小时"
+    }
+  ],
+  "dataGaps": {
+    "missingDates": [
+      "2026-09-16",
+      "2026-09-19"
+    ],
+    "recompute": [
+      {
+        "metric": "检修计划完成率",
+        "algo": "（按期完成 + 经批准顺延）项数 / 计划项数",
+        "reason": "厂内口径表算法与脚本默认算法不一致"
+      }
+    ]
+  }
+}

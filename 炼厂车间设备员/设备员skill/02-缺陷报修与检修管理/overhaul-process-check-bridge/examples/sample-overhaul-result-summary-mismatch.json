@@ -1,0 +1,133 @@
+{
+  "plan_no": "JX-E1201-2026-87",
+  "unit": "常减压装置（原油换热器 E-1201）",
+  "project": "E-1201 抽管束清洗及法兰补焊检修方案",
+  "contractor": "检修公司第三工程部",
+  "duration_days": 7,
+  "jobs_count": 4,
+  "job_types": [
+    "动火",
+    "盲板抽堵",
+    "临时用电"
+  ],
+  "summary": {
+    "must_fix": 5,
+    "should_improve": 2,
+    "undetermined": 1,
+    "pass": 4
+  },
+  "skipped": 41,
+  "findings": [
+    {
+      "rule_id": "G-003",
+      "severity": "must_fix",
+      "name": "风险辨识与 JSA",
+      "message": "方案未写明作业前风险辨识 / JSA 分析",
+      "detail": "measures.risk_assessment 为空（方案未写明）",
+      "advice": "补一节「作业风险分析（JSA）」，列出各作业步骤的危害与控制措施，并写明交底人与交底时间",
+      "basis": "企业检修管理制度（通行做法，待核实）",
+      "jobs": []
+    },
+    {
+      "rule_id": "HW-002",
+      "severity": "must_fix",
+      "name": "动火点周围可燃物清理与隔离",
+      "message": "方案未写明动火点周围可燃物清理、隔离及动火分析要求",
+      "detail": "measures.hot_work_isolation 为空",
+      "advice": "写明动火前清理可燃物范围、隔离措施、动火分析时机与合格标准（具体数值按制度）",
+      "basis": "GB 30871-2022 动火作业章节",
+      "jobs": [
+        "E-1201 法兰补焊"
+      ]
+    },
+    {
+      "rule_id": "BP-001",
+      "severity": "must_fix",
+      "name": "盲板抽堵清单与盲板图",
+      "message": "方案涉及加/拆盲板但未附盲板清单或盲板图",
+      "detail": "attachments.blind_plate_list 为空",
+      "advice": "附盲板清单（编号、位置、规格、材质）与盲板图，并写明抽堵作业票办理要求",
+      "basis": "GB 30871-2022 盲板抽堵作业章节",
+      "jobs": [
+        "E-1201 进出口加盲板"
+      ]
+    },
+    {
+      "rule_id": "G-012",
+      "severity": "should_improve",
+      "name": "应急处置",
+      "message": "应急措施只写「按预案执行」，未写明本项目应急联系人与集合点",
+      "detail": "measures.emergency：「按装置应急预案执行」（李某为应急联系人未写入）",
+      "advice": "补充本项目应急联系人、电话、集合点与撤离路线",
+      "basis": "企业检修管理制度（通行做法，待核实）",
+      "jobs": []
+    },
+    {
+      "rule_id": "CO-002",
+      "severity": "should_improve",
+      "name": "承包商安全协议",
+      "message": "方案未写明与承修单位签订安全协议",
+      "detail": "measures.contractor_agreement 为空",
+      "advice": "写明安全协议签订情况或说明自行检修不适用",
+      "basis": "《中国石化承包商安全管理规定》（条款号待核实）",
+      "jobs": []
+    },
+    {
+      "rule_id": "UND-高处",
+      "severity": "undetermined",
+      "name": "「高处」专项规则未判定",
+      "message": "无法判定：存在未标注作业类型的作业，无法确认是否触发「高处」专项核查",
+      "detail": "作业 空冷器管束顶部检查 未标注作业类型；涉及规则：HP-001、HP-002、HP-003（同一作业类型的未判定聚合为一条计数）",
+      "advice": "为上述作业补标作业类型后重新核查",
+      "basis": "见涉及规则各自的依据（checklist.json）",
+      "jobs": []
+    },
+    {
+      "rule_id": "G-001",
+      "severity": "pass",
+      "name": "方案基本信息",
+      "message": "通过：装置、项目、工期已填写",
+      "detail": "已填写：工期 7 天",
+      "advice": null,
+      "basis": "本技能约定",
+      "jobs": []
+    },
+    {
+      "rule_id": "G-005",
+      "severity": "pass",
+      "name": "安全交底",
+      "message": "通过：方案写明开工前安全技术交底",
+      "detail": "已写明：开工前由项目负责人组织全员交底并签字",
+      "advice": null,
+      "basis": "企业检修管理制度",
+      "jobs": []
+    },
+    {
+      "rule_id": "G-008",
+      "severity": "pass",
+      "name": "现场负责人与安全员",
+      "message": "通过：现场负责人与安全员已指定",
+      "detail": "已填写：李某 / 刘某",
+      "advice": null,
+      "basis": "本技能约定",
+      "jobs": []
+    },
+    {
+      "rule_id": "TE-001",
+      "severity": "pass",
+      "name": "临时用电接线与漏电保护",
+      "message": "通过：临时用电措施已写明",
+      "detail": "已写明：由持证电工接线，配漏电保护，一机一闸",
+      "advice": null,
+      "basis": "GB 30871-2022 临时用电作业章节",
+      "jobs": [
+        "检修临时电源接引"
+      ]
+    }
+  ],
+  "extraction_notes": [
+    "jobs[2].job_types：方案「空冷器管束顶部检查」未写作业类型 → 填 null",
+    "measures.risk_assessment：方案无风险分析章节 → 填 null"
+  ],
+  "disclaimer": "本结果为辅助核查，不替代检修方案审批；依据条款按记忆整理，以 GB 30871-2022 正式文本与企业制度为准。"
+}

@@ -1,0 +1,41 @@
+{
+  "counts": {
+    "total": 14,
+    "open": 9,
+    "overdue": 3,
+    "stalled": 3,
+    "closedInRange": 3,
+    "closedAll": 3
+  },
+  "metrics": {
+    "closeRate": 25,
+    "avgCycleDays": 6.9
+  },
+  "byStatus": {
+    "施工中": 5,
+    "已派工": 4
+  },
+  "overdue": [
+    {
+      "no": "WO-26090101",
+      "tag": "P-1101B",
+      "desc": "更换机械密封",
+      "overdueDays": 5,
+      "owner": "检修一队"
+    },
+    {
+      "no": "WO-26090102",
+      "tag": "K-1201",
+      "desc": "压缩机出口温度检查",
+      "overdueDays": 6,
+      "owner": "检修二队"
+    },
+    {
+      "no": "WO-26090103",
+      "tag": "E-1301",
+      "desc": "法兰渗漏处理",
+      "overdueDays": 7,
+      "owner": "保运队"
+    }
+  ]
+}

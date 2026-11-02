@@ -1,0 +1,428 @@
+#!/usr/bin/env node
+'use strict';
+/** 自测：断言 runtime.js 行为。用法：node scripts/selftest.js */
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { spawnSync } = require('child_process');
+const { writeXlsx } = require('./lib/xlsx-lite');
+
+const RT = path.join(__dirname, 'runtime.js');
+const work = fs.mkdtempSync(path.join(os.tmpdir(), 'rht-selftest-'));
+const DATE = '2026-09-21';
+let pass = 0, fail = 0;
+const failures = [];
+const ok = (c, n) => { if (c) pass++; else { fail++; failures.push(n); } };
+const eq = (a, e, n) => ok(a === e, `${n}（期望 ${JSON.stringify(e)}，实际 ${JSON.stringify(a)}）`);
+
+function run(input, extra = [], tag) {
+  const out = path.join(work, tag + '-out');
+  const r = spawnSync(process.execPath, [RT, '--input', input, '--workshop', '测试车间', '--date', DATE, '--out', out, ...extra], { encoding: 'utf8' });
+  const lines = r.stdout.trim().split('\n');
+  let s; try { s = JSON.parse(lines[lines.length - 1]); } catch (e) { s = { ok: false, error: 'no-json:' + r.stdout + r.stderr }; }
+  let j = null, md = null;
+  if (fs.existsSync(path.join(out, 'runtime.json'))) j = JSON.parse(fs.readFileSync(path.join(out, 'runtime.json'), 'utf8'));
+  if (fs.existsSync(path.join(out, 'runtime-report.md'))) md = fs.readFileSync(path.join(out, 'runtime-report.md'), 'utf8');
+  return { code: r.status, s, j, md, out };
+}
+const mk = (n, b) => { const p = path.join(work, n); writeXlsx(p, b); return p; };
+
+// ============ A. 基础累计 ============
+const BASE = mk('base.xlsx', {
+  '启停记录': [['位号', '设备名称', '开机时间', '停机时间'],
+    ['P-01', '泵1', '2026-09-01 08:00', '2026-09-03 08:00'],   // 48h
+    ['P-01', '泵1', '2026-09-05 08:00', '2026-09-06 08:00'],   // 24h
+    ['P-02', '泵2', '2026-09-01 00:00', '2026-09-11 00:00']],  // 240h
+  '阈值表': [['位号', '部件', '阈值类型', '阈值', '上次归零日期'],
+    ['P-01', '整机', '运行小时', 100, '2026-09-01'],
+    ['P-02', '轴承', '运行小时', 200, '2026-09-01']],
+});
+let r = run(BASE, [], 'base');
+eq(r.s.ok, true, 'A1 基础运行成功');
+eq(r.s.counts.equipment, 2, 'A2 设备数');
+const p01 = r.j.byEquipment.find((x) => x.tag === 'P-01');
+eq(p01.periodHours, 72, 'A3 多段运行累加（48+24）');
+eq(p01.periodStarts, 2, 'A4 启停次数');
+const p02 = r.j.byEquipment.find((x) => x.tag === 'P-02');
+eq(p02.periodHours, 240, 'A5 单段运行时长');
+eq(r.s.counts.exceeded, 1, 'A6 P-02 超阈值（240>200）');
+eq(r.s.counts.dueSoon, 0, 'A7 P-01 未达预警比例（72/100=72%<90%）');
+ok(/## 一、统计概览/.test(r.md) && /## 二、逐台累计明细/.test(r.md) && /## 三、已超阈值/.test(r.md)
+  && /## 四、接近阈值/.test(r.md) && /## 五、未判定项/.test(r.md) && /## 六、数据缺口说明/.test(r.md) && /## 七、统计说明/.test(r.md), 'A8 七节齐全');
+ok(/<!-- ANALYSIS_START -->/.test(r.md), 'A9 分析段占位符');
+
+// ============ B. 阈值列与阈值类型列不冲突（曾有 bug） ============
+ok(p01.thresholds.length === 1, 'B1 阈值项解析');
+eq(p01.thresholds[0].type, '运行小时', 'B2 阈值类型列正确（未被阈值列抢占）');
+eq(p01.thresholds[0].threshold, 100, 'B3 阈值列正确（未被阈值类型列抢占）');
+ok(!r.j.warnings.some((w) => w.includes('阈值为空或无法解析')), 'B4 无误报的阈值解析失败');
+
+// ============ C. 启停不配对不补停机（核心） ============
+const UNPAIR = mk('unpair.xlsx', {
+  '启停记录': [['位号', '设备名称', '开机时间', '停机时间'],
+    ['P-01', '泵1', '2026-09-01 08:00', '2026-09-03 08:00'],
+    ['P-01', '泵1', '2026-09-10 08:00', ''],
+    ['P-02', '泵2', '', '2026-09-05 08:00']],
+});
+r = run(UNPAIR, [], 'unpair');
+eq(r.s.counts.unpaired, 2, 'C1 两条不配对记录');
+const u01 = r.j.byEquipment.find((x) => x.tag === 'P-01');
+eq(u01.periodHours, 48, 'C2 不配对段未计入累计（未按截止时间补停机）');
+ok(r.j.warnings.some((w) => w.includes('未按截止时间强行补一次停机')), 'C3 warning 明确未补停机');
+ok(r.j.incomplete.some((x) => x.unpaired.some((u) => u.reason.includes('未按截止时间补停机'))), 'C4 原因写明');
+const u02 = r.j.byEquipment.find((x) => x.tag === 'P-02');
+eq(u02.periodHours, null, 'C5 只有停机无开机时累计为 null 不是 0');
+ok(/## 六、数据缺口说明/.test(r.md) && /只有开机时间/.test(r.md), 'C6 md 单列不配对');
+
+// ============ D. 停机时间早于开机时间 ============
+const REV = mk('rev.xlsx', {
+  '启停记录': [['位号', '开机时间', '停机时间'],
+    ['P-01', '2026-09-10 08:00', '2026-09-08 08:00']],
+});
+r = run(REV, [], 'rev');
+ok(r.j.warnings.some((w) => w.includes('停机时间早于开机时间')), 'D1 时间倒序 warning');
+eq(r.j.byEquipment[0].periodHours, null, 'D2 倒序段不参与累计');
+ok(r.j.incomplete[0].unpaired.some((u) => u.reason.includes('早于')), 'D3 倒序单列');
+
+// ============ E. 区间重叠原样保留（核心） ============
+const OVL = mk('ovl.xlsx', {
+  '启停记录': [['位号', '开机时间', '停机时间'],
+    ['P-01', '2026-09-01 00:00', '2026-09-11 00:00'],
+    ['P-01', '2026-09-08 00:00', '2026-09-13 00:00']],
+});
+r = run(OVL, [], 'ovl');
+eq(r.s.counts.overlaps, 1, 'E1 检出区间重叠');
+ok(r.j.warnings.some((w) => w.includes('重叠')), 'E2 重叠 warning');
+eq(r.j.byEquipment[0].periodHours, 360, 'E3 重叠段原样累加（240+120），未去重也未合并');
+ok(r.j.incomplete[0].overlaps[0].note.includes('未去重也未合并'), 'E4 说明未去重');
+
+// ============ F. 停机间隔不误报为数据缺口（核心） ============
+const IDLE = mk('idle.xlsx', {
+  '启停记录': [['位号', '开机时间', '停机时间'],
+    ['P-01', '2026-09-01 08:00', '2026-09-03 08:00'],
+    ['P-01', '2026-09-08 08:00', '2026-09-10 08:00']],
+});
+r = run(IDLE, [], 'idle');
+eq(r.s.counts.incomplete, 0, 'F1 正常停机间隔不计为数据问题');
+eq(r.s.counts.unpaired, 0, 'F2 无不配对');
+eq(r.s.counts.overlaps, 0, 'F3 无重叠');
+ok(r.j.byEquipment[0].idleIntervals.length === 1, 'F4 停机间隔单独记录供参考');
+eq(r.j.byEquipment[0].periodHours, 96, 'F5 停机段不计入运行累计');
+ok(/_无_/.test((r.md.match(/## 六、数据缺口说明[\s\S]*?## 七/) || [''])[0]), 'F6 数据缺口节为空');
+
+// ============ G. 阈值缺失不预警（核心） ============
+const NOTH = mk('noth.xlsx', {
+  '启停记录': [['位号', '开机时间', '停机时间'], ['P-01', '2026-09-01 08:00', '2026-09-20 08:00']],
+});
+r = run(NOTH, [], 'noth');
+eq(r.s.counts.thresholdsProvided, false, 'G1 未提供阈值表');
+eq(r.s.counts.exceeded, 0, 'G2 无阈值不预警');
+ok(r.j.warnings.some((w) => w.includes('只统计不做阈值预警')), 'G3 warning 说明');
+ok(/未提供阈值表，不做阈值预警/.test(r.md), 'G4 md 说明');
+ok(/—（未提供阈值表）/.test(r.md), 'G5 概览显示 — 不是 0');
+
+// 阈值值无法解析 → 该项不预警
+const BADTH = mk('badth.xlsx', {
+  '启停记录': [['位号', '开机时间', '停机时间'], ['P-01', '2026-09-01 08:00', '2026-09-20 08:00']],
+  '阈值表': [['位号', '阈值类型', '阈值'], ['P-01', '运行小时', '视情况']],
+});
+r = run(BADTH, [], 'badth');
+eq(r.s.counts.exceeded, 0, 'G6 阈值无法解析时不预警');
+ok(r.j.warnings.some((w) => w.includes('该项不预警')), 'G7 warning 说明不预警');
+
+// ============ H. 累计续算 ============
+r = run(BASE, [], 'prev-src');
+const prevPath = path.join(r.out, 'runtime.json');
+r = run(BASE, ['--prev', prevPath], 'cum');
+const c01 = r.j.byEquipment.find((x) => x.tag === 'P-01');
+eq(c01.cumHours, 144, 'H1 累计续算（72+72）');
+eq(c01.cumStarts, 4, 'H2 启停次数续算');
+r = run(BASE, [], 'nocum');
+eq(r.j.byEquipment.find((x) => x.tag === 'P-01').cumHours, 72, 'H3 无上期时累计等于本期');
+// 上期文件不存在 → 报错
+function raw(args) {
+  const x = spawnSync(process.execPath, [RT, ...args], { encoding: 'utf8' });
+  const l = x.stdout.trim().split('\n');
+  try { return { code: x.status, s: JSON.parse(l[l.length - 1]) }; } catch (e) { return { code: x.status, s: { ok: false } }; }
+}
+eq(raw(['--input', BASE, '--workshop', 'X', '--date', DATE, '--prev', '/不存在.json']).s.ok, false, 'H4 上期文件不存在报错');
+
+// ============ I. 运行记录形式与数值不可解析 ============
+const RUNH = mk('runh.xlsx', {
+  '运行记录': [['位号', '设备名称', '运行时长'], ['P-01', '泵1', 168], ['P-02', '泵2', '未记录']],
+  '阈值表': [['位号', '阈值类型', '阈值'], ['P-01', '运行小时', 200], ['P-02', '运行小时', 200]],
+});
+r = run(RUNH, [], 'runh');
+eq(r.s.ok, true, 'I1 运行记录形式可读');
+eq(r.j.byEquipment.find((x) => x.tag === 'P-01').periodHours, 168, 'I2 运行时长读取');
+eq(r.j.byEquipment.find((x) => x.tag === 'P-02').periodHours, null, 'I3 无法解析为 null 不是 0');
+ok(r.j.warnings.some((w) => w.includes('无法解析为数字')), 'I4 解析失败 warning');
+const t02 = r.j.byEquipment.find((x) => x.tag === 'P-02').thresholds[0];
+eq(t02.state, 'undetermined', 'I5 累计为 null 时阈值判定为未判定');
+ok(t02.note.includes('不预警'), 'I6 未判定说明不预警');
+
+// ============ J. 预警比例 ============
+const WARN = mk('warn.xlsx', {
+  '启停记录': [['位号', '开机时间', '停机时间'], ['P-01', '2026-09-01 00:00', '2026-09-08 20:00']],  // 188h
+  '阈值表': [['位号', '阈值类型', '阈值'], ['P-01', '运行小时', 200]],
+});
+r = run(WARN, [], 'warn');
+eq(r.s.counts.dueSoon, 1, 'J1 94% 达到默认预警比例 90%');
+r = run(WARN, ['--warn-ratio', '0.99'], 'warn99');
+eq(r.s.counts.dueSoon, 0, 'J2 提高预警比例后不报');
+eq(raw(['--input', WARN, '--workshop', 'X', '--date', DATE, '--warn-ratio', '1.5']).s.ok, false, 'J3 非法预警比例报错');
+
+// ============ K. 设备范围过滤 ============
+r = run(BASE, ['--equipment', 'P-01'], 'filter');
+eq(r.s.counts.equipment, 1, 'K1 按位号过滤');
+eq(r.j.byEquipment[0].tag, 'P-01', 'K2 过滤结果正确');
+eq(raw(['--input', BASE, '--workshop', 'X', '--date', DATE, '--equipment', 'P-99']).s.ok, false, 'K3 范围内无记录报错');
+
+// ============ L. 参数校验 ============
+eq(raw([]).s.ok, false, 'L1 无参数报错');
+eq(raw(['--input']).s.ok, false, 'L2 缺值报错');
+ok(/缺少取值/.test(raw(['--input']).s.error), 'L3 缺值信息正确');
+eq(raw(['--input', BASE]).s.ok, false, 'L4 缺 workshop 报错');
+eq(raw(['--input', BASE, '--workshop', 'X']).s.ok, false, 'L5 缺 date 报错');
+eq(raw(['--input', BASE, '--workshop', 'X', '--date', '2026-13-45']).s.ok, false, 'L6 非法日期报错');
+eq(raw(['--input', BASE, '--workshop', 'X', '--date', DATE, '--from', '2026-10-01']).s.ok, false, 'L7 from 晚于 date 报错');
+eq(raw(['--input', '/不存在.xlsx', '--workshop', 'X', '--date', DATE]).s.ok, false, 'L8 输入不存在报错');
+eq(raw(['--input', BASE, '--workshop', 'X', '--date', DATE, '--未知', 'v']).s.ok, false, 'L9 未知参数报错');
+eq(raw(['--input', mk('nosheet.xlsx', { '别的': [['a'], [1]] }), '--workshop', 'X', '--date', DATE]).s.ok, false, 'L10 无记录表报错');
+
+// ============ M. 声明行与产出 ============
+r = run(BASE, [], 'outputs');
+ok(/阈值到期为计划提示，实际检修时机由设备工程师结合状态评估确定/.test(r.md), 'M1 保留声明行');
+ok(r.j.meta.statement.includes('设备工程师'), 'M2 JSON 含声明');
+ok(fs.existsSync(path.join(r.out, 'runtime.json')), 'M3 runtime.json 生成');
+ok(fs.existsSync(path.join(r.out, 'runtime-report.md')), 'M4 报告生成');
+ok(fs.existsSync(path.join(r.out, 'summary.json')), 'M5 summary.json 生成');
+
+// ============ N. 别名与合计行 ============
+const ALIAS = mk('alias.xlsx', {
+  '启停记录': [['某厂启停导出'], [],
+    ['设备位号', '名称', '启动时间', '停止时间'],
+    ['P-01', '泵1', '2026-09-01 08:00', '2026-09-03 08:00'],
+    ['合计', '', '', '']],
+});
+r = run(ALIAS, [], 'alias');
+eq(r.s.ok, true, 'N1 别名列头可读');
+eq(r.s.counts.equipment, 1, 'N2 合计行被跳过');
+ok(r.j.warnings.some((w) => w.includes('合计行')), 'N3 合计行 warning');
+
+
+// ============ O. 期初累计小时：累计 = 期初 + 本期（中石化口径：自上次大检修后累计） ============
+const BASEH = mk('baseh.xlsx', {
+  '启停记录': [['位号', '设备名称', '开机时间', '停机时间'],
+    ['P-01', '泵1', '2026-09-01 08:00', '2026-09-03 08:00'],   // 48h
+    ['P-02', '泵2', '2026-09-01 08:00', '2026-09-03 08:00']],  // 48h
+  '阈值表': [['位号', '部件', '阈值类型', '阈值', '上次归零日期', '期初累计小时'],
+    ['P-01', '机组', '运行小时', 8000, '2024-03-01', 7900],
+    ['P-01', '轴承', '运行小时', 1000, '2026-06-01', 200],
+    ['P-02', '机组', '运行小时', 8000, '2024-03-01', '']],
+});
+r = run(BASEH, [], 'baseh');
+const b01 = r.j.byEquipment.find((x) => x.tag === 'P-01');
+eq(b01.baseHours, 7900, 'O1 设备级期初累计取机组行');
+eq(b01.cumHours, 7948, 'O2 累计 = 期初 7900 + 本期 48');
+eq(b01.cumBasis, 'base', 'O3 累计口径标 base');
+eq(b01.thresholds[0].current, 7948, 'O4 机组阈值按期初+本期比对');
+eq(b01.thresholds[0].state, 'dueSoon', 'O5 7948/8000=99.4% 进入临期（未按本期 48h 判正常）');
+eq(b01.thresholds[1].current, 248, 'O6 轴承行用该行自己的期初 200 + 48');
+eq(b01.thresholds[1].basis, 'rowBase', 'O7 部件行口径标 rowBase');
+const b02 = r.j.byEquipment.find((x) => x.tag === 'P-02');
+eq(b02.cumBasis, 'periodOnly', 'O8 该台无期初 → 仅本期增量');
+eq(b02.cumHours, 48, 'O9 无期初时累计 = 本期，不按 0 期初伪装成累计');
+ok(r.j.warnings.some((w) => w.includes('P-02') && w.includes('未提供期初累计小时')), 'O10 无期初 warning 点名设备');
+ok(/【注意】1 台设备无期初累计小时/.test(r.md), 'O11 md 注意行');
+ok(r.j.items.find((x) => x.tag === 'P-01').cumulativeHours === 7948 && r.j.items.find((x) => x.tag === 'P-01').cumulativeBasis === 'base', 'O12 items[] 给下游 cumulativeHours');
+ok(Array.isArray(r.s.items) && r.s.items.length === 2, 'O13 summary.json 也带 items');
+// 期初列缺失 → 整表 warning
+r = run(BASE, [], 'nobasecol');
+ok(r.j.warnings.some((w) => w.includes('未提供「期初累计小时」列')), 'O14 阈值表缺期初列 warning');
+// 同时给 --prev 与期初：以上期续算为准且不重复计入
+r = run(BASEH, [], 'prevsrc2');
+r = run(BASEH, ['--prev', path.join(r.out, 'runtime.json')], 'prevbase');
+eq(r.j.byEquipment.find((x) => x.tag === 'P-01').cumHours, 7996, 'O15 --prev 续算 7948+48，期初不重复加');
+eq(r.j.byEquipment.find((x) => x.tag === 'P-01').cumBasis, 'prev', 'O16 口径标 prev');
+ok(r.j.warnings.some((w) => w.includes('期初值未重复计入')), 'O17 同时给 prev 与期初时 warning');
+
+// ============ P. 日历周期（年）阈值：大机组按年检修周期，按自然月算到期 ============
+const CAL = mk('cal.xlsx', {
+  '启停记录': [['位号', '设备名称', '开机时间', '停机时间'],
+    ['C-01', '主风机', '2026-09-01 08:00', '2026-09-03 08:00'],
+    ['C-02', '富气压缩机', '2026-09-01 08:00', '2026-09-03 08:00'],
+    ['C-03', '增压机', '2026-09-01 08:00', '2026-09-03 08:00']],
+  '阈值表': [['位号', '部件', '阈值类型', '阈值', '上次归零日期'],
+    ['C-01', '机组', '日历周期（年）', 3, '2023-08-31'],      // 到期 2026-08-31，已超
+    ['C-02', '机组', '大检修周期', '3年', '2023-12-01'],        // 由取值"3年"判为日历，到期 2026-12-01，1025/1096=93.5%
+    ['C-03', '机组', '日历周期（年）', 3, '']],                 // 缺归零日期 → 未判定
+});
+r = run(CAL, [], 'cal');
+const c1 = r.j.byEquipment.find((x) => x.tag === 'C-01').thresholds[0];
+eq(c1.kind, 'calendar', 'P1 日历周期类型');
+eq(c1.dueDate, '2026-08-31', 'P2 按自然月加 36 个月算到期日');
+eq(c1.state, 'exceeded', 'P3 到期已过 → 超阈值');
+ok(r.j.exceeded.some((x) => x.tag === 'C-01' && x.dueDate === '2026-08-31'), 'P4 超阈值清单带到期日');
+const c2 = r.j.byEquipment.find((x) => x.tag === 'C-02').thresholds[0];
+eq(c2.kind, 'calendar', 'P5 类型文字无"年"但取值"3年" → 日历周期');
+eq(c2.dueDate, '2026-12-01', 'P6 到期日');
+eq(c2.state, 'dueSoon', 'P7 93.5% 进入临期');
+eq(c2.thresholdText, '3年', 'P8 阈值文本原样');
+const c3 = r.j.byEquipment.find((x) => x.tag === 'C-03').thresholds[0];
+eq(c3.state, 'undetermined', 'P9 缺上次归零日期 → 未判定');
+ok(c3.note.includes('上次归零日期'), 'P10 未判定说明缺哪个字段');
+ok(/## 五、未判定项[\s\S]*C-03[\s\S]*上次归零日期/.test(r.md), 'P11 md 未判定节单列');
+ok(/到期日/.test(r.md) && /2026-12-01/.test(r.md), 'P12 md 临期表带到期日');
+ok(/已运行1,025天/.test(r.md), 'P13 日历行"当前"显示已运行天数');
+// 运行小时与日历周期是两个维度：阈值"24000h"按运行小时，不被当日历
+const MIX = mk('mix.xlsx', {
+  '启停记录': [['位号', '开机时间', '停机时间'], ['C-01', '2026-09-01 00:00', '2026-09-11 00:00']],
+  '阈值表': [['位号', '阈值类型', '阈值', '上次归零日期', '期初累计小时'],
+    ['C-01', '', '24000h', '2023-08-31', 23900],
+    ['C-01', '', '3年', '2023-08-31', '']],
+});
+r = run(MIX, [], 'mix');
+const mx = r.j.byEquipment[0].thresholds;
+eq(mx[0].kind, 'hours', 'P14 类型空但取值"24000h" → 运行小时（parseRunHours）');
+eq(mx[0].threshold, 24000, 'P15 24000h 解析');
+eq(mx[0].current, 24140, 'P16 23900+240');
+eq(mx[1].kind, 'calendar', 'P17 类型空但取值"3年" → 日历');
+eq(r.s.counts.exceeded, 2, 'P18 两个维度各自判定');
+
+// ============ Q. 阈值类型为空且取值无单位 → 未判定，不默认按运行小时 ============
+const NOTYPE = mk('notype.xlsx', {
+  '启停记录': [['位号', '开机时间', '停机时间'], ['P-01', '2026-09-01 00:00', '2026-09-11 00:00']],   // 240h
+  '阈值表': [['位号', '部件', '阈值', '期初累计小时'], ['P-01', '联轴器', 100, 0]],
+});
+r = run(NOTYPE, [], 'notype');
+eq(r.s.counts.exceeded, 0, 'Q1 类型为空不默认按运行小时判超');
+eq(r.s.counts.undetermined, 1, 'Q2 判为未判定');
+ok(r.j.undetermined[0].note.includes('不默认按运行小时'), 'Q3 说明不默认');
+ok(/【未判定】/.test(r.md) && /不默认按运行小时/.test(r.md), 'Q4 md 单列');
+// 类型写了但归不进三类
+const BADTYPE = mk('badtype.xlsx', {
+  '启停记录': [['位号', '开机时间', '停机时间'], ['P-01', '2026-09-01 00:00', '2026-09-11 00:00']],
+  '阈值表': [['位号', '阈值类型', '阈值'], ['P-01', '振动', 100]],
+});
+r = run(BADTYPE, [], 'badtype');
+eq(r.s.counts.undetermined, 1, 'Q5 不认识的阈值类型 → 未判定');
+ok(r.j.undetermined[0].note.includes('振动'), 'Q6 说明原文类型');
+// 「类型」裸列头不再被当阈值类型（设备类型列不误配）
+const DEVTYPE = mk('devtype.xlsx', {
+  '启停记录': [['位号', '开机时间', '停机时间'], ['P-01', '2026-09-01 00:00', '2026-09-11 00:00']],
+  '阈值表': [['位号', '设备类型', '阈值类型', '阈值'], ['P-01', '离心泵', '启停次数', 10]],
+});
+r = run(DEVTYPE, [], 'devtype');
+eq(r.j.byEquipment[0].thresholds[0].kind, 'starts', 'Q7 「设备类型」列不抢「阈值类型」');
+const TYPEONLY = mk('typeonly.xlsx', {
+  '启停记录': [['位号', '开机时间', '停机时间'], ['P-01', '2026-09-01 00:00', '2026-09-11 00:00']],
+  '阈值表': [['位号', '类型', '阈值'], ['P-01', '启停次数', 10]],
+});
+r = run(TYPEONLY, [], 'typeonly');
+eq(r.j.byEquipment[0].thresholds[0].kind, null, 'Q8 裸「类型」列不再认为阈值类型，取值 10 无单位 → 未判定');
+eq(r.s.counts.undetermined, 1, 'Q8b 裸「类型」列 → 未判定计数');
+
+// ============ R. SAP PM / EM 导出列名（mergeAliases） ============
+const SAP = mk('sap.xlsx', {
+  '开停机记录': [['功能位置', '设备', '设备描述', '启动时间', '停止时间'],
+    ['C-2301', '10012345', '催化主风机', '2026-09-01 00:00', '2026-09-11 00:00']],
+  '检修周期': [['功能位置', '部件', '周期类型', '检修周期', '上次大检修日期', '上次大检修后累计'],
+    ['C-2301', '机组', '运行小时', '24000h', '2023-11-15', 23000],
+    ['C-2301', '机组', '日历周期（年）', '3年', '2023-11-15', '']],
+});
+r = run(SAP, [], 'sap');
+eq(r.s.ok, true, 'R1 SAP 列名可读');
+const sp = r.j.byEquipment[0];
+eq(sp.tag, 'C-2301', 'R2 功能位置 → 位号');
+eq(sp.code, '10012345', 'R3 「设备」（SAP 流水号）→ 设备编号，不是位号');
+eq(sp.name, '催化主风机', 'R4 设备描述 → 设备名称');
+eq(sp.periodHours, 240, 'R5 启动/停止时间');
+eq(sp.baseHours, 23000, 'R6 「上次大检修后累计」→ 期初累计小时');
+eq(sp.cumHours, 23240, 'R7 累计');
+eq(sp.thresholds[0].threshold, 24000, 'R8 「检修周期」列 24000h → 阈值');
+eq(sp.thresholds[1].dueDate, '2026-11-15', 'R9 「上次大检修日期」→ 归零日期，按自然月到期');
+ok(/10012345/.test(r.md), 'R10 md 展示设备编号列');
+// 「设备编号」列头不会被当位号
+const DEVNO = mk('devno.xlsx', {
+  '启停记录': [['设备编号', '位号', '开机时间', '停机时间'], ['10000001', 'P-01', '2026-09-01 00:00', '2026-09-11 00:00']],
+});
+r = run(DEVNO, [], 'devno');
+eq(r.j.byEquipment[0].tag, 'P-01', 'R11 位号列取「位号」，「设备编号」不是位号');
+eq(r.j.byEquipment[0].code, '10000001', 'R12 设备编号单列');
+
+// ============ S. 运行状态记录（时序）折算 ============
+const SERIES = mk('series.xlsx', {
+  '运行状态记录': [['位号', '设备名称', '时间', '运行状态'],
+    ['P-01', '泵1', '2026-09-01 08:00', '运行'],
+    ['P-01', '泵1', '2026-09-05 08:00', '运行'],      // 连续运行点，不重复计启动
+    ['P-01', '泵1', '2026-09-08 08:00', '停机'],      // 168h
+    ['P-01', '泵1', '2026-09-10 08:00', 'RUN'],
+    ['P-01', '泵1', '2026-09-12 08:00', '备用'],      // 48h
+    ['P-02', '泵2', '2026-09-08 08:00', '运行'],      // 末条运行无停机 → 不配对
+    ['P-03', '泵3', '2026-09-08 08:00', '停机'],      // 首条停机 → 不配对
+    ['P-04', '泵4', '2026-09-08 08:00', '不知道']],   // 状态不可识别 → 跳过
+  '阈值表': [['位号', '阈值类型', '阈值', '期初累计小时'], ['P-01', '运行小时', 240, 0]],
+});
+r = run(SERIES, [], 'series');
+eq(r.s.ok, true, 'S1 时序表可读');
+const s1 = r.j.byEquipment.find((x) => x.tag === 'P-01');
+eq(s1.periodHours, 216, 'S2 按状态区间折算 168+48');
+eq(s1.periodStarts, 2, 'S3 连续"运行"点只计一次启动');
+eq(s1.sources.join(), '运行状态记录', 'S4 来源标注，且不被「运行记录」重复命中');
+eq(s1.thresholds[0].state, 'dueSoon', 'S5 216/240=90% 临期');
+const s2 = r.j.byEquipment.find((x) => x.tag === 'P-02');
+eq(s2.periodHours, null, 'S6 末条运行无停机 → 不计入、不按截止时间补');
+ok(r.j.warnings.some((w) => w.includes('P-02') && w.includes('未按截止时间强行补一次停机')), 'S7 warning');
+ok(r.j.incomplete.some((x) => x.tag === 'P-03' && x.unpaired[0].reason.includes('首条为停机')), 'S8 首条停机单列');
+ok(r.j.warnings.some((w) => w.includes('不知道') && w.includes('无法识别为运行/停机')), 'S9 状态不可识别 warning（含行号与原值）');
+ok(!r.j.byEquipment.some((x) => x.tag === 'P-04'), 'S10 不可识别行不生成设备');
+// 时序与启停记录同一位号：以启停记录为准
+const BOTH = mk('both.xlsx', {
+  '启停记录': [['位号', '开机时间', '停机时间'], ['P-01', '2026-09-01 00:00', '2026-09-03 00:00']],
+  '运行状态记录': [['位号', '时间', '运行状态'], ['P-01', '2026-09-10 00:00', '运行'], ['P-01', '2026-09-12 00:00', '停机']],
+});
+r = run(BOTH, [], 'both');
+eq(r.j.byEquipment[0].periodHours, 48, 'S11 同位号两种来源以启停记录为准');
+ok(r.j.warnings.some((w) => w.includes('以启停记录为准')), 'S12 warning');
+// 时序表缺必需列
+const SERMISS = mk('sermiss.xlsx', { '运行状态记录': [['位号', '时间'], ['P-01', '2026-09-10 00:00']] });
+r = run(SERMISS, [], 'sermiss');
+ok(r.s.ok === false || r.j.warnings.some((w) => w.includes('缺少列')), 'S13 缺运行状态列 → warning 或报错');
+
+// ============ T. 带单位数值 ============
+const UNIT = mk('unit.xlsx', {
+  '运行记录': [['位号', '运行时长'], ['P-01', '168h'], ['P-02', '72 小时']],
+  '阈值表': [['位号', '阈值类型', '阈值', '期初累计小时'], ['P-01', '运行小时', '200h', '0h'], ['P-02', '运行小时', '200', 0]],
+});
+r = run(UNIT, [], 'unit');
+eq(r.j.byEquipment.find((x) => x.tag === 'P-01').periodHours, 168, 'T1 "168h" 剥离单位');
+eq(r.j.byEquipment.find((x) => x.tag === 'P-02').periodHours, 72, 'T2 "72 小时" 剥离单位');
+eq(r.j.byEquipment.find((x) => x.tag === 'P-01').thresholds[0].threshold, 200, 'T3 阈值 "200h"');
+ok(r.j.warnings.some((w) => w.includes('已剥离单位')), 'T4 剥离单位 warning 提示核对');
+
+// ============ U. 术语与声明 ============
+r = run(BASE, [], 'terms');
+ok(!/[☀-➿\u{1F300}-\u{1FAFF}]/u.test(r.md), 'U1 md 不含 emoji');
+ok(/本材料由脚本汇总、模型成文，仅供设备员复核参考/.test(r.md), 'U2 通用声明行');
+ok(r.j.meta.disclaimer.includes('厂内制度与系统数据为准'), 'U3 JSON 含通用声明');
+ok(/运行小时与启停次数统计/.test(r.md), 'U4 标题用"运行小时"');
+ok(!/机动处/.test(r.md) && !/EAM/.test(r.md), 'U5 不出现旧称');
+ok(/公司设备管理部门/.test(r.md), 'U6 分析段提示交付口径');
+eq(r.s.counts.undetermined, 0, 'U7 基础样例无未判定');
+ok(/## 五、未判定项\n\n_无_/.test(r.md), 'U8 无未判定时该节显示 _无_');
+r = run(NOTH, [], 'noth2');
+ok(/未判定项 \| —（未提供阈值表）/.test(r.md), 'U9 无阈值表时未判定显示 —');
+// 默认输出目录为系统临时目录
+{
+  const x = spawnSync(process.execPath, [RT, '--input', BASE, '--workshop', 'X', '--date', DATE], { encoding: 'utf8' });
+  const l = x.stdout.trim().split('\n'); const sj = JSON.parse(l[l.length - 1]);
+  ok(sj.ok && sj.out.startsWith(os.tmpdir()), 'U10 未传 --out 时写系统临时目录');
+}
+
+console.log(`\n${'='.repeat(56)}`);
+console.log(`runtime-hours-tracker 自测：${pass} 通过，${fail} 失败`);
+if (failures.length) { console.log('\n失败项：'); failures.forEach((f) => console.log('  ✗ ' + f)); }
+console.log('='.repeat(56));
+try { fs.rmSync(work, { recursive: true, force: true }); } catch (e) {}
+process.exit(fail ? 1 : 0);

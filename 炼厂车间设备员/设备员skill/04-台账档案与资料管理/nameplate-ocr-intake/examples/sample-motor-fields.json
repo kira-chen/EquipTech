@@ -1,0 +1,130 @@
+{
+  "photo": "M-1501铭牌-20260921.jpg",
+  "fields": [
+    {
+      "name": "制造厂",
+      "value": "佳木斯电机股份有限公司",
+      "confidence": "clear",
+      "raw": "佳木斯电机股份有限公司"
+    },
+    {
+      "name": "型号",
+      "value": "YB3-315M-2",
+      "confidence": "clear",
+      "raw": "YB3-315M-2"
+    },
+    {
+      "name": "规格",
+      "value": "315M-2",
+      "confidence": "clear",
+      "raw": "315M-2"
+    },
+    {
+      "name": "出厂编号",
+      "value": "SH-2020-2052",
+      "confidence": "clear",
+      "raw": "SH-2020-2052"
+    },
+    {
+      "name": "制造日期",
+      "value": "2020-05",
+      "confidence": "clear",
+      "raw": "2020-05"
+    },
+    {
+      "name": "执行标准",
+      "value": "GB/T 1971",
+      "confidence": "clear",
+      "raw": "GB/T 1971"
+    },
+    {
+      "name": "重量",
+      "value": "1.39",
+      "confidence": "clear",
+      "unit": "t",
+      "note": "铭牌单位为吨",
+      "raw": "1.39t"
+    },
+    {
+      "name": "额定功率",
+      "value": "178",
+      "confidence": "clear",
+      "unit": "马力",
+      "note": "铭牌印的是马力",
+      "raw": "178马力"
+    },
+    {
+      "name": "额定电压",
+      "value": "6000",
+      "confidence": "clear",
+      "unit": "V",
+      "raw": "6000V"
+    },
+    {
+      "name": "额定电流",
+      "value": "15.2",
+      "confidence": "clear",
+      "unit": "A",
+      "raw": "15.2A"
+    },
+    {
+      "name": "额定转速",
+      "value": "2９８０",
+      "confidence": "clear",
+      "unit": "r/min",
+      "note": "铭牌为全角数字",
+      "raw": "2９８０ r/min"
+    },
+    {
+      "name": "频率",
+      "value": "50",
+      "confidence": "clear",
+      "unit": "Hz",
+      "raw": "50Hz"
+    },
+    {
+      "name": "接法",
+      "value": "Y",
+      "confidence": "clear",
+      "raw": "Y"
+    },
+    {
+      "name": "功率因数",
+      "value": "0.8▢",
+      "confidence": "blurry",
+      "reason": "末位数字被铭牌螺钉遮挡",
+      "raw": "cosφ 0.8▢"
+    },
+    {
+      "name": "效率",
+      "value": "95.5",
+      "confidence": "clear",
+      "unit": "%",
+      "raw": "95.5%"
+    },
+    {
+      "name": "防护等级",
+      "value": "IP55",
+      "confidence": "clear",
+      "raw": "IP55"
+    },
+    {
+      "name": "绝缘等级",
+      "value": "F",
+      "confidence": "clear",
+      "raw": "F"
+    },
+    {
+      "name": "防爆标志",
+      "value": null,
+      "confidence": "unreadable",
+      "reason": "防爆标志区反光严重，整段无法辨认"
+    },
+    {
+      "name": "工作制",
+      "value": "S1",
+      "confidence": "clear",
+      "raw": "S1"
+    }
+  ]
+}

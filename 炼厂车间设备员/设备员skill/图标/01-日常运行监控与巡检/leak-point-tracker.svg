@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg-leak-point-tracker" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22D3EE"/><stop offset="1" stop-color="#0E7490"/></linearGradient>
+    <linearGradient id="hl-leak-point-tracker" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg-leak-point-tracker)"/>
+  <rect width="512" height="512" rx="112" fill="url(#hl-leak-point-tracker)"/>
+    <line x1="100" y1="196" x2="412" y2="196" stroke="#fff" stroke-width="58" stroke-linecap="round"/>
+    <rect x="222" y="136" width="68" height="120" rx="16" fill="#fff" stroke="#0E7490" stroke-width="10"/>
+    <path d="M256 284 C256 284 200 346 200 380 A56 56 0 0 0 312 380 C312 346 256 284 256 284 Z" fill="#fff"/>
+    <circle cx="172" cy="318" r="11" fill="#fff" opacity=".7"/>
+    <circle cx="340" cy="306" r="9" fill="#fff" opacity=".55"/>
+</svg>

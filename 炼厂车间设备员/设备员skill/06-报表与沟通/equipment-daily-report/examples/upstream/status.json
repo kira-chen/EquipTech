@@ -1,0 +1,53 @@
+{
+  "meta": {
+    "workshop": "常减压车间",
+    "date": "2026-09-21",
+    "skill": "inspection-data-digest"
+  },
+  "counts": {
+    "equipment": 10,
+    "normal": 7,
+    "abnormal": 2,
+    "unknown": 1,
+    "missed": 1
+  },
+  "byEquipment": [
+    {
+      "tag": "P-1101A",
+      "state": "normal"
+    },
+    {
+      "tag": "P-1101B",
+      "state": "abnormal"
+    },
+    {
+      "tag": "M-1501",
+      "state": "abnormal"
+    },
+    {
+      "tag": "K-1601",
+      "state": "normal"
+    }
+  ],
+  "abnormal": [
+    {
+      "tag": "P-1101B",
+      "name": "常压塔顶回流泵B",
+      "desc": "机封滴漏",
+      "area": "泵区",
+      "discipline": "动设备"
+    },
+    {
+      "tag": "M-1501",
+      "name": "鼓风机电机",
+      "desc": "电流偏高",
+      "area": "炉区",
+      "discipline": "电气"
+    }
+  ],
+  "missed": [
+    {
+      "tag": "P-1701"
+    }
+  ]
+}

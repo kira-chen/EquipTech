@@ -1,0 +1,214 @@
+'use strict';
+/**
+ * 设备专业知识问答 —— 问题分类规则引擎
+ * 口径见 references/qa-rules.md。三类：numeric 数值标准类 / plant 本厂规定类 / principle 原理概念类
+ *
+ * 核心原则（违反即返工）：
+ *  1. numeric 一律拦截，绝不给出记忆中的数值；哪怕问句里同时带「原理」二字也按 numeric 走。
+ *  2. plant 必须有厂内资料才能答，无资料时明确说明无法回答，不得用通用原理搪塞。
+ *  3. 判不出类别 → undetermined，绝不默认归到 principle（那等于放行）。
+ *  4. 规则号可追溯：每条判定带 ruleId，能倒查到本文件哪一条。
+ */
+
+// ---------------------------------------------------------------- 类别常量
+const TYPE_CN = {
+  numeric: '数值标准类',
+  plant: '本厂规定类',
+  principle: '原理概念类',
+  undetermined: '未判定',
+};
+
+/** 各类别的固定表述（脚本直接写进产出，不允许各处另写一套） */
+const NOTICE = {
+  numeric: '该数值须以厂内规程/设备说明书为准，本技能不提供记忆中的数值。',
+  plant: '本厂规定须以厂内受控文件为准；未提供厂内资料时本技能无法回答，不用通用原理代替。',
+  principle: '通用原理，非本厂规定；具体执行以厂内规程为准。',
+  undetermined: '未能判定问题类型，未按任一类默认处理；请补充说明问的是原理、具体数值还是本厂规定。',
+};
+
+// ---------------------------------------------------------------- 规则表
+// 每条：[ruleId, 正则, 说明]。命中即记录，用于 classification.matched 可追溯。
+
+/** N 组：数值标准类 —— 命中任意一条即 numeric，优先级最高 */
+const NUMERIC_RULES = [
+  ['N1', /多少|几个|几次|几年|几个月|几小时|几分钟|多大|多长|多高|多厚|多粗|多重|多久|几成|百分之几/, '疑问词直接问量值'],
+  ['N2', /限值|上限|下限|阈值|报警值|联锁值|设定值|整定值|定值|取值|额定值|允许值|极限值/, '问限值类取值'],
+  ['N3', /合格(标准|范围|值|区间)?(是|为)?(多少|什么)|是否合格|算不算合格|合格线|判废|报废标准/, '问合格判定口径'],
+  ['N4', /间隙|游隙|间距|配合公差|公差|不圆度|同轴度|跳动量|偏差(值|量|要求|范围)?|对中(要求|标准|数据|值)/, '问尺寸公差与对中量'],
+  ['N5', /力矩|扭矩|预紧力|紧固(值|力|要求|标准)|上紧到/, '问紧固力矩'],
+  ['N6', /试压(压力)?|水压试验压力|气密(试验)?压力|保压(时间|压力)|强度试验压力|严密性试验压力/, '问试压参数'],
+  ['N7', /(多久|几个月|几年|周期|间隔|频次|频率)[^。？?]{0,6}(更换|换|检修|保养|润滑|加油|校验|检定|检查|巡检|清洗|标定)|(更换|检修|保养|润滑|加油|校验|检定|清洗|标定)[^。？?]{0,4}(周期|间隔|频次|频率)/, '问检修/更换周期'],
+  ['N8', /温度(是|为|要求|范围|上限|不超过|控制在)?[^。？?]{0,4}(多少|几度|℃|摄氏)|振动[^。？?]{0,4}(多少|限值|标准|mm\/s)|压力[^。？?]{0,4}(多少|MPa)|转速[^。？?]{0,4}(多少|r\/min|rpm)|流量[^。？?]{0,4}(多少|m3\/h|m³\/h)|电流[^。？?]{0,4}(多少|安|A)|绝缘电阻[^。？?]{0,4}(多少|兆欧|MΩ)/, '问具体运行参数取值'],
+  ['N9', /磨损量|减薄量|壁厚[^。？?]{0,4}(多少|下限|最小)|腐蚀速率|剩余壁厚|最小壁厚/, '问磨损与壁厚量值'],
+  ['N10', /应该是多大|应该多大|该取多少|取多少|定多少|设多少|调到多少|控制在多少|保持在多少|不超过多少|不低于多少/, '问该取什么值'],
+  ['N11', /(浓度|含量|加注量|油位|液位|开度|余量|裕量|富余量)[^。？?]{0,6}(多少|要求|标准|范围)/, '问介质与液位量值'],
+  ['N12', /\d+\s*(MPa|kPa|N·m|N\.m|Nm|mm|μm|um|℃|°C|%|r\/min|rpm|mm\/s|kW|A|MΩ)[^。？?]{0,8}(对不对|对吗|合适吗|行不行|可以吗|够不够|算超标吗|超标吗|正常吗)/i, '拿具体数值求确认'],
+  ['N13', /(标准|规范|规程)[^。？?]{0,6}(数值|数据|指标|参数)(是|为)?(多少|什么)/, '问标准里的具体数值'],
+];
+
+/** P 组：本厂规定类 —— 未命中 N 组时判定 */
+const PLANT_RULES = [
+  ['P1', /我们(厂|车间|单位|装置|这边|这儿)|咱们(厂|车间|装置)?|本厂|我厂|厂里|贵厂|你们厂/, '问句主语指向本厂'],
+  ['P2', /我们(的)?(规定|标准|要求|做法|规程|制度|口径|流程)|本厂(规定|标准|要求)|厂内(规定|标准|要求|口径)|现行(规定|标准|做法)/, '直接问本厂规定'],
+  ['P3', /(这台|这个|该|本)[^。？?]{0,8}(设备|泵|机|塔|罐|换热器|阀|仪表|机组)[^。？?]{0,8}(用什么|是什么|什么型号|型号|厂家|制造厂|材质|规格)/, '问具体某台设备的型号规格'],
+  ['P4', /[A-Za-z]{1,3}[-_]?\d{3,5}[A-Za-z]?/, '问句中出现具体设备位号'],
+  ['P5', /(规程|说明书|技术协议|台账|操作法|作业指导书|管理制度)[^。？?]{0,8}(怎么写|写的什么|是怎么|规定|要求|说法)/, '问厂内文件怎么写的'],
+  ['P6', /(谁|哪个部门|哪个岗位|哪级)[^。？?]{0,6}(负责|审批|批准|签字|确认)|(审批|批准|签字|报备)[^。？?]{0,6}(流程|程序|权限)/, '问本厂职责与审批口径'],
+];
+
+/** G 组：原理概念类 —— 未命中 N、P 组时判定 */
+const PRINCIPLE_RULES = [
+  ['G1', /什么是|是什么意思|什么意思|指的是什么|叫什么|术语|缩写|缩略语|全称|英文是/, '问术语定义'],
+  ['G2', /为什么|为何|原因是|机理|机制|成因|怎么(会|就)?(产生|形成|发生|出现)/, '问机理与成因'],
+  ['G3', /原理|工作原理|怎么工作|如何工作|怎么运转|如何运转|靠什么(工作|起作用|密封|润滑)/, '问工作原理'],
+  ['G4', /区别|差别|不同点|有什么不一样|对比|相比|哪种好|各自特点|优缺点|优点|缺点/, '问概念辨析'],
+  ['G5', /结构|组成|由什么构成|包含哪些(部件|零件|部分)|分为哪几(类|种|部分)|有哪几种(型式|形式|类型)/, '问结构组成与分类'],
+  ['G6', /作用是|起什么作用|干什么用|用来做什么|有什么用|功能是/, '问部件作用'],
+  ['G7', /怎么(判断|识别|区分|看出)|如何(判断|识别|区分)|凭什么判断|现象(有哪些|是什么)|表现(有哪些|是什么)|征兆/, '问定性判别方法（不含量值）'],
+  ['G8', /怎么(防止|避免|预防)|如何(防止|避免|预防)|措施有哪些|办法有哪些|怎么处理|如何处理/, '问定性措施'],
+];
+
+/** 问句中出现这些词时，即使命中 P 组也保留原理性 —— 用于混合问句的分节提示 */
+const PRINCIPLE_HINT = /原理|机理|为什么|什么是|区别|结构|作用/;
+
+const collect = (rules, q) => rules.filter(([, re]) => re.test(q)).map(([id, , note]) => ({ ruleId: id, note }));
+
+/**
+ * classify(question) → {
+ *   questionType, typeCn, ruleId, basis, notice,
+ *   matched: {numeric[], plant[], principle[]},
+ *   mixedPrinciple: bool,            // 数值/本厂类问句中同时含原理成分
+ *   requiresPlantDocs: bool,         // 必须有厂内资料才能答
+ *   blockedFromAnswer: bool,         // 一律不得给出记忆中的答案
+ * }
+ *
+ * 规则顺序（命中即返回，不再往下走）：
+ *   N* 数值标准类 → numeric（最高优先级，混合问句也按 numeric）
+ *   P* 本厂规定类 → plant
+ *   G* 原理概念类 → principle
+ *   U1 三组都没命中 → undetermined（绝不默认 principle）
+ */
+function classify(question) {
+  const q = String(question == null ? '' : question).trim();
+  const matched = {
+    numeric: collect(NUMERIC_RULES, q),
+    plant: collect(PLANT_RULES, q),
+    principle: collect(PRINCIPLE_RULES, q),
+  };
+  const mk = (type, ruleId, basis) => ({
+    questionType: type,
+    typeCn: TYPE_CN[type],
+    ruleId,
+    basis,
+    notice: NOTICE[type],
+    matched,
+    mixedPrinciple: type !== 'principle' && (matched.principle.length > 0 || PRINCIPLE_HINT.test(q)),
+    requiresPlantDocs: type === 'numeric' || type === 'plant',
+    blockedFromAnswer: type === 'numeric',
+  });
+
+  if (!q) return mk('undetermined', 'U0', '问题为空，无法分类');
+  if (matched.numeric.length) {
+    const first = matched.numeric[0];
+    return mk('numeric', first.ruleId,
+      `问句涉及具体数值、限值或周期（${matched.numeric.map((m) => `${m.ruleId} ${m.note}`).join('；')}），按数值标准类处理`);
+  }
+  if (matched.plant.length) {
+    const first = matched.plant[0];
+    return mk('plant', first.ruleId,
+      `问句指向本厂或具体某台设备的规定（${matched.plant.map((m) => `${m.ruleId} ${m.note}`).join('；')}），按本厂规定类处理`);
+  }
+  if (matched.principle.length) {
+    const first = matched.principle[0];
+    return mk('principle', first.ruleId,
+      `问句问的是定义、机理、结构或定性方法（${matched.principle.map((m) => `${m.ruleId} ${m.note}`).join('；')}），按原理概念类处理`);
+  }
+  return mk('undetermined', 'U1', '问句未命中数值、本厂、原理任一组规则，未默认按原理概念类放行');
+}
+
+/**
+ * 数值类问题通常记在哪类厂内文件里 —— 只指路，绝不给数。
+ * 返回 [{kind, where}]，判不出返回通用兜底一条。
+ */
+/*
+ * 指路表第 4 列为中石化体系炼化厂常见文件名示例（只引名称，不引数值）：
+ * 《炼化企业设备维护检修规程》（中石化设备检修规程体系，含各类设备分册）、《中国石化设备管理规定》、
+ * 《炼化企业设备管理技术规定》、设备润滑"五定三过滤"管理规定、TSG 21 / TSG D7005（特种设备定期检验）、
+ * 岗位操作法与工艺卡片、联锁报警定值表、设备技术协议与随机资料。各厂文件名可能不同，以厂内受控文件目录为准。
+ */
+const WHERE_RULES = [
+  ['W1', /力矩|扭矩|预紧|紧固/, '紧固力矩', '设备使用说明书「安装/紧固要求」章节、检修规程的回装条款', '《炼化企业设备维护检修规程》对应设备分册的回装条款、制造厂随机说明书'],
+  ['W2', /间隙|游隙|公差|对中|跳动|同轴/, '间隙与对中量', '检修规程的解体检修与回装验收条款、设备随机装配图', '《炼化企业设备维护检修规程》对应设备分册的检修质量标准、随机装配图与技术协议'],
+  ['W3', /试压|水压|气密|保压|强度试验|严密性/, '试压参数', '设备技术协议、压力容器/管道的检验报告与检修规程试压条款', '设备技术协议、TSG 21 / TSG D7005 定期检验报告、《炼化企业设备维护检修规程》试压条款'],
+  ['W4', /周期|间隔|频次|频率|多久.*(换|检修|保养|润滑|校验)/, '检修与更换周期', '设备润滑管理规定、预防性维修计划（PM 计划）、特种设备定期检验周期规定', '厂内设备润滑"五定三过滤"管理规定与润滑图表、SAP PM 维护计划、《炼化企业设备管理技术规定》、特种设备定期检验周期以安全状况等级与检验报告为准'],
+  ['W5', /温度|振动|压力|转速|流量|电流|绝缘/, '运行参数限值', '岗位操作法的工艺卡片、设备运行监控标准、联锁报警定值表', '岗位操作法（工艺卡片）、联锁报警定值表、特护设备运行监控标准、《炼化企业设备维护检修规程》运行参数条款'],
+  ['W6', /壁厚|减薄|腐蚀速率|磨损/, '壁厚与磨损量', '定期检验报告、测厚台账与静设备完整性管理文件', 'TSG 21 / TSG D7005 定期检验报告、定点测厚台账、设备完整性管理体系文件'],
+  ['W7', /材质|牌号|型号|规格/, '材质与规格', '设备台账、铭牌、技术协议与随机资料', 'SAP PM 技术对象主数据 / EM 设备台账、铭牌、技术协议与随机资料'],
+];
+function whereToLook(question) {
+  const q = String(question == null ? '' : question);
+  const out = [];
+  for (const [ruleId, re, kind, where, example] of WHERE_RULES) {
+    if (re.test(q)) out.push({ ruleId, kind, where, example });
+  }
+  if (!out.length) out.push({ ruleId: 'W0', kind: '该数值', where: '设备使用说明书、检修规程、技术协议或岗位操作法；可用 technical-document-finder 按位号检索', example: '《炼化企业设备维护检修规程》对应设备分册、制造厂随机资料、岗位操作法' });
+  return out;
+}
+
+/**
+ * 通用原理段约束（写在 checklist 与产出 md 中，由 selftest 扫描 ANALYSIS 段与示范文本）：
+ *   - 长度 ≤ PRINCIPLE_MAX_CHARS 字（按去空白后的字符数）
+ *   - 不得出现任何阿拉伯数字或带单位的量（数字/单位一出现即视为夹带数值，应转数值类口径）
+ * 返回 {chars, overLength, hasNumber, numbers, ok}
+ */
+const PRINCIPLE_MAX_CHARS = 300;
+const PRINCIPLE_NUMBER_RE = /\d|[０-９]|(?:^|[^a-zA-Z])(?:MPa|kPa|N·m|N\.m|mm\/s|mm|μm|um|℃|°C|r\/min|rpm|kW|MΩ|ppm|‰|%)(?![a-zA-Z])/g;
+function checkPrincipleText(text, max = PRINCIPLE_MAX_CHARS) {
+  const s = String(text == null ? '' : text).replace(/\s+/g, '');
+  const numbers = (s.match(PRINCIPLE_NUMBER_RE) || []).map((x) => x.trim());
+  const overLength = s.length > max;
+  return { chars: s.length, max, overLength, hasNumber: numbers.length > 0, numbers, ok: !overLength && !numbers.length };
+}
+
+/**
+ * 检索关键词切分。
+ * 中文问句不带空格，整句当一个词必然检索不到，因此先剥掉疑问词与语气词，
+ * 再把剩下的中文片段按 2~4 字滑窗切成候选词（长词优先）；英文与数字按词保留。
+ * 只做检索用，切出来的候选词**不参与任何数值判定**。
+ */
+const NOISE = /(请问|帮我|看看|一下|咱们|我们|你们|这台|这个|那个|到底|究竟|什么意思|是什么|什么是|为什么|怎么样|怎么|如何|多少|多大|多久|多长|应该|一般|通常|可以|需要|的|了|吗|呢|吧|啊|哪些|哪个|有没有|是否|什么)/g;
+const STOPWORDS = /^(的|是|在|有|了|和|与|或|哪|什么|怎么|多少|多大|多久|一下|这台|这个|我们|咱们|资料|文件|里面|写的|请问|帮我|看看|为什么|如何|可以|应该|需要|一般|通常|规定|要求|标准|还有|以及|这些|那些)$/;
+const CJK = /[一-龥]/;
+
+function splitQuery(q) {
+  const s = String(q == null ? '' : q).trim();
+  if (!s) return [];
+  const out = [];
+  const segs = s.replace(NOISE, ' ').split(/[\s，,、。；;：:？?！!（）()「」【】《》""'’/]+/).filter(Boolean);
+  for (const seg of segs) {
+    if (!CJK.test(seg)) {                       // 纯英文/数字片段整体保留
+      if (seg.length >= 2 && !STOPWORDS.test(seg)) out.push(seg);
+      continue;
+    }
+    if (seg.length <= 4) {
+      if (seg.length >= 2 && !STOPWORDS.test(seg)) out.push(seg);
+      continue;
+    }
+    // 长中文片段：4→3→2 字滑窗，长词排在前面，检索时优先命中更具体的词
+    for (let n = 4; n >= 2; n--) {
+      for (let i = 0; i + n <= seg.length; i++) {
+        const t = seg.slice(i, i + n);
+        if (STOPWORDS.test(t)) continue;
+        out.push(t);
+      }
+    }
+  }
+  return [...new Set(out)];
+}
+
+module.exports = {
+  TYPE_CN, NOTICE,
+  NUMERIC_RULES, PLANT_RULES, PRINCIPLE_RULES, WHERE_RULES,
+  classify, whereToLook, splitQuery,
+  PRINCIPLE_MAX_CHARS, checkPrincipleText,
+};

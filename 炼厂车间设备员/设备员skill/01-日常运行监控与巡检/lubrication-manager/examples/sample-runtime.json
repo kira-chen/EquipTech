@@ -1,0 +1,15 @@
+{
+  "note": "模拟 runtime-hours-tracker 产出 runtime.json 的 byEquipment 结构，仅供 --run-hours 衔接演示",
+  "byEquipment": [
+    {
+      "tag": "P-1105",
+      "name": "减压塔底泵",
+      "cumHours": 33500
+    },
+    {
+      "tag": "K-1402",
+      "name": "气压机润滑油泵",
+      "cumHours": 18650
+    }
+  ]
+}

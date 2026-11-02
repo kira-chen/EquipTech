@@ -63,3 +63,6 @@ trash/
 # ===== Claude 本机个性化与记忆（不入协同仓）=====
 .claude/settings.local.json
 .claude/memory/
+
+# ===== 本地技能工程目录（不入协同仓）=====
+skill-pack-local/

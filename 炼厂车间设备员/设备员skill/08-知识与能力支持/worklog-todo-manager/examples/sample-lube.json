@@ -1,0 +1,61 @@
+{
+  "meta": {
+    "workshop": "常减压车间",
+    "date": "2026-09-21",
+    "leadDays": 7,
+    "generatedAt": "2026-10-26 22:50:22"
+  },
+  "counts": {
+    "ledgerItems": 48,
+    "overdue": 1,
+    "dueSoon": 1,
+    "normal": 44,
+    "undetermined": 2
+  },
+  "overdue": [
+    {
+      "tag": "P-1102A",
+      "name": "常压渣油泵A",
+      "part": "轴承箱",
+      "oil": "L-TSA 46",
+      "mode": "油浴",
+      "periodRaw": "3个月",
+      "periodDays": 90,
+      "lastDate": "2026-06-08",
+      "dueDate": "2026-09-04",
+      "overdueDays": 14,
+      "overdueRatio": 0.15,
+      "level": "轻微逾期",
+      "sheet": "润滑台账",
+      "row": 14
+    }
+  ],
+  "dueSoon": [
+    {
+      "tag": "P-1101A",
+      "name": "常压塔顶回流泵A",
+      "part": "轴承箱",
+      "oil": "L-TSA 46",
+      "mode": "油浴",
+      "periodRaw": "3个月",
+      "periodDays": 90,
+      "lastDate": "2026-06-27",
+      "dueDate": "2026-09-25",
+      "remainDays": 4,
+      "sheet": "润滑台账",
+      "row": 6
+    }
+  ],
+  "normal": [],
+  "undetermined": [],
+  "consumption": null,
+  "oilAnalysis": {
+    "provided": false,
+    "abnormal": [],
+    "normal": [],
+    "noLimit": [],
+    "note": "未提供油液分析数据。"
+  },
+  "oilNameConflicts": [],
+  "warnings": []
+}

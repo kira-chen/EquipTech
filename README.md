@@ -5,13 +5,15 @@
 ## 目录
 
 ```
-skill-pack/
+炼厂车间设备员/
 ├── 设备员skill/            # 设备员 50 个技能，按 8 个业务域分目录
+└── dist/                  # 打包产物（不入库）
+
+skill-pack-local/          # 仅本地保留，不入库
 ├── 【炼化】*/              # 炼化 6 个技能，设备员技能中的部分桥接技能依赖它们
 ├── my-skill/              # 新技能骨架
 ├── tools/                 # 打包与演示数据脚本
-├── dist/                  # 打包产物
 └── 技能工程规范.md 等      # 规范与上架材料
 ```
 
-详细说明见 [skill-pack/README.md](skill-pack/README.md) 和 [skill-pack/设备员skill/README.md](skill-pack/设备员skill/README.md)。
+详细说明见 [炼厂车间设备员/设备员skill/README.md](炼厂车间设备员/设备员skill/README.md)。

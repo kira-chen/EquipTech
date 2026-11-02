@@ -1,0 +1,74 @@
+{
+  "meta": {
+    "workshop": "常减压车间",
+    "date": "2026-09-21",
+    "generatedAt": "2026-10-26 22:50:22"
+  },
+  "counts": {
+    "total": 9,
+    "overdue": 1,
+    "dueSoon": 1,
+    "unverified": 1,
+    "closed": 5
+  },
+  "metrics": {
+    "closureRate": 55.6
+  },
+  "overdue": [
+    {
+      "no": "YH-2609-03",
+      "desc": "常压炉区消防水炮阀门锈死无法开启",
+      "level": "major",
+      "levelCn": "重大隐患",
+      "owner": "张设备",
+      "unit": "常减压车间",
+      "deadline": "2026-09-11",
+      "overdueDays": 12,
+      "measure": "更换阀门并做操作试验",
+      "rawStatus": "整改中",
+      "bucket": "overdue",
+      "sheet": "隐患台账",
+      "row": 3
+    }
+  ],
+  "dueSoon": [
+    {
+      "no": "YH-2609-07",
+      "desc": "二区平台护栏局部变形",
+      "level": "general",
+      "levelCn": "一般隐患",
+      "owner": "张设备",
+      "unit": "常减压车间",
+      "deadline": "2026-09-24",
+      "daysToDeadline": 3,
+      "measure": "校正并补焊",
+      "rawStatus": "整改中",
+      "bucket": "dueSoon",
+      "sheet": "隐患台账",
+      "row": 7
+    }
+  ],
+  "unverified": [
+    {
+      "no": "YH-2608-11",
+      "desc": "泵房照明缺失",
+      "level": "general",
+      "levelCn": "一般隐患",
+      "owner": "张设备",
+      "unit": "常减压车间",
+      "deadline": "2026-09-20",
+      "measure": "补装防爆灯具",
+      "unverifiedReason": "整改状态为「已整改」但无验收记录",
+      "bucket": "unverified",
+      "sheet": "隐患台账",
+      "row": 11
+    }
+  ],
+  "inProgress": [],
+  "closed": [],
+  "majorHazards": [],
+  "undetermined": [],
+  "conflicts": [],
+  "items": [],
+  "warnings": []
+}

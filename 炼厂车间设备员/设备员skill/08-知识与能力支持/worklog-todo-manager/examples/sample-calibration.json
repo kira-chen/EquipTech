@@ -1,0 +1,66 @@
+{
+  "meta": {
+    "workshop": "常减压车间",
+    "date": "2026-09-21",
+    "leadDays": 30,
+    "generatedAt": "2026-10-26 22:50:22"
+  },
+  "counts": {
+    "total": 86,
+    "overdue": 1,
+    "dueSoon": 1,
+    "unresolvedFail": 1,
+    "normal": 80,
+    "undetermined": 3
+  },
+  "overdue": [
+    {
+      "tag": "PSV-1102",
+      "category": "安全阀",
+      "name": "常压塔顶安全阀",
+      "model": "A46Y-16C",
+      "lastDate": "2025-08-17",
+      "nextDate": "2026-08-21",
+      "overdueDays": 33,
+      "safetyCritical": true,
+      "cert": "JY-2508-0033",
+      "state": "overdue",
+      "sheet": "校验台账",
+      "row": 9
+    }
+  ],
+  "dueSoon": [
+    {
+      "tag": "PT-1203",
+      "category": "压力变送器",
+      "name": "常压塔顶压力",
+      "lastDate": "2025-10-06",
+      "nextDate": "2026-09-27",
+      "daysLeft": 6,
+      "safetyCritical": false,
+      "cert": "JY-2509-0102",
+      "state": "dueSoon",
+      "sheet": "校验台账",
+      "row": 22
+    }
+  ],
+  "unresolvedFail": [
+    {
+      "tag": "TT-1308",
+      "category": "温度变送器",
+      "name": "加热炉出口温度",
+      "lastDate": "2026-07-23",
+      "resultRaw": "不合格",
+      "cert": "JY-2607-0210",
+      "state": "unresolvedFail",
+      "sheet": "校验台账",
+      "row": 41
+    }
+  ],
+  "normal": [],
+  "undetermined": [],
+  "byCategory": [],
+  "sendList": [],
+  "dupCerts": [],
+  "warnings": []
+}

@@ -1,0 +1,134 @@
+{
+  "photo": "V-1301铭牌-20260921.jpg",
+  "fields": [
+    {
+      "name": "制造厂",
+      "value": "张家口冀东容器厂",
+      "confidence": "clear",
+      "raw": "张家口冀东容器厂"
+    },
+    {
+      "name": "型号",
+      "value": "φ3000×8000",
+      "confidence": "clear",
+      "raw": "φ3000×8000"
+    },
+    {
+      "name": "出厂编号",
+      "value": "JD-2011-1102",
+      "confidence": "clear",
+      "raw": "JD-2011-1102"
+    },
+    {
+      "name": "制造日期",
+      "value": "2011-11",
+      "confidence": "clear",
+      "raw": "2011-11"
+    },
+    {
+      "name": "执行标准",
+      "value": "NB/T 47041",
+      "confidence": "clear",
+      "raw": "NB/T 47041"
+    },
+    {
+      "name": "重量",
+      "value": "12800",
+      "confidence": "clear",
+      "unit": "kg",
+      "raw": "12800kg"
+    },
+    {
+      "name": "设计压力",
+      "value": "1.6",
+      "confidence": "clear",
+      "unit": "MPa",
+      "raw": "1.6MPa"
+    },
+    {
+      "name": "最高工作压力",
+      "value": "1.35",
+      "confidence": "clear",
+      "unit": "MPa",
+      "raw": "1.35MPa"
+    },
+    {
+      "name": "设计温度",
+      "value": "200",
+      "confidence": "clear",
+      "unit": "℃",
+      "raw": "200℃"
+    },
+    {
+      "name": "工作温度",
+      "value": "150",
+      "confidence": "clear",
+      "unit": "℃",
+      "raw": "150℃"
+    },
+    {
+      "name": "容积",
+      "value": "56.5",
+      "confidence": "clear",
+      "unit": "m³",
+      "raw": "56.5m³"
+    },
+    {
+      "name": "介质",
+      "value": "原油",
+      "confidence": "clear",
+      "raw": "原油"
+    },
+    {
+      "name": "主体材质",
+      "value": "Q345R",
+      "confidence": "clear",
+      "raw": "Q345R"
+    },
+    {
+      "name": "腐蚀裕量",
+      "value": "3",
+      "confidence": "clear",
+      "unit": "mm",
+      "raw": null,
+      "note": "模型漏抄原文，验证 raw 缺失提示"
+    },
+    {
+      "name": "焊缝系数",
+      "value": "1.0",
+      "confidence": "clear",
+      "raw": "1.0"
+    },
+    {
+      "name": "容器类别",
+      "value": "Ⅱ类",
+      "confidence": "clear",
+      "raw": "Ⅱ类"
+    },
+    {
+      "name": "设计使用年限",
+      "value": "20",
+      "confidence": "clear",
+      "unit": "年",
+      "raw": "20年"
+    },
+    {
+      "name": "制造许可证号",
+      "value": "TS2210166-2023",
+      "confidence": "clear",
+      "raw": "TS2210166-2023"
+    },
+    {
+      "name": "监检机构",
+      "value": "某省特种设备监督检验院",
+      "confidence": "clear",
+      "raw": "某省特种设备监督检验院"
+    },
+    {
+      "name": "设备代码",
+      "value": "31010900012003",
+      "confidence": "clear",
+      "raw": "设备代码 31010900012003"
+    }
+  ]
+}

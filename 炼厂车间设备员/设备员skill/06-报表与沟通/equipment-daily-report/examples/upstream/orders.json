@@ -1,0 +1,49 @@
+{
+  "meta": {
+    "workshop": "常减压车间",
+    "date": "2026-09-21",
+    "skill": "work-order-tracker"
+  },
+  "counts": {
+    "total": 6,
+    "open": 4,
+    "overdue": 2,
+    "stalled": 1,
+    "closedInRange": 1,
+    "closedAll": 1,
+    "pendingAccept": 1
+  },
+  "metrics": {
+    "closeRate": 16.7,
+    "avgCycleDays": 4.5
+  },
+  "byStatus": {
+    "施工中": 1,
+    "待验收": 1,
+    "已派工": 2,
+    "待审核": 1,
+    "已闭环": 1
+  },
+  "overdue": [
+    {
+      "no": "WO-2609002",
+      "tag": "P-1102A",
+      "desc": "检查轴承",
+      "overdueDays": 1,
+      "owner": "检修一队"
+    },
+    {
+      "no": "WO-2609003",
+      "tag": "V-1301",
+      "desc": "保温修复",
+      "overdueDays": 3,
+      "owner": "保运队"
+    }
+  ],
+  "stalled": [
+    {
+      "no": "WO-2609004",
+      "tag": "E-1201"
+    }
+  ]
+}

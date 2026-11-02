@@ -1,0 +1,76 @@
+{
+  "meta": {
+    "workshop": "常减压车间",
+    "date": "2026-09-17",
+    "shift": null,
+    "sources": [
+      "sample→巡检汇总",
+      "sample→特护设备"
+    ],
+    "generatedAt": "2026-09-17 18:00:00",
+    "stateScheme": [
+      "运行",
+      "备用",
+      "检修",
+      "停用",
+      "异常",
+      "未判定"
+    ]
+  },
+  "counts": {
+    "equipment": 20,
+    "abnormal": 2,
+    "specialEquipment": 1,
+    "specialAbnormal": 1,
+    "newDefects": 1,
+    "openDefects": 6,
+    "pendingAcceptDefects": 0,
+    "overdueOrders": 3,
+    "openOrders": 8,
+    "pendingAcceptOrders": 2,
+    "permits": 3,
+    "maintProjects": 6,
+    "openLeaks": 2,
+    "overdueLeaks": 1,
+    "hazards": 3,
+    "overdueHazards": 1,
+    "events": 0,
+    "unclosedEvents": 0
+  },
+  "status": {
+    "equipment": 20,
+    "byState": {
+      "运行": 15,
+      "备用": 2,
+      "检修": 1,
+      "停用": 1,
+      "异常": 1,
+      "未判定": 0
+    },
+    "abnormalList": []
+  },
+  "special": {
+    "total": 1,
+    "abnormal": 1,
+    "source": "特护设备表",
+    "list": [
+      {
+        "tag": "K-1601",
+        "name": "富气压缩机",
+        "state": "异常",
+        "params": "一级出口振动 3.5 mm/s",
+        "desc": "振动升高，已降负荷观察"
+      }
+    ]
+  },
+  "defects": null,
+  "orders": null,
+  "permits": null,
+  "maintenance": null,
+  "leaks": null,
+  "hazards": null,
+  "events": null,
+  "compare": null,
+  "plan": null,
+  "warnings": []
+}

@@ -1,0 +1,44 @@
+{
+  "meta": {
+    "workshop": "常减压车间",
+    "date": "2026-09-21",
+    "skill": "defect-intake-grading"
+  },
+  "counts": {
+    "total": 3,
+    "byLevel": {
+      "B 级（严重）": 1,
+      "C 级（一般）": 2
+    }
+  },
+  "defects": [
+    {
+      "no": "10045001",
+      "tag": "P-1101B",
+      "name": "常压塔顶回流泵B",
+      "desc": "机封滴漏约5滴/分",
+      "level": "B",
+      "levelCn": "B 级（严重）",
+      "dueDate": "2026-09-24"
+    },
+    {
+      "no": "10045002",
+      "tag": "M-1501",
+      "name": "鼓风机电机",
+      "desc": "运行电流较额定偏高",
+      "level": "C",
+      "levelCn": "C 级（一般）",
+      "dueDate": "2026-09-28"
+    },
+    {
+      "no": "10045003",
+      "tag": "E-1201",
+      "name": "原油换热器",
+      "desc": "封头法兰渗漏",
+      "level": "C",
+      "levelCn": "C 级（一般）",
+      "dueDate": "2026-09-28"
+    }
+  ],
+  "undetermined": []
+}

@@ -1,0 +1,53 @@
+{
+  "meta": {
+    "workshop": "常减压车间",
+    "date": "2026-09-21",
+    "skill": "hazard-closure-tracker"
+  },
+  "counts": {
+    "total": 3,
+    "overdue": 1,
+    "dueSoon": 0,
+    "inProgress": 1,
+    "closed": 1,
+    "unverified": 0,
+    "undetermined": 0,
+    "major": 1,
+    "conflicts": 0
+  },
+  "metrics": {
+    "closureRate": 33.3,
+    "avgClosureDays": null,
+    "byLevel": {
+      "major": 1,
+      "general": 2
+    }
+  },
+  "overdue": [
+    {
+      "no": "YH-003",
+      "desc": "泵区平台栏杆缺失一段",
+      "level": "general",
+      "levelCn": "一般隐患",
+      "owner": "保运队",
+      "deadline": "2026-09-19",
+      "overdueDays": 2
+    }
+  ],
+  "majorHazards": [
+    {
+      "no": "YH-001",
+      "desc": "压缩机厂房可燃气报警器未投用",
+      "level": "major",
+      "levelCn": "重大隐患",
+      "statusCn": "整改中",
+      "deadline": "2026-10-01"
+    }
+  ],
+  "dueSoon": [],
+  "inProgress": [],
+  "closed": [],
+  "unverified": [],
+  "undetermined": [],
+  "conflicts": []
+}

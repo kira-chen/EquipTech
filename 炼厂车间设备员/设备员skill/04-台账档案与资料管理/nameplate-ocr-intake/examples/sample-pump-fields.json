@@ -1,0 +1,123 @@
+{
+  "photo": "P-1101A铭牌-20260921.jpg",
+  "fields": [
+    {
+      "name": "制造厂",
+      "value": "沈阳水泵股份有限公司",
+      "confidence": "clear",
+      "raw": "沈阳水泵股份有限公司"
+    },
+    {
+      "name": "型号",
+      "value": "ZA-100-315",
+      "confidence": "clear",
+      "raw": "型号 ZA-100-315"
+    },
+    {
+      "name": "规格",
+      "value": "100-315",
+      "confidence": "clear",
+      "raw": "100-315"
+    },
+    {
+      "name": "出厂编号",
+      "value": "DL-2019-1667",
+      "confidence": "clear",
+      "raw": "DL-2019-1667"
+    },
+    {
+      "name": "制造日期",
+      "value": "2019.06",
+      "confidence": "clear",
+      "note": "铭牌写法为 2019.06",
+      "raw": "2019.06"
+    },
+    {
+      "name": "执行标准",
+      "value": "GB/T 3215",
+      "confidence": "clear",
+      "raw": "GB/T 3215"
+    },
+    {
+      "name": "重量",
+      "value": "844",
+      "confidence": "clear",
+      "unit": "kg",
+      "raw": "844kg"
+    },
+    {
+      "name": "流量",
+      "value": "107.3",
+      "confidence": "clear",
+      "unit": "m³/h",
+      "raw": "107.3m³/h"
+    },
+    {
+      "name": "扬程",
+      "value": "243",
+      "confidence": "clear",
+      "unit": "m",
+      "raw": "243m"
+    },
+    {
+      "name": "转速",
+      "value": "2950",
+      "confidence": "clear",
+      "unit": "r/min",
+      "raw": "2950r/min"
+    },
+    {
+      "name": "配用功率",
+      "value": "107.8",
+      "confidence": "clear",
+      "unit": "kW",
+      "raw": "107.8kW"
+    },
+    {
+      "name": "效率",
+      "value": "71",
+      "confidence": "blurry",
+      "unit": "%",
+      "reason": "铭牌该处有油污，小数位看不清",
+      "raw": "7▢.▢%"
+    },
+    {
+      "name": "汽蚀余量",
+      "value": null,
+      "confidence": "unreadable",
+      "reason": "铭牌该行锈蚀脱漆，整行无法辨认"
+    },
+    {
+      "name": "泵壳材质",
+      "value": "ZG1Cr18Ni9Ti",
+      "confidence": "clear",
+      "raw": "ZG1Cr18Ni9Ti"
+    },
+    {
+      "name": "叶轮材质",
+      "value": "2Cr1▢",
+      "confidence": "blurry",
+      "reason": "末位字符被托架遮挡，未做猜测",
+      "raw": "2Cr1▢"
+    },
+    {
+      "name": "密封形式",
+      "value": "机械密封 双端面",
+      "confidence": "clear",
+      "raw": "机械密封 双端面"
+    },
+    {
+      "name": "设计压力",
+      "value": "4.1",
+      "confidence": "clear",
+      "unit": "MPa",
+      "raw": "4.1MPa"
+    },
+    {
+      "name": "设计温度",
+      "value": null,
+      "confidence": "unreadable",
+      "reason": "铭牌上无此项"
+    }
+  ]
+}

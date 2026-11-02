@@ -1,0 +1,67 @@
+{
+  "meta": {
+    "workshop": "常减压车间",
+    "date": "2026-09-21",
+    "leadDays": 60,
+    "generatedAt": "2026-10-26 22:50:22"
+  },
+  "counts": {
+    "total": 24,
+    "overdue": 1,
+    "dueSoon": 1,
+    "normal": 20,
+    "undetermined": 2
+  },
+  "byCategory": [
+    {
+      "category": "压力容器",
+      "total": 14,
+      "overdue": 1,
+      "dueSoon": 1,
+      "normal": 12,
+      "undetermined": 0
+    }
+  ],
+  "overdue": [
+    {
+      "tag": "V-1301",
+      "name": "原油缓冲罐",
+      "category": "压力容器",
+      "regCode": "容11鲁00001",
+      "licence": "",
+      "unit": "常减压车间",
+      "grade": 2,
+      "lastDate": "2023-09-17",
+      "nextDate": "2026-08-24",
+      "overdueDays": 23,
+      "nextSource": "台账（检验报告载明）",
+      "sheet": "特种设备台账",
+      "row": 5
+    }
+  ],
+  "dueSoon": [
+    {
+      "tag": "V-1405",
+      "name": "常压塔顶回流罐",
+      "category": "压力容器",
+      "regCode": "容11鲁00042",
+      "unit": "常减压车间",
+      "grade": 2,
+      "lastDate": "2023-11-16",
+      "nextDate": "2026-09-26",
+      "remainDays": 5,
+      "nextSource": "台账（检验报告载明）",
+      "sheet": "特种设备台账",
+      "row": 18
+    }
+  ],
+  "normal": [],
+  "undetermined": [],
+  "dateConflict": [],
+  "monitored": [],
+  "stopped": [],
+  "prepMaterials": [],
+  "openIssues": null,
+  "reports": null,
+  "warnings": []
+}

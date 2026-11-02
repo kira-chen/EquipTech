@@ -1,0 +1,90 @@
+{
+  "meta": {
+    "workshop": "常减压车间",
+    "date": "2026-09-21",
+    "generatedAt": "2026-10-26 22:50:22"
+  },
+  "counts": {
+    "total": 12,
+    "overdue": 2,
+    "stalled": 1,
+    "dueSoon": 1,
+    "closedAll": 8
+  },
+  "byStatus": [
+    {
+      "status": "派工中",
+      "count": 3
+    }
+  ],
+  "metrics": {
+    "closeRate": 66.7
+  },
+  "overdue": [
+    {
+      "no": "WO-26090012",
+      "tag": "P-1101B",
+      "name": "常压塔顶回流泵B",
+      "fault": "机封滴漏",
+      "status": "维修中",
+      "priority": "高",
+      "dueAt": "2026-09-13",
+      "dueBasis": "台账要求完成时间",
+      "overdueDays": 8,
+      "party": "钳工班 / 李维修",
+      "owner": "李维修",
+      "reason": "备件未到",
+      "source": "工单台账 第12行"
+    },
+    {
+      "no": "WO-26090007",
+      "tag": "E-1201",
+      "name": "原油换热器",
+      "fault": "法兰渗漏",
+      "status": "待派工",
+      "priority": "中",
+      "dueAt": "2026-09-19",
+      "dueBasis": "台账要求完成时间",
+      "overdueDays": 2,
+      "party": "外委 / 甲乙丙公司",
+      "owner": "",
+      "reason": "原因未记录",
+      "source": "工单台账 第7行"
+    }
+  ],
+  "stalled": [
+    {
+      "no": "WO-26082033",
+      "tag": "K-1501",
+      "name": "循环氢压缩机",
+      "status": "维修中",
+      "priority": "中",
+      "lastNode": "开工时间",
+      "lastTime": "2026-09-01 09:00",
+      "idleDays": 19,
+      "party": "钳工班 / 王工",
+      "owner": "王工",
+      "reason": "等待厂家技术支持",
+      "source": "工单台账 第33行"
+    }
+  ],
+  "dueSoon": [
+    {
+      "no": "WO-26090021",
+      "tag": "V-1301",
+      "name": "原油缓冲罐",
+      "status": "维修中",
+      "priority": "中",
+      "dueAt": "2026-09-23",
+      "daysLeft": 2,
+      "party": "铆焊班 / 赵工",
+      "owner": "赵工",
+      "source": "工单台账 第21行"
+    }
+  ],
+  "closed": [],
+  "stallUndetermined": [],
+  "unknownStatus": [],
+  "groups": [],
+  "warnings": []
+}

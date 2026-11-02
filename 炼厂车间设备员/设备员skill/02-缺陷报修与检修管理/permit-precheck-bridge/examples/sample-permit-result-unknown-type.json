@@ -1,0 +1,110 @@
+{
+  "permit_no": "RT-2026-0826-693",
+  "type": "射线探伤",
+  "level": "一级",
+  "now": "2026-08-26 08:50（北京时间）",
+  "summary": {
+    "must_fix": 3,
+    "should_improve": 2,
+    "undetermined": 1,
+    "pass": 4
+  },
+  "skipped": 85,
+  "findings": [
+    {
+      "rule_id": "G-011",
+      "severity": "must_fix",
+      "message": "监护人未指定/未签字",
+      "detail": "guardian 为空/null",
+      "basis": "GB 30871-2022 第4章 通用要求（特殊作业应设专人监护）",
+      "rule_type": "required",
+      "check_name": "监护人已指定"
+    },
+    {
+      "rule_id": "HW-012",
+      "severity": "must_fix",
+      "message": "特级/一级动火作业票有效期超过 8h",
+      "detail": "有效期 11.0h，超过 8h",
+      "basis": "GB 30871-2022 第5章 动火作业（特级、一级动火票有效期不超过 8h）",
+      "rule_type": "duration_max",
+      "check_name": "特级/一级有效期 ≤8h"
+    },
+    {
+      "rule_id": "HW-019",
+      "severity": "must_fix",
+      "message": "受限空间内动火，未关联受限空间作业票",
+      "detail": "cross_jobs 中无 受限空间 作业票",
+      "basis": "GB 30871-2022 第4章 通用要求（涉及多种特殊作业应同时办理相应作业票）",
+      "rule_type": "cross_permit",
+      "check_name": "受限空间内动火已关联受限空间票"
+    },
+    {
+      "rule_id": "G-019",
+      "severity": "should_improve",
+      "message": "监护人资质/培训合格证未填写",
+      "detail": "guardian_cert 为空",
+      "basis": "通行做法（待核实）：监护人应经培训合格",
+      "rule_type": "required",
+      "check_name": "监护人资质已填写"
+    },
+    {
+      "rule_id": "HW-006",
+      "severity": "should_improve",
+      "message": "气体分析距计划开工超过 30 分钟（48 分钟）",
+      "detail": "最近一次分析 48 分钟前",
+      "basis": "GB 30871-2022 第5章 动火作业（动火前 30 分钟内取样分析）",
+      "rule_type": "time_window",
+      "check_name": "气体分析时效"
+    },
+    {
+      "rule_id": "HW-003",
+      "severity": "undetermined",
+      "message": "无法判定：动火点是否在受限空间内",
+      "detail": "依赖字段 in_confined_space 为空",
+      "basis": "GB 30871-2022 第5章 动火作业",
+      "rule_type": "conditional",
+      "check_name": "受限空间内动火判定"
+    },
+    {
+      "rule_id": "G-001",
+      "severity": "pass",
+      "message": "通过：作业票编号已填写",
+      "detail": "已填写：DH-2026-0826-877",
+      "basis": "通行做法",
+      "rule_type": "required",
+      "check_name": "票号已填写"
+    },
+    {
+      "rule_id": "G-002",
+      "severity": "pass",
+      "message": "通过：作业类型已填写",
+      "detail": "已填写：动火",
+      "basis": "GB 30871-2022 第4章 通用要求",
+      "rule_type": "enum",
+      "check_name": "作业类型"
+    },
+    {
+      "rule_id": "HW-001",
+      "severity": "pass",
+      "message": "通过：动火级别已填写",
+      "detail": "已填写：一级",
+      "basis": "GB 30871-2022 第5章 动火作业",
+      "rule_type": "enum",
+      "check_name": "动火级别"
+    },
+    {
+      "rule_id": "G-021",
+      "severity": "pass",
+      "message": "通过：作业负责人已签字",
+      "detail": "已填写：李某",
+      "basis": "GB 30871-2022 第4章 通用要求",
+      "rule_type": "required",
+      "check_name": "作业负责人签字"
+    }
+  ],
+  "extraction_notes": [
+    "in_confined_space：票面「动火点是否在受限空间内」栏留白 → 填 null",
+    "guardian：监护人签字栏空白 → 填 null（刘某口头告知但未签字）"
+  ],
+  "disclaimer": "本结果为辅助预检，不替代作业票审批；条款号以 GB 30871-2022 正式文本为准。"
+}

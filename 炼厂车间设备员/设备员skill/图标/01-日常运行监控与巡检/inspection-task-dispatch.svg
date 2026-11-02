@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg-inspection-task-dispatch" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#818CF8"/><stop offset="1" stop-color="#4338CA"/></linearGradient>
+    <linearGradient id="hl-inspection-task-dispatch" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg-inspection-task-dispatch)"/>
+  <rect width="512" height="512" rx="112" fill="url(#hl-inspection-task-dispatch)"/>
+    <rect x="112" y="142" width="44" height="44" rx="10" fill="none" stroke="#fff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="122,164 132,174 148,152" fill="none" stroke="#fff" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="112" y="234" width="44" height="44" rx="10" fill="none" stroke="#fff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="122,256 132,266 148,244" fill="none" stroke="#fff" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="112" y="326" width="44" height="44" rx="10" fill="none" stroke="#fff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" opacity=".7"/>
+    <line x1="196" y1="164" x2="280" y2="164" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="196" y1="256" x2="268" y2="256" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="196" y1="348" x2="256" y2="348" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" opacity=".7"/>
+    <path d="M362 392 C330 352 308 322 308 290 A54 54 0 1 1 416 290 C416 322 394 352 362 392 Z" fill="#fff"/>
+    <circle cx="362" cy="290" r="20" fill="#4F46E5"/>
+</svg>

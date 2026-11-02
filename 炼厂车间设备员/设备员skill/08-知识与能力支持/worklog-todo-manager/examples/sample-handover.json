@@ -1,0 +1,73 @@
+{
+  "meta": {
+    "skill": "shift-handover-record",
+    "workshop": "常减压车间",
+    "type": "值班交接",
+    "shift": "值班交接",
+    "date": "2026-09-20",
+    "handoverAt": "2026-09-20 17:00",
+    "generatedAt": "2026-10-26 22:50:22",
+    "declaration": "交接以双方现场确认签字为准"
+  },
+  "counts": {
+    "pending": 3,
+    "carriedOver": 1,
+    "focusItems": 1
+  },
+  "pending": [
+    {
+      "tag": "P-1101B",
+      "name": "常压塔顶回流泵B",
+      "content": "机封备件到货后安排更换，更换前每班观察滴漏",
+      "state": "未完成",
+      "owner": "李维修",
+      "due": "2026-09-19",
+      "dueText": "2026-09-18",
+      "source": "常减压车间 值班交接",
+      "originShift": "2026-09-20 值班交接",
+      "carried": false,
+      "carryTimes": 0,
+      "sheet": "未完成事项",
+      "row": 4
+    },
+    {
+      "tag": "E-1201",
+      "name": "原油换热器",
+      "content": "法兰复紧后观察 24 小时无渗漏再关闭通知单",
+      "state": "未完成",
+      "owner": "张设备",
+      "due": "2026-09-23",
+      "dueText": "2026-09-23",
+      "source": "常减压车间 值班交接",
+      "originShift": "2026-09-18 值班交接",
+      "carried": true,
+      "carryTimes": 2,
+      "sheet": "未完成事项",
+      "row": 5
+    },
+    {
+      "tag": "（待补）",
+      "name": "",
+      "content": "联系仪表车间确认 TT-1308 复校时间",
+      "state": "未判定",
+      "owner": "（待补）",
+      "due": null,
+      "dueText": "（待补）",
+      "source": "常减压车间 值班交接",
+      "originShift": "2026-09-20 值班交接",
+      "carried": false,
+      "carryTimes": 0,
+      "sheet": "未完成事项",
+      "row": 6
+    }
+  ],
+  "focusItems": [
+    {
+      "tag": "K-1501",
+      "content": "循环氢压缩机油温偏高，已报工程师"
+    }
+  ],
+  "carriedOver": [],
+  "prevClosed": [],
+  "warnings": []
+}

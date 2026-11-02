@@ -1,0 +1,62 @@
+{
+  "meta": {
+    "workshop": "常减压车间",
+    "date": "2026-09-21",
+    "skill": "leak-point-tracker"
+  },
+  "counts": {
+    "records": 12,
+    "leaks": 3,
+    "newLeaks": 1,
+    "open": 2,
+    "overdue": 1,
+    "repaired": 1,
+    "undetermined": 0,
+    "noLeak": 9
+  },
+  "metrics": {
+    "repairRate": 33.3,
+    "avgRepairDays": 10
+  },
+  "newLeaks": [
+    {
+      "no": "LD-0901",
+      "tag": "P-1101B",
+      "comp": "机封"
+    }
+  ],
+  "open": [
+    {
+      "no": "LD-0901",
+      "tag": "P-1101B",
+      "comp": "机封",
+      "owner": "检修一队",
+      "statusCn": "未修复"
+    },
+    {
+      "no": "LD-0875",
+      "tag": "E-1201",
+      "comp": "法兰",
+      "owner": "检修二队",
+      "statusCn": "未修复"
+    }
+  ],
+  "overdue": [
+    {
+      "no": "LD-0875",
+      "tag": "E-1201",
+      "comp": "法兰",
+      "owner": "检修二队",
+      "statusCn": "未修复",
+      "finalOverdueDays": 3
+    }
+  ],
+  "repaired": [
+    {
+      "no": "LD-0860",
+      "tag": "V-1301",
+      "comp": "阀门填料"
+    }
+  ],
+  "undetermined": []
+}

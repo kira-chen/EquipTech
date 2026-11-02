@@ -5,7 +5,7 @@
 
 ## 项目背景
 
-EquipTech 是面向炼化厂车间（运行部）设备员的技能包，同时适配 WorkBuddy 和豆包办公，包含 `skill-pack/设备员skill/` 的 50 个技能和 `skill-pack/【炼化】*/` 的 6 个技能。技能由 SKILL.md、Node.js 脚本、references、assets 组成，数字和判定由脚本算出，模型只做解读与成文。
+EquipTech 是面向炼化厂车间（运行部）设备员的技能包，同时适配 WorkBuddy 和豆包办公，包含 `炼厂车间设备员/设备员skill/` 的 50 个技能和 `skill-pack-local/【炼化】*/` 的 6 个技能。技能由 SKILL.md、Node.js 脚本、references、assets 组成，数字和判定由脚本算出，模型只做解读与成文。
 
 ## 职责范围
 
@@ -25,7 +25,7 @@ EquipTech 是面向炼化厂车间（运行部）设备员的技能包，同时�
 
 ## 产出规范
 
-- SKILL.md 放在各技能目录，格式遵守 `skill-pack/技能工程规范.md`
+- SKILL.md 放在各技能目录，格式遵守 `skill-pack-local/技能工程规范.md`
 - 中文撰写，技术术语保留原文
 
 ## 约束

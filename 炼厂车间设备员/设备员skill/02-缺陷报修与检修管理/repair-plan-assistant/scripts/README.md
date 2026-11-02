@@ -1,0 +1,118 @@
+# scripts 使用说明
+
+## plan.js —— 主脚本
+
+```bash
+node "<技能目录>/scripts/plan.js" \
+  --equip-type "<设备类型>" \
+  --tag "<位号>" \
+  --scope "<检修内容>" \
+  --out "<输出目录>"
+```
+
+### 参数
+
+| 参数 | 必需 | 说明 |
+|---|---|---|
+| `--equip-type` | 是 | 设备类型；不在覆盖范围（泵类/机组类/静设备/阀门/电气/加热炉/空冷器/仪表回路）时**只出通用框架并 warning** |
+| `--tag` | 是 | 设备位号（功能位置） |
+| `--scope` | 是 | 检修内容；含「解体/拆检/抽芯/开盖/大检修/炉管更换/拆表」等词判为解体，含「外观检查/不拆/紧固」等判为非解体，**都不含时按未判定** |
+| `--out` | 否 | 输出目录，默认系统临时目录 `<os.tmpdir()>/rpa-out`，**建议始终传 `--out`** |
+| `--spec` | 否 | 厂内规程或设备说明书（`.md`/`.txt`/`.docx`）；**不提供时全部具体数值标「待查规程确认」**。`.pdf` 直接报错：请先用平台 pdf 技能转为 txt/docx（扫描件需 OCR） |
+| `--model` | 否 | 规格型号 |
+| `--duration` | 否 | 计划工期（天）；不提供显示「—」，**不按经验估算**；非正数报错 |
+| `--start` | 否 | 计划开工日期 YYYY-MM-DD，非法时报错；与 `--duration` 同时给出才推算完工日期 |
+| `--last` | 否 | 上次检修记录说明 |
+| `--name` | 否 | 设备名称（`--equip-type` 判不出类型时作为兜底依据） |
+| `--workshop` | 否 | 所属车间 |
+| `--level` | 否 | 检修分级：`大检修`（停工检修）/ `日常维修` / `抢修` / `专项`（技改技措）；旧口径 `大修`→大检修、`中修`/`小修`→日常维修，自动归并并 warning；不给则从 `--scope` 识别，识别不出留「—」 |
+| `--dismantle` | 否 | 是/否，显式指定是否解体，优先于 `--scope` 文本判定；无法识别时 warning 并回落文本判定 |
+
+### 产出
+
+| 文件 | 内容 |
+|---|---|
+| `plan.json` | `meta`（含两行声明）、`hse`（JSA/风险分析、八大类作业许可、双监护、HSE 措施占位）、`counts`、`steps`、`undetermined`、`tools`、`spares`、`qcPoints`、`acceptance`、`toBeConfirmed`、`conflicts`、`warnings` |
+| `plan.md` | 八节方案：检修概况 / 范围内容 / JSA·风险分析与 HSE 措施（占位）/ 施工准备 / 作业步骤 / 质量控制点 / 验收标准 / 待确认事项；提示用「【注意】」「【未判定】」 |
+| `summary.json` | 末行摘要落盘（Windows 控制台乱码兜底） |
+
+`plan.json` 关键字段：
+
+- `steps[].valueSource`：`spec`（引用规程原文，带 `valueCitation`）/ `tbc`（待查规程确认）/ `none`（无数值要求）。**没有第四种来源。**
+- `steps[].status`：`normal` / `undetermined`（判定依据缺失，`missing` 注明缺哪个）
+- `qcPoints[].hold`：是否停工待检点；`standardSource` 同 `valueSource` 口径
+- `acceptance[].criterionSource`：同上；供下游 `completion-acceptance` 三级验收比对
+- `hse.permits[]`：八大类作业许可，`involved` 为「可能涉及（待确认）」或「待确认」，`level` 恒为「以作业票为准，本方案不自判级别」；`hse.jsa.riskLevel` 恒为待填，**脚本不判风险等级**
+- `toBeConfirmed[]`：每一处无出处数值，含 `where`（所在内容）、`reason`、`action`
+- `conflicts[]`：规程内同类数值互相矛盾处，含两侧 `quote` 与 `line`、`general`（是否通用口径表述）
+
+### 退出码
+- `0`：成功，末行 `{"ok":true,...}`
+- `1`：失败，末行 `{"ok":false,"error":"...","warnings":[...]}`
+
+### 硬约束
+
+1. **具体数值只引用 `--spec` 原文并注明文件名 + 行号；无出处一律「待查规程确认」并进 `toBeConfirmed`。脚本代码里不存任何凭经验的力矩、间隙、公差、试压值、对中偏差、校验精度、炉管限值。** 这是本技能的命脉。
+2. 设备类型不在覆盖范围 → 只出 G 系列通用框架 + warning，每条注「待技术人员补充」，**不生成任何专业拆装步骤**。
+3. 厂内规程与通用口径冲突 → **一律以厂内规程为准**，冲突点列入 `conflicts` 供确认，未确认前不得任选其一。
+4. 判定依据缺失（如是否解体说不清）→ 步骤 `status: "undetermined"` 并单列，**绝不按「不需要」删除**。
+5. 两行声明（通用声明行 + 「本方案为辅助生成的初稿……方可实施」）写入 md 开头与结尾，不得删改。
+6. 安全措施章节提示接 `overhaul-process-check-bridge`，作业票接 `permit-precheck-bridge`；JSA/风险分析与 HSE 措施只给占位，**作业级别与风险等级不自判**。
+7. 规程引用为**关键词定位 + 逐字摘录**，脚本不做换算、取整或归纳；引用条款是否对应该步骤的具体部位须由技术人员核对（md 与 warning 中均有提示）。
+
+### 厂内规程的格式要求
+
+`--spec` 支持 `.md` / `.txt` / `.docx`。脚本按数值类型关键词逐行匹配，**只采纳同时含关键词与数字的行**：
+
+| 数值类型 | 关键词（节选） |
+|---|---|
+| 紧固力矩 | 力矩、扭矩、N·m |
+| 配合间隙 | 间隙、游隙、窜量 |
+| 公差与跳动 | 公差、跳动、圆度、同轴度 |
+| 试压/严密性压力 | 试压、水压试验、气密、严密性、试验压力 |
+| 对中偏差 | 对中、找正、同心度、联轴器偏差 |
+| 电气试验值 | 绝缘电阻、兆欧、耐压、直流电阻、吸收比 |
+| 振动与温升限值 | 振动、烈度、温升、轴承温度 |
+| 动平衡等级 | 动平衡、平衡等级、剩余不平衡 |
+| 校验精度/误差 | 精度、示值误差、基本误差、回差、允差、准确度等级 |
+| 炉管/壁厚/温度限值 | 壁温、炉管、炉膛、蠕变、胀粗、氧含量、排烟温度 |
+
+规程写成「XX 不大于 0.05 mm」这样**一行一条**最容易被正确引用。条款跨行或数值在表格里时可能匹配不到，此时脚本标「待查规程确认」而不是猜——这是有意为之。
+
+## lib/rules.js —— 作业步骤规则引擎
+
+可单独 require 做单元测试：
+
+```js
+const R = require('./lib/rules');
+R.classifyEquip('离心泵', '');        // 'pump'
+R.classifyEquip('管式加热炉', '');     // 'furnace'
+R.classifyEquip('气动调节阀', '');     // 'instrument'（调节阀归仪表回路，安全阀仍归 valve）
+R.classifyEquip('离心机', '');         // 'generic'（覆盖范围外）
+R.COVERED;                            // ['instrument','pump','rotating','furnace','aircooler','static','valve','electrical']
+R.classifyLevel('', '小修');           // 'routine'（旧口径别名 → 日常维修）
+R.LEVEL_CN.overhaul;                  // '大检修（停工检修）'
+R.isDismantle('例行处理');            // null（说不清，不默认不解体）
+R.buildHse({equip:'static', dismantle:true});  // JSA/八大类许可/双监护/HSE 占位
+R.matchSpec(specLines, 'torque');     // {quote, line} | null
+R.buildPlan({equip, dismantle, level, specLines, specName});
+```
+
+步骤号口径：G（通用，含 G11 JSA/HSE）、PU（泵）、RO（机组）、ST（静设备）、VA（阀门）、EL（电气）、FU（加热炉）、AC（空冷器）、IN（仪表回路），对照 `references/procedure-*.md` 复核。
+
+## make-sample.js —— 样例生成
+
+```bash
+node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
+```
+
+生成 5 份样例：完整版泵规程（md + docx，含四类数值与 1 处对中冲突）、只含力矩的部分规程、加热炉规程（炉管壁厚/胀粗、力矩、试压）、场景对照表（7 个场景）。
+seed 改变规程中的数值与编制人，但不改变结论。**样例规程中的数值均为虚构演示值，不得用于任何真实设备。**
+
+## selftest.js —— 自测
+
+```bash
+node scripts/selftest.js
+```
+
+285 条断言，覆盖：设备类型归类与八类覆盖范围、三态与解体判定、检修分级（新口径与旧口径别名）、**数值只引用规程**、覆盖范围外只出通用框架、规程冲突以厂内为准、未判定不默认、声明行、安全措施提示、质控点与验收标准、八类设备分型覆盖、步骤结构与阶段顺序、参数校验（含 PDF 前置提示）、docx 规程解析、产出结构（八节）、JSA/HSE 占位与八大类用火/盲板抽堵口径与双监护、加热炉/空冷器/仪表回路专项、examples 样例。全绿退出 0。
