@@ -1,0 +1,65 @@
+# ===== 密钥与本地配置（严禁入库）=====
+**/application-local.yml
+**/application-local.yaml
+**/application-local.properties
+*.local.env
+.env
+.env.*
+secrets/
+*.key
+*.pem
+
+# ===== 数据库备份 / 数据导出（严禁入库；Flyway 迁移在 db/migration/ 下按路径显式放行）=====
+*.sql.gz
+*.sql.zip
+*.dump
+backups/
+deploy/backups/
+# 仓库任意位置的备份形态 sql（迁移与测试 schema 按目录放行）
+pg_backup*.sql
+*backup*.sql
+
+# ===== 后端（Maven / Spring Boot）=====
+backend/target/
+target/
+*.class
+
+# ===== 前端（Node / Vite）=====
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+
+# ===== Python 通用（如引入容器内工具）=====
+**/__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# ===== IDE / 系统 =====
+.idea/
+.vscode/*
+!.vscode/settings.json
+.DS_Store
+
+# ===== 运行时产物（严禁入库：运行落盘可能含业务数据）=====
+/artifacts/
+backend/artifacts/
+backend/data/
+logs/
+deploy/logs/
+*.log
+*.pid
+temp/
+
+# ===== 测试过程产物 =====
+frontend/test-results/
+frontend/playwright-report/
+frontend/e2e/screenshots/
+docs/test/
+trash/
+
+# ===== Claude 本机个性化与记忆（不入协同仓）=====
+.claude/settings.local.json
+.claude/memory/

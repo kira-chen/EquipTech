@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Agent",
+      "Task",
+      "TodoWrite",
+      "Edit(//Users/calvin/Documents/Coding/RuntimeConfig/**)",
+      "Write(//Users/calvin/Documents/Coding/RuntimeConfig/**)",
+      "Read(//Users/calvin/Documents/Coding/RuntimeConfig/**)",
+      "Read(//tmp/**)",
+      "Read(//private/tmp/**)",
+      "Bash(*)"
+    ],
+    "ask": [
+      "Bash(rm:*)",
+      "Bash(rmdir:*)",
+      "Bash(unlink:*)",
+      "Bash(git rm:*)"
+    ],
+    "deny": [
+      "Bash(git push:*)"
+    ]
+  }
+}
