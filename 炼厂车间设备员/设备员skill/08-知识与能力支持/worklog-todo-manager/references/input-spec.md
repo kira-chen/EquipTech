@@ -22,9 +22,9 @@
 | hazard-closure-tracker | `hazard.json` | `majorHazards` 或 `unverified` | `overdue[]`（超期未整改）、`dueSoon[]`（临期）、`unverified[]`（已整改未验收，待销号） |
 | special-equipment-inspection-due | `inspection.json` | `dateConflict`，或 `byCategory` + `prepMaterials` | `overdue[]`（定检超期）、`dueSoon[]`（定检临期） |
 | valve-instrument-calibration-ledger | `calibration.json` | `unresolvedFail` 或 `sendList` | `overdue[]`（超期未校）、`dueSoon[]`（临期）、`unresolvedFail[]`（不合格未整改） |
-| lubrication-manager | `lube.json` | `oilAnalysis` 或 `consumption` | `overdue[]`（润滑逾期）、`dueSoon[]`（润滑临期） |
-| defect-intake-grading | `defects.json` | `defects` + `counts.byLevel` | `defects[]` 全部条目，到期日取各条的 `dueDate`；等级按 A/B/C，旧 I~IV 映射并 warning |
-| shift-handover-record | `handover.json` | **约定：`meta.skill === 'shift-handover-record'` 且 `pending` 为数组**；无 `meta.skill` 的旧版按「`pending` 数组 + `meta.handoverAt`/`meta.shift` + `focusItems`」推断并 warning | `pending[]`（交接未完成事项，含其自身结转项）：`tag`、`content`、`state`、`owner`、`due`/`dueText`、`originShift`、`carryTimes`、`sheet`/`row`；`focusItems[]` 不作待办 |
+| lubrication-manager | `lube.json` | `oilAnalysis` 或 `consumption` | `overdue[]`（润滑逾期）、`dueSoon[]`（润滑临期）；责任人取 `owner` |
+| defect-intake-grading | `defects.json` | `defects` + `counts.byLevel` | `defects[]` 全部条目，到期日取各条的 `dueDate`；等级按 A/B/C，旧 I~IV 映射并 warning；`notification`（通知单草稿对象：`typeCn` / `shortText`，无通知单号，号由 SAP 生成）写入说明，兼容旧结构的 `notificationNo` 字符串 |
+| shift-handover-record | `handover.json` | **约定：`meta.skill === 'shift-handover-record'` 且 `pending` 为数组**；无 `meta.skill` 的旧版按「`pending` 数组 + `meta.handoverAt`/`meta.shift` + `focusItems`」推断并 warning | `pending[]`（交接未完成事项，含其自身结转项）：`tag`、`content`、`state`、`owner`、`due`/`dueText`、`originShift`、`carryTimes`、`sheet`/`row`；位号/责任人/期限的占位「待明确」（旧版「（待补）」）不当作位号、姓名或日期；`focusItems[]` 不作待办 |
 
 ### 各来源的到期日取值
 
@@ -57,7 +57,7 @@
 | 优先级 | 否 | 见下方「优先级取值」；无法归类时按 P3 中 |
 | 位号 | 否 | 填写后参与疑似重复判定 |
 | 责任人 | 否 | |
-| 状态 | 否 | 含「已完成 / 已闭环 / 已关闭」的行不进待办 |
+| 状态 | 否 | 见下方「状态取值」：已关闭（CLSD / NOCO）、已完成的行不进待办；TECO（技术完成待验收）仍是待办 |
 | 备注 | 否 | |
 
 ### 列名别名
@@ -91,6 +91,19 @@
 
 用户表里写明的优先级**优先于脚本按来源推的优先级**；无法归类的写法按 P3 中且 `prioFromUser: false`，不猜测。旧 I~IV 四级口径已废止，脚本按 I→A、II→B、III/IV→C 映射并 warning 具体到行。
 
+### 状态取值
+
+状态归一复用 `common.js` 的 `normSapStatus`，口径同中石化口径对照（工单与通知单状态映射）：
+
+| 状态写法 | 归一 | 是否进待办 |
+|---|---|---|
+| 空，或以 未 / 待 / 不 / 非 开头（未完成、待验收、未关闭 …） | — | 进 |
+| CLSD、NOCO、已关闭、关闭、已闭环、已验收、已消缺 | 已闭环 | 不进（不 warning） |
+| 已完成、完成（本人登记的已办结） | — | 不进（不 warning） |
+| **TECO、CNF、技术完成、完工待验、已完工** | 待验收 | **进** —— 技术完成不是关闭，还要设备员组织验收 |
+| CRTD、OSNO、REL、NOPR、PCNF、已下达、施工中 … | 待审核 / 已派工 / 施工中 | 进 |
+| DLFL、LKD、已删除、取消、作废 | 已取消 | 不进，warning 具体到行 |
+
 ## 三、纯文字待办（.txt / .md）
 
 - 每行一条；`- ` `* ` `• ` `1. ` 等列表符号会被剥掉
@@ -112,6 +125,10 @@
 - 结转项追加 `carried: true`、`carriedFrom`（首次结转的日期，多次结转保留最早的那天）、`carriedRounds`（已结转次数）、`originalDueDate`、`originalSource`
 - 若本日来源中同一事项再次出现（key 相同），**不重复列**，把结转标记合并到本日那条上
 
+**key 口径**：`key` = 类型 + 单号 + 位号（`<类型>|<单号>|<位号>`，如 `orders|WO-26090012|P-1101B`）；无单号时退回稳定的事项主体（`<类型>||<位号>|<主体指纹>`：润滑取部位，隐患/缺陷取描述，交接取事项内容，待办表/文字待办取事项文字）。key **不含子类与标题**，停滞天数变化、临期转超期、隐患由超期转待验收、交接状态变化都不改变 key，次日重跑上游不会出重复条目。单号取：工单号、隐患编号、特种设备注册代码、校验证书号、待办表「编号」列；缺陷登记号由 defect-intake-grading 按运行当日生成、次日重跑会变，不作单号（有真实通知单号时用通知单号）。校验「不合格未整改」与「超期/临期」是两件事，类型写作 `calibration:fail`。同一次运行内撞 key（如同一工单既超期又停滞）时，后出现的一条追加 `#<子类>`（如 `orders|WO-26090102|K-1201#stalled`）。
+
+**旧版 key 兼容**：升级前产出的 `todo.json`（旧 key 形如 `类型|子类|单号或位号|标题前 24 字`）仍可作 `--prev`：有单号的按「类型 + 单号 + 位号」对上本日条目，无单号的按旧 key 原值或「类型 + 位号 + 事项主体」一对一匹配，升级后第一次运行也不出重复；对不上的照旧结转，写出的 key 一律为新格式。
+
 文件不存在或 JSON 解析失败 → 报错退出（不静默跳过，避免无声丢失结转）。
 
 ## 六、`--done`
@@ -124,4 +141,5 @@
 - 全空行
 - 首列以 合计 / 小计 / 总计 / 共计 / 总数 开头的行（warning 提示）
 - 事项为空的行（warning 提示）
-- 状态标记为已完成 / 已闭环 / 已关闭的行（不 warning，属正常过滤）
+- 状态为已完成 / 已闭环 / 已关闭 / CLSD / NOCO 的行（不 warning，属正常过滤）
+- 状态为已取消（DLFL / LKD / 已删除 / 取消 / 作废）的行（warning 提示，不静默跳过）

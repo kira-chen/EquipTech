@@ -34,17 +34,17 @@ metadata:
    ```
    读取末行 JSON：`available` 为 `true` 才能继续；`root`/`script`/`docx2text` 给出依赖技能路径。`available:false` → 告知用户并终止。
 2. **补全车间侧前置信息** —— 按 `references/intake-questions.md` 核对方案之外的车间信息：设备交出条件是否具备（可接 `equipment-handover-check`）、同期是否有交叉作业（可接 `cross-operation-conflict`）、承包商资质（可接 `contractor-qualification-check`）、备件与工机具是否到位（车间自查）。整理成 `notes.json`（格式见 `references/input-spec.md`），**状态只认 已核实 / 未核实 / 不适用，不得替用户推测**。**这些信息不进入规则判定。**
-3. **调用 overhaul-safety-check** —— 按其 SKILL.md 的操作步骤执行：docx → `docx2text.js` 转文本 → 抽取 `plan.json` 并向用户复述确认（作业项与类型标签、工期、承修单位、哪些措施为 null）→ `check.js` 生成 `result.json`。**不得改写 result.json 中任何规则命中项、缺失项或结论。**
+3. **调用 overhaul-safety-check** —— 按其 SKILL.md 的操作步骤执行：docx → `docx2text.js` 转文本 → 抽取 `plan.json` 并向用户复述确认（作业项与类型标签、工期、承修单位、哪些措施为 null）→ `check.js` 生成 `result.json`。**不得改写 result.json 中任何规则命中项、缺失项或结论。** 交给 `check.js` 的 `plan.json` 留着，下一步用 `--plan` 传入（源技能 result.json 不含方案编号与作业类型）。
 4. **合并转达** —— 运行：
    ```bash
-   node "<技能目录绝对路径>/scripts/merge-report.js" --result "<源技能输出目录>/result.json" --notes "<notes.json>" --object "<方案名称>" --repair-type <大检修|日常维修|抢修|专项> --out "<工作目录>/方案核查"
+   node "<技能目录绝对路径>/scripts/merge-report.js" --result "<源技能输出目录>/result.json" --plan "<plan.json>" --notes "<notes.json>" --object "<方案名称>" --repair-type <大检修|日常维修|抢修|专项> --out "<工作目录>/方案核查"
    ```
-   读取末行 JSON 摘要（同时写入 `<out>/summary.json`）：`ok` 必须为 `true`；`warnings` 非空时逐条告知用户（源 summary 与 findings 计数不一致 / 未知级别 / 车间侧状态不合法 / 旧检修分级映射等）。脚本把 findings（含 `name`、`advice`"方案里怎么补"、`jobs` 触发作业）逐条深拷贝转达，重新计数但不改源数据；车间侧提示单独成节"车间侧补充提示（非规则判定）"。
+   读取末行 JSON 摘要（同时写入 `<out>/summary.json`）：`ok` 必须为 `true`；`warnings` 非空时逐条告知用户（源 summary 与 findings 计数不一致 / 未知级别 / 车间侧状态不合法 / 旧检修分级映射等）。脚本把 findings（含 `name`、`advice`"方案里怎么补"、`jobs` 触发作业）逐条深拷贝转达，重新计数但不改源数据；车间侧提示单独成节"车间侧补充提示（非规则判定）"。方案编号（`plan_no`）与作业类型标签从 `--plan` 读取，只进抬头字段表，不进入判定；不传 `--plan` 时这两项留空并 warning。
 5. **撰写车间侧说明并交付** —— 读取 `overhaul-check-bridge.md`，只在 `<!-- ANALYSIS_START -->` / `<!-- ANALYSIS_END -->` 之间补充：调用了哪个技能、缺失与未判定项数量、车间提示项、下一步整改重点；**不得复述或改写判定结论，不得审查方案技术内容**。对照 `references/checklist.md` 自检后交付合并报告与源技能原始 `result.json`。**必须保留源技能的全部声明行，并保留本技能声明："核查为辅助自查，不替代技术负责人审核与安全部门审批；方案是否批准以审批人意见为准。"**
 
 ## 预期结果
 - `overhaul-check-bridge.md`：合并报告，六节 + 附：一、核查结论（引自 overhaul-safety-check，含源技能字段表与作业类型标签加注）；二、措施缺失项（缺失 / 建议完善，逐条原文含"方案里怎么补"）；三、未判定项；四、已有措施；五、车间侧补充提示（非规则判定）；六、整改建议（末尾提示各专项措施以作业票为准）；附：源技能抽取说明、数据提示（有时）。末尾依次为源技能声明行与本技能声明行，再接分析段占位。
-- `bridge.json`：`meta`（源技能、对象、检修分级、声明行）、`sourceSummary`、`sourceMeta`（方案编号 / 装置 / 项目 / 承修单位 / 工期 / 作业项数 / 作业类型标签）、`counts`（按 findings 重新计数）、`findings`（逐条深拷贝）、`workshopNotes`、`skipped`、`extractionNotes`、`warnings`；`summary.json`：脚本末行摘要；`dependency.json`：依赖检查结果。
+- `bridge.json`：`meta`（源技能、对象、检修分级、声明行）、`sourceSummary`、`sourceMeta`（方案编号与作业类型标签取自 plan.json；装置 / 项目 / 承修单位 / 工期 / 作业项数取自 result.json）、`counts`（按 findings 重新计数）、`findings`（逐条深拷贝）、`workshopNotes`、`skipped`、`extractionNotes`、`warnings`；`summary.json`：脚本末行摘要；`dependency.json`：依赖检查结果。
 - 源技能产出的原始 `result.json` 一并交付，供复核。
 - 交付时向用户说明：调用了哪个技能、缺失 / 建议完善 / 未判定数量、车间侧提示项状态、下一步整改重点。
 
@@ -65,4 +65,4 @@ metadata:
 | `scripts/selftest.js` | 自测：依赖探测、源 JSON 逐条转达不改写、检修分级映射、车间侧状态校验等（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `assets/templates/bridge-template.md` | 合并报告模板（与 merge-report.js 产出结构一致） | 用户要求调整版式时 |
 | `references/sample-output.md` | 风格示范产出（内容均为虚构） | 拿不准报告风格时 |
-| `examples/` | 回归测试数据（虚构的源技能 result.json 与车间侧 notes.json；仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/` | 回归测试数据（虚构的检修方案 plan.json、依赖技能对它的真实 result.json 输出、车间侧 notes.json；仅开发包含有，发布包不含） | 目录不存在则跳过 |

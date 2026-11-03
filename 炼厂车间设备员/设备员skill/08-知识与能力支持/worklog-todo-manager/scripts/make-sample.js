@@ -122,12 +122,12 @@ const lube = {
   meta: { workshop: '常减压车间', date, leadDays: 7, generatedAt: C.localDateTime() },
   counts: { ledgerItems: 48, overdue: 1, dueSoon: 1, normal: 44, undetermined: 2 },
   overdue: [
-    { tag: 'P-1102A', name: '常压渣油泵A', part: '轴承箱', oil: 'L-TSA 46', mode: '油浴',
+    { tag: 'P-1102A', name: '常压渣油泵A', part: '轴承箱', oil: 'L-TSA 46', mode: '油浴', owner: '张工',
       periodRaw: '3个月', periodDays: 90, lastDate: D(-pick(100, 110)), dueDate: D(-pick(10, 20)),
       overdueDays: pick(10, 20), overdueRatio: 0.15, level: '轻微逾期', sheet: '润滑台账', row: 14 },
   ],
   dueSoon: [
-    { tag: 'P-1101A', name: '常压塔顶回流泵A', part: '轴承箱', oil: 'L-TSA 46', mode: '油浴',
+    { tag: 'P-1101A', name: '常压塔顶回流泵A', part: '轴承箱', oil: 'L-TSA 46', mode: '油浴', owner: '张工',
       periodRaw: '3个月', periodDays: 90, lastDate: D(-86), dueDate: D(4), remainDays: 4,
       sheet: '润滑台账', row: 6 },
   ],
@@ -138,20 +138,29 @@ const lube = {
 fs.writeFileSync(path.join(out, 'sample-lube.json'), JSON.stringify(lube, null, 2), 'utf8');
 
 // ---- 6. 缺陷登记 defects.json（1 有时限、1 未定级无时限；P-1101B 与工单 P-1101B 构成疑似重复）
+// 结构同 defect-intake-grading 真实产出：缺陷登记号按运行日生成，notification 为通知单草稿对象（无通知单号，号由 SAP 生成）
+const dno = (n) => `QX-${D(-1).replace(/-/g, '')}-${String(n).padStart(3, '0')}`;
 const defects = {
-  meta: { workshop: '常减压车间', generatedAt: C.localDateTime(), mode: 'batch' },
-  counts: { total: 2, byLevel: { 'B（较重）': 1, 未定级: 1 }, undetermined: 1, possibleDuplicate: 0 },
+  meta: { workshop: '常减压车间', generatedAt: C.localDateTime(), mode: 'batch', prefix: 'QX', gradingScheme: 'abc',
+    gradingSchemeName: 'A/B/C 三级（中石化炼化厂缺陷台账口径）', dueDays: { A: 1, B: 3, C: 7 } },
+  counts: { total: 2, byLevel: { 'A 级（重大）': 0, 'B 级（严重）': 1, 'C 级（一般）': 0, 未判定: 1 }, undetermined: 1, possibleDuplicate: 0, notificationDrafts: 1 },
   defects: [
-    { no: 'QX-26090015', tag: 'P-1101B', name: '常压塔顶回流泵B', part: '机封',
-      phenomenon: 'leak', phenomenonCn: '泄漏', desc: '机封滴漏约5滴/分', medium: '常压渣油',
-      affectsRun: false, foundAt: D(-6) + ' 08:20', by: '张班', level: 'B', levelCn: 'B（较重）',
-      basis: '泄漏且介质易燃', dueDays: 7, dueDate: D(1), discipline: '动设备', srcRow: 2 },
-    { no: 'QX-26090016', tag: 'M-1501', name: '加热炉鼓风机电机', part: '',
-      phenomenon: 'other', phenomenonCn: '其他', desc: '运行有异响，具体部位待查', medium: '',
-      affectsRun: null, foundAt: D(-2) + ' 10:20', by: '张班', level: 'undetermined', levelCn: '未定级',
-      basis: '是否影响运行未填写，无法定级', dueDays: null, dueDate: null, discipline: '电气', srcRow: 3 },
+    { no: dno(1), tag: 'P-1101B', name: '常压塔顶回流泵B', part: '机封', funcLoc: 'P-1101B', equipNo: '',
+      phenomenon: 'leak', phenomenonCn: '泄漏', desc: '机封滴漏约5滴/分', medium: '常压渣油', mediumHazard: 'flammable',
+      affectsRun: false, foundAt: D(-2) + ' 08:20', by: '张班', level: 'B', levelCn: 'B 级（严重）',
+      basis: '泄漏且介质易燃', ruleId: 'R03', scheme: 'abc', dueDays: 3, dueDate: D(1), discipline: '动设备',
+      notification: { type: 'M2', typeCn: 'M2 故障报告', sapPriority: 2, faultCode: '泄漏', shortText: 'P-1101B 机封 泄漏',
+        requiredStart: D(-2), requiredEnd: D(1) },
+      srcRow: 2 },
+    { no: dno(2), tag: 'M-1501', name: '加热炉鼓风机电机', part: '', funcLoc: 'M-1501', equipNo: '',
+      phenomenon: 'other', phenomenonCn: '其他', desc: '运行有异响，具体部位待查', medium: '', mediumHazard: null,
+      affectsRun: null, foundAt: D(-2) + ' 10:20', by: '张班', level: 'undetermined', levelCn: '未判定',
+      basis: '定级所需字段缺失：是否影响运行；补充后可定级', ruleId: 'U1', scheme: 'abc', dueDays: null, dueDate: null, discipline: '电气',
+      notification: { type: null, typeCn: null, sapPriority: null, faultCode: '其他', shortText: 'M-1501 异响',
+        requiredStart: D(-2), requiredEnd: null },
+      srcRow: 3 },
   ],
-  undetermined: [{ no: 'QX-26090016', tag: 'M-1501', desc: '运行有异响，具体部位待查', missing: ['是否影响运行'], note: '无法定级' }],
+  undetermined: [{ no: dno(2), tag: 'M-1501', desc: '运行有异响，具体部位待查', missing: ['是否影响运行'], note: '定级所需字段缺失：是否影响运行；补充后可定级' }],
   possibleDuplicate: [], warnings: [],
 };
 fs.writeFileSync(path.join(out, 'sample-defects.json'), JSON.stringify(defects, null, 2), 'utf8');
@@ -190,8 +199,9 @@ const handover = {
       due: D(-pick(2, 4)), dueText: D(-pick(2, 4)), source: '常减压车间 值班交接', originShift: D(-1) + ' 值班交接', carried: false, carryTimes: 0, sheet: '未完成事项', row: 4 },
     { tag: 'E-1201', name: '原油换热器', content: '法兰复紧后观察 24 小时无渗漏再关闭通知单', state: '未完成', owner: '张设备',
       due: D(2), dueText: D(2), source: '常减压车间 值班交接', originShift: D(-3) + ' 值班交接', carried: true, carryTimes: 2, sheet: '未完成事项', row: 5 },
-    { tag: '（待补）', name: '', content: '联系仪表车间确认 TT-1308 复校时间', state: '未判定', owner: '（待补）',
-      due: null, dueText: '（待补）', source: '常减压车间 值班交接', originShift: D(-1) + ' 值班交接', carried: false, carryTimes: 0, sheet: '未完成事项', row: 6 },
+    // 交接记录缺位号/责任人/期限时写占位「待明确」（shift-handover-record 真实产出口径）
+    { tag: '待明确', name: null, content: '联系仪表车间确认 TT-1308 复校时间', state: '观察中', stateDetermined: false, owner: '待明确', ownerMissing: true,
+      due: null, dueText: '待明确', dueMissing: true, source: '常减压车间 值班交接', originShift: D(-1) + ' 值班交接', carried: false, carryTimes: 0, sheet: '未完成事项', row: 6 },
   ],
   focusItems: [{ tag: 'K-1501', content: '循环氢压缩机油温偏高，已报工程师' }], carriedOver: [], prevClosed: [], warnings: [],
 };

@@ -213,7 +213,9 @@ function main() {
     for (const m of extra) { m.src = `厂内制度 · ${m.src}`; m.scopeLabel = '厂内制度'; }
     materials = materials.concat(extra);
   }
-  const matCats = materials.map((m) => S.fileCategories(`${m.name} ${m.declaredType}`));
+  // 归类：先读资料清单「资料类型」列，再读资料名称（含系统导出文件名别名），只认正面命中，见 compliance-spec.js materialCategories
+  for (const m of materials) m.cat = S.materialCategories(m.name, m.declaredType);
+  const matCats = materials.map((m) => m.cat.keys);
 
   // ---- 逐条款对照
   const items = [], hasEvidence = [], noEvidence = [], partialEvidence = [], needInterpretation = [];
@@ -320,6 +322,7 @@ function main() {
       name: m.name, location: m.location, declaredType: m.declaredType || null,
       completeness: m.completeness || null, incomplete: !!m.incomplete,
       scopeLabel: m.scopeLabel || '本车间资料', src: m.src,
+      categories: m.cat.keys, categoryFrom: m.cat.from,
     })),
     warnings,
   };

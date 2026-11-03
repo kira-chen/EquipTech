@@ -7,7 +7,7 @@
 | 1 | `hazard-closure-tracker` | 隐患整改跟踪 | 按等级跟踪整改时限、识别超期、统计闭环率 | 低 | 一 | ✅ 151 条断言 |
 | 2 | `failure-investigation-assistant` | 故障调查辅助 | 归集时间线与材料，搭建报告框架，分析章节留空 | 高 | 三 | ✅ 306 条断言 |
 | 3 | `failure-case-retrieval` | 故障案例检索 | 从案例库检索类似案例，标注匹配依据与差异点 | 中 | 三 | ✅ 166 条断言 |
-| 4 | `regulation-compliance-check` | 法规符合性自查 | 条款与现状对照，输出缺口清单 | 中 | 二 | ✅ 180 条断言 |
+| 4 | `regulation-compliance-check` | 法规符合性自查 | 条款与现状对照，输出缺口清单 | 中 | 二 | ✅ 200 条断言 |
 | 5 | `safety-environmental-device-check` | 安全环保设施状态检查 | 报警器、安全附件、联锁、消防、防爆等设施周期与状态，临期仍计完好 | 低 | 二 | ✅ 190 条断言 |
 
 ## 五条共同红线
@@ -19,4 +19,4 @@
 
 ## 实现状态
 
-本类 **5 / 5** 个技能已完整实现（Node 脚本 + selftest + references + examples），合计 **993** 条断言全绿。
+本类 **5 / 5** 个技能已完整实现（Node 脚本 + selftest + references + examples），合计 **1013** 条断言全绿。

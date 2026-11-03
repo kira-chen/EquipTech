@@ -1,0 +1,115 @@
+{
+  "plan_no": "JX-E1201-2026-87",
+  "unit": "常减压装置（原油换热器 E-1201）",
+  "project": "E-1201 抽管束清洗及法兰补焊检修方案",
+  "contractor": "检修公司第一工程部",
+  "duration_days": 7,
+  "jobs": [
+    {
+      "name": "E-1201 抽管束清洗",
+      "job_types": [],
+      "medium": "原油",
+      "location": "换热器框架"
+    },
+    {
+      "name": "E-1201 法兰补焊",
+      "job_types": [
+        "动火"
+      ],
+      "medium": "原油",
+      "location": "E-1201 管程进口法兰"
+    },
+    {
+      "name": "E-1201 进出口加盲板",
+      "job_types": [
+        "盲板抽堵"
+      ],
+      "medium": "原油",
+      "location": "E-1201 进出口"
+    },
+    {
+      "name": "检修临时电源接引",
+      "job_types": [
+        "临时用电"
+      ],
+      "medium": "无",
+      "location": "换热器框架"
+    },
+    {
+      "name": "空冷器管束顶部检查",
+      "job_types": null,
+      "medium": "原油",
+      "location": "空冷平台"
+    }
+  ],
+  "measures": {
+    "risk_identification": null,
+    "safety_briefing": "开工前班长安全交底并签字确认",
+    "emergency_plan": "执行现行《生产区域检维修应急处置预案》",
+    "emergency_drill": null,
+    "contractor_qualification": "承修单位资质证书、特种作业人员证件已报车间备案",
+    "contractor_agreement": "已与承修单位签订检修安全协议",
+    "contractor_training": "参检人员检修前进行专项安全教育",
+    "tool_inspection": "电焊机、捯链、行灯变压器使用前检查合格",
+    "cross_work_coordination": "补焊、盲板抽堵、临时用电由检修班长统一协调时序",
+    "safety_acceptance": "完工验收：盲板复位、现场清理，车间与属地共同签字",
+    "process_handover": "E-1201 切出、存油退净、蒸汽吹扫置换合格，办理设备交出确认",
+    "energy_isolation": "相关电机停电上锁挂牌「有人检修，禁止合闸」",
+    "waste_disposal": "废垫片、含油棉纱收集至危废桶交危废暂存间",
+    "fire_access": "现场不占用消防通道，框架消火栓畅通",
+    "phased_safety_check": null,
+    "toxic_protection": "拆法兰时佩戴防护面罩、耐油手套，现场配便携式硫化氢检测报警仪",
+    "restart_safety": "回装后配合工艺试压、确认法兰无泄漏后交付",
+    "hotwork_permit": "动火前办理用火作业许可证",
+    "combustible_cleanup": null,
+    "cylinder_distance": "氧气乙炔瓶间距不小于 5 米，距动火点不小于 10 米",
+    "fire_watch_equipment": "现场配干粉灭火器 2 具、蒸汽胶带 1 根",
+    "hotwork_gas_test": "每次动火前 30min 内做动火分析，合格方可动火",
+    "fire_watcher": "设专职监火人，动火全过程不离开现场",
+    "confined_permit": null,
+    "isolation_purge": null,
+    "ventilation": null,
+    "gas_test_plan": null,
+    "rescue_equipment": null,
+    "confined_guardian": null,
+    "scaffold_acceptance": null,
+    "fall_protection": null,
+    "weather_stop": null,
+    "highplace_permit": null,
+    "lifting_plan": null,
+    "lifting_permit": null,
+    "lifting_warning_zone": null,
+    "lifting_ground_check": null,
+    "power_distribution": "从框架检修电源箱接引，行灯 36V 安全电压",
+    "leakage_protector": "装设漏电保护器并试验合格",
+    "electrician_cert": "接拆线由持低压电工证的维修电工负责",
+    "temp_power_permit": "作业前办理临时用电安全作业票",
+    "blind_plate_map": null,
+    "blind_plate_list": "建立盲板台账逐块销号",
+    "blind_plate_permit": "办理盲板抽堵安全作业票",
+    "excavation_permit": null,
+    "underground_check": null,
+    "pressure_seal_approval": null,
+    "pressure_seal_qualified": null,
+    "radiation_protection": null,
+    "radiation_schedule": null,
+    "chemical_disposal": null,
+    "chemical_ppe": null,
+    "chemical_emergency_flush": null,
+    "spark_containment": null
+  },
+  "org": {
+    "site_manager": "李某（检修公司项目负责人）",
+    "safety_officer": "刘某（车间安全员）",
+    "emergency_contact": null
+  },
+  "attachments": {
+    "risk_assessment_doc": null,
+    "site_layout": null,
+    "emergency_plan_doc": "附件：《生产区域检维修应急处置预案》（引用现行版本）"
+  },
+  "extraction_notes": [
+    "jobs[4].job_types：方案「空冷器管束顶部检查」未写作业类型 → 填 null",
+    "measures.risk_identification：方案无风险分析章节 → 填 null"
+  ]
+}

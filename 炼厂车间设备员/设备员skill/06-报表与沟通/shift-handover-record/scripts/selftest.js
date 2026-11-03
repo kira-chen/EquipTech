@@ -26,7 +26,7 @@ function run(file, extra = [], tag, opt = {}) {
   const out = path.join(work, (tag || path.basename(file, '.xlsx')) + '-out');
   const args = [HO, '--input', file, '--workshop', opt.workshop || '测试车间', '--type', opt.type || '值班交接',
     ...(opt.shift ? ['--shift', opt.shift] : []), '--time', opt.time || TIME, '--by', opt.by || '张设备', '--out', out, ...extra];
-  const r = spawnSync(process.execPath, args, { encoding: 'utf8' });
+  const r = spawnSync(process.execPath, args, { encoding: 'utf8', env: opt.env ? { ...process.env, ...opt.env } : process.env });
   const lines = r.stdout.trim().split('\n');
   let summary;
   try { summary = JSON.parse(lines[lines.length - 1]); } catch (e) { summary = { ok: false, error: 'no-json:' + r.stdout + r.stderr }; }
@@ -324,6 +324,85 @@ eq(r.summary.counts.records, 1, '16.3 SAP 列名的记录可读');
 eq(r.ho.pending[0].tag, 'P-61', '16.4 功能位置归位号，「设备」流水号不作位号');
 eq(r.ho.pending[0].content, '机封漏', '16.5 通知单描述归内容');
 eq(r.ho.pending[0].due, `${D} 23:00`, '16.6 基本结束日期归要求完成时间');
+
+// ================================================================ 17. SAP 状态码归一（口径对照第四节：CLSD/NOCO 已闭环，TECO/CNF 待验收不算闭环）
+const sapSt = mk('sap-status.xlsx', {
+  '本次记录': [
+    HDR,
+    [`${D} 08:10`, 'P-71', '泵71', '异常处理', '机封渗漏', '已更换机封', 'CLSD', '张', ''],
+    [`${D} 08:20`, 'P-72', '泵72', '异常处理', '轴承异响', '已更换轴承', 'NOCO', '张', ''],
+    [`${D} 08:30`, 'P-73', '泵73', '异常处理', '出口法兰渗漏', '已紧固，待验收', 'TECO', '王检修', ''],
+    [`${D} 08:40`, 'P-74', '泵74', '异常处理', '振动偏高', '已报通知单', 'OSNO', '李', ''],
+    [`${D} 08:50`, 'P-75', '泵75', '异常处理', '冷却水管堵', '已派工', 'REL', '李', ''],
+    [`${D} 09:00`, 'P-76', '泵76', '异常处理', '油位计破损', '已更换', '技术完成', '李', ''],
+    [`${D} 09:10`, 'P-77', '泵77', '异常处理', '密封冲洗管漏', '已焊补', 'REL CNF', '李', ''],
+    [`${D} 09:20`, 'P-78', '泵78', '异常处理', '联轴器护罩松动', '已紧固', '已关闭', '李', ''],
+    [`${D} 09:30`, 'P-79', '泵79', '异常处理', '重复报的通知单', '', 'DLFL', '李', ''],
+    [`${D} 09:40`, 'P-80', '泵80', '异常处理', '压力表失灵', '已报仪表', 'CRTD', '赵', ''],
+  ],
+});
+r = run(sapSt, [], 'sap-status');
+eq(r.summary.ok, true, '17.1 SAP 状态码记录可运行');
+eq(r.summary.counts.statusUndetermined, 1, '17.2 SAP 状态码不再整体判「状态未判定」，仅 DLFL（已取消，需确认）1 条');
+eq(r.summary.counts.abnormalClosed, 3, '17.3 CLSD / NOCO / 已关闭 判已闭环（3 条）');
+const sp = (t) => r.ho.pending.find((y) => y.tag === t);
+ok(!sp('P-71') && !sp('P-72') && !sp('P-78'), '17.4 CLSD / NOCO / 已关闭 不进未完成事项');
+ok(!!sp('P-73') && sp('P-73').stateDetermined === true, '17.5 TECO（技术完成）不算闭环，进未完成事项且状态已判定');
+ok(/待验收/.test((sp('P-73') || {}).state || ''), '17.6 TECO 未完成事项注明「待验收」');
+ok(!!sp('P-76') && /待验收/.test(sp('P-76').state), '17.7 「技术完成」归待验收，不按已完成销账');
+ok(!!sp('P-74') && sp('P-74').stateDetermined === true, '17.8 OSNO（通知单未处理）判未完成');
+ok(!!sp('P-75') && sp('P-75').stateDetermined === true, '17.9 REL（已下达）判未完成');
+ok(!!sp('P-77') && /待验收/.test(sp('P-77').state), '17.10 多码组合「REL CNF」取最靠后的状态（待验收）');
+ok(!!sp('P-80') && sp('P-80').stateDetermined === true, '17.11 CRTD（已创建）判未完成');
+ok(!!sp('P-79') && sp('P-79').stateDetermined === false, '17.12 DLFL（删除标记）不默认销账，随本次交接并标状态未判定');
+ok(r.ho.statusUndetermined.some((y) => y.tag === 'P-79' && /已取消|删除标记/.test(y.reason)), '17.13 DLFL 未判定原因写明已取消/删除标记需确认');
+eq(r.summary.counts.pending, 7, '17.14 未完成事项 7 条（TECO/OSNO/REL/技术完成/REL CNF/CRTD + DLFL 待确认）');
+ok(!r.ho.warnings.some((w) => /「(CLSD|NOCO|TECO|OSNO|REL|CRTD)」无法判定/.test(w)), '17.15 SAP 状态码不再出「无法判定」warning');
+// 中文「已删除」（EAM 导出的 DLFL 中文写法）与 DLFL 同口径：列入待确认并写明已取消/删除，不销账、不按未完成
+const delSt = mk('deleted-status.xlsx', {
+  '本次记录': [
+    HDR,
+    [`${D} 09:30`, 'P-81', '泵81', '异常处理', '重复报的通知单', '', '已删除', '李', ''],
+    [`${D} 09:40`, 'P-82', '泵82', '异常处理', '误建工单', '', '删除', '李', ''],
+  ],
+});
+r = run(delSt, [], 'deleted-status');
+eq(r.summary.counts.statusUndetermined, 2, '17.17 「已删除」「删除」与 DLFL 同口径，列入状态未判定（待确认）');
+ok(r.ho.statusUndetermined.every((y) => /已取消/.test(y.reason)), '17.18 原因写明已取消/删除标记需确认，不是笼统的「无法判定」');
+ok(!r.ho.warnings.some((w) => /「(已删除|删除)」无法判定/.test(w)), '17.19 「已删除」不再出「无法判定」warning');
+// 原有中文状态口径不变
+r = run(base, [], 'sap-status-cn');
+eq(r.summary.counts.pending, 2, '17.16 中文「已完成 / 未完成」口径不变');
+
+// ================================================================ 18. 「要求完成时间已过」统一按北京时间（+08:00）解析，与主机时区无关
+const tz = mk('tz.xlsx', {
+  '本次记录': [
+    HDR,
+    // 交接时点 2026-09-22 08:00（北京时间）
+    [`${D} 20:00`, 'P-91', '泵91', '异常处理', '机封待更换', '已申请备件', '未完成', '张', '2026-09-22 07:30'],   // 已过 30 分钟
+    [`${D} 20:10`, 'P-92', '泵92', '异常处理', '振动复测', '已安排', '未完成', '张', '2026-09-22 10:00'],      // 未到
+  ],
+});
+for (const zone of ['UTC', 'Pacific/Kiritimati', 'America/Los_Angeles', 'Asia/Shanghai']) {
+  r = run(tz, [], `tz-${zone.replace(/\W/g, '')}`, { env: { TZ: zone } });
+  ok(r.ho.focusItems.some((f) => f.tag === 'P-91' && f.reason.includes('已超过交接时点')), `18.1 TZ=${zone}：北京时间 07:30 到期、08:00 交接判已超期`);
+  ok(!r.ho.focusItems.some((f) => f.tag === 'P-92'), `18.2 TZ=${zone}：北京时间 10:00 到期不误报超期`);
+}
+
+// ================================================================ 19. make-sample 主样例结论与 README 一致
+{
+  const msOut = path.join(work, 'ms');
+  const ms = spawnSync(process.execPath, [path.join(__dirname, 'make-sample.js'), '--out', msOut, '--seed', '3'], { encoding: 'utf8' });
+  eq(ms.status, 0, '19.1 make-sample 运行成功');
+  const mainS = path.join(msOut, 'sample-handover-2026-09-21.xlsx');
+  r = run(mainS, [], 'ms-main');
+  eq(r.summary.counts.pending, 5, '19.2 主样例（不带 --prev）未完成事项 5 项');
+  eq(r.summary.counts.statusChanges, 3, '19.3 主样例状态变化 3 项');
+  eq(r.summary.counts.abnormalHandled, 5, '19.4 主样例异常处理 5 项');
+  r = run(mainS, ['--prev', path.join(msOut, 'sample-prev-handover-2026-09-20.xlsx')], 'ms-main-prev');
+  eq(r.summary.counts.pending, 6, '19.5 主样例带上次交接 --prev 后未完成事项 6 项（含 1 项本次未处理结转）');
+  eq(r.summary.counts.carriedOver, 2, '19.6 带 --prev 结转 2 项');
+}
 
 // ================================================================ 输出
 console.log(`\n${'='.repeat(56)}`);

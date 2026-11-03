@@ -1,24 +1,157 @@
 {
+  "meta": {
+    "workshop": "常减压车间",
+    "date": "2026-09-21",
+    "from": null,
+    "rulesSource": "默认口径（references/hazard-rules.md）"
+  },
   "counts": {
     "total": 12,
-    "major": 2,
     "overdue": 3,
-    "closed": 3
+    "dueSoon": 1,
+    "inProgress": 2,
+    "closed": 3,
+    "unverified": 2,
+    "undetermined": 1,
+    "major": 2,
+    "conflicts": 0,
+    "fiveFixedIncomplete": 4,
+    "duplicateNo": 0
   },
   "metrics": {
-    "closeRate": 25
+    "closureRate": 25,
+    "avgClosureDays": 36.7,
+    "byLevel": {
+      "major": {
+        "total": 2,
+        "closed": 0,
+        "overdue": 1
+      },
+      "general": {
+        "total": 10,
+        "closed": 3,
+        "overdue": 2
+      }
+    }
   },
+  "overdue": [
+    {
+      "no": "YH-2026-001",
+      "desc": "常压塔平台栏杆多处锈蚀断裂，存在高处坠落风险",
+      "level": "major",
+      "levelCn": "重大隐患",
+      "owner": "张工",
+      "unit": "常减压车间",
+      "deadline": "2026-09-09",
+      "status": "doing",
+      "statusCn": "整改中",
+      "bucket": "overdue",
+      "bucketCn": "超期未整改"
+    },
+    {
+      "no": "YH-2026-005",
+      "desc": "换热器保温层破损，裸露管壁烫伤风险",
+      "level": "general",
+      "levelCn": "一般隐患",
+      "owner": "张工",
+      "unit": "常减压车间",
+      "deadline": "2026-09-15",
+      "status": "doing",
+      "statusCn": "整改中",
+      "bucket": "overdue",
+      "bucketCn": "超期未整改"
+    }
+  ],
+  "dueSoon": [],
+  "inProgress": [
+    {
+      "no": "YH-2026-002",
+      "desc": "可燃气体报警器 3 台失效未修复",
+      "level": "major",
+      "levelCn": "重大隐患",
+      "owner": "张工",
+      "unit": "常减压车间",
+      "deadline": "2026-10-15",
+      "status": "doing",
+      "statusCn": "整改中",
+      "bucket": "inProgress",
+      "bucketCn": "整改中"
+    }
+  ],
+  "closed": [],
+  "unverified": [],
   "majorHazards": [
     {
       "no": "YH-2026-001",
-      "desc": "常压塔平台栏杆多处锈蚀断裂，存在高处坠落风险"
+      "desc": "常压塔平台栏杆多处锈蚀断裂，存在高处坠落风险",
+      "level": "major",
+      "levelCn": "重大隐患",
+      "owner": "张工",
+      "unit": "常减压车间",
+      "deadline": "2026-09-09",
+      "status": "doing",
+      "statusCn": "整改中",
+      "bucket": "overdue",
+      "bucketCn": "超期未整改"
     },
     {
       "no": "YH-2026-002",
-      "desc": "可燃气体报警器 3 台失效未修复"
+      "desc": "可燃气体报警器 3 台失效未修复",
+      "level": "major",
+      "levelCn": "重大隐患",
+      "owner": "张工",
+      "unit": "常减压车间",
+      "deadline": "2026-10-15",
+      "status": "doing",
+      "statusCn": "整改中",
+      "bucket": "inProgress",
+      "bucketCn": "整改中"
     }
   ],
-  "overdue": [],
-  "dueSoon": [],
-  "unverified": []
+  "undetermined": [],
+  "conflicts": [],
+  "fiveFixedIncomplete": [],
+  "trend": null,
+  "items": [
+    {
+      "no": "YH-2026-001",
+      "desc": "常压塔平台栏杆多处锈蚀断裂，存在高处坠落风险",
+      "level": "major",
+      "levelCn": "重大隐患",
+      "owner": "张工",
+      "unit": "常减压车间",
+      "deadline": "2026-09-09",
+      "status": "doing",
+      "statusCn": "整改中",
+      "bucket": "overdue",
+      "bucketCn": "超期未整改"
+    },
+    {
+      "no": "YH-2026-002",
+      "desc": "可燃气体报警器 3 台失效未修复",
+      "level": "major",
+      "levelCn": "重大隐患",
+      "owner": "张工",
+      "unit": "常减压车间",
+      "deadline": "2026-10-15",
+      "status": "doing",
+      "statusCn": "整改中",
+      "bucket": "inProgress",
+      "bucketCn": "整改中"
+    },
+    {
+      "no": "YH-2026-005",
+      "desc": "换热器保温层破损，裸露管壁烫伤风险",
+      "level": "general",
+      "levelCn": "一般隐患",
+      "owner": "张工",
+      "unit": "常减压车间",
+      "deadline": "2026-09-15",
+      "status": "doing",
+      "statusCn": "整改中",
+      "bucket": "overdue",
+      "bucketCn": "超期未整改"
+    }
+  ],
+  "warnings": []
 }

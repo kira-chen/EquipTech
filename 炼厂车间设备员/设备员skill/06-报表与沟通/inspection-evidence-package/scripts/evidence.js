@@ -11,6 +11,7 @@
  * 硬规则（见 references/evidence-rules.md，改动前务必先读）：
  *  - 找不到对应材料 → missing「未找到对应材料」，不得用相近材料充数、不得写「可用 XX 替代」
  *  - 有材料但时间不覆盖检查期 → partialCoverage 如实写覆盖区间，不按完整覆盖处理
+ *  - 有材料但全都没有日期（清单未填、文件名推不出）→ unknownPeriod「期限未知」单列，不算齐全也不算覆盖不全
  *  - 缺口项醒目列出并说明影响，不得淡化
  *  - 不编制、不补录、不代写任何资料；不判定检查项是否达标合规
  */
@@ -132,9 +133,17 @@ function parseNotice(p) {
 
 /* ------------------------------------------------------------------ 材料收集 */
 
-/** 从文件名里猜时间区间：2026-09、2026年9月、2026Q3、2026 上半年、2026-01~2026-06 */
+/**
+ * 设备位号段：1~3 个字母 + 连字符 + 2~5 位数字 + 可选字母后缀（E-1201、V-1101、P-2101A）。
+ * 位号里的数字不是年份，推断日期前先抹掉，否则「E-1201-2026年测厚报告」会被读成 1201~2026 年。
+ * 数字后紧跟「年/月/季」的不算位号（如「SIS-2026年」里的 2026 仍是年份）；19xx/20xx 后接月份、季度、上下半年
+ * 或区间符的也是年份（如「EAM-2026-09」「SAP-2026.01-2026.06」「QC-2026上半年」），不当位号抹掉。
+ */
+const TAG_SEG = /(?<![A-Za-z])[A-Za-z]{1,3}-(?!(?:19|20)\d{2}(?:[-./_]\d{1,2}(?!\d)|[Qq季上下~～至到]))\d{2,5}[A-Za-z]?(?![A-Za-z\d年月季])/g;
+
+/** 从文件名里猜时间区间：2026-09、2026年9月、2026Q3、2026 上半年、2026-01~2026-06（先排除位号段） */
 function periodFromName(name) {
-  const s = String(name);
+  const s = String(name).replace(TAG_SEG, ' ');
   const range = s.match(/(\d{4})[-/年.]?(\d{1,2})?[^\d]{0,3}[~～至到\-—]{1,2}(\d{4})[-/年.]?(\d{1,2})?/);
   if (range) {
     const f = monthStart(+range[1], range[2] ? +range[2] : 1);
@@ -250,7 +259,7 @@ function main() {
   const matCats = materials.map((m) => S.fileCategories(`${m.name} ${m.declaredType}`));
 
   // ---- 逐检查项比对
-  const items = [], ready = [], missing = [], partialCoverage = [];
+  const items = [], ready = [], missing = [], partialCoverage = [], unknownPeriod = [];
   const usedIdx = new Set();
   for (const it of rawItems) {
     // 只用「检查项」与「资料要求」参与匹配：「检查类别」是粗分类标签（如「运行维护」），
@@ -287,8 +296,13 @@ function main() {
       coverageNote = `完整覆盖 ${period.from} ~ ${period.to}`;
       // 同一检查项下其余材料若时间不详或不覆盖，仍如实点出，不因为有一份齐全就掩盖
       if (weak.length) coverageNote += `（另 ${weak.length} 份材料时间不详或未覆盖：${weak.map((e) => e.name).join('、')}）`;
+    } else if (evidence.every((e) => e.coverage === 'unknown')) {
+      // 材料全都没有可用日期（清单未填、文件名也推不出，如 MCP 导出文件）—— 覆盖与否无从判定，
+      // 单列「期限未知」：不按完整覆盖计入齐全，也不当作已确认的覆盖不全
+      status = 'unknownPeriod';
+      coverageNote = `期限未知：${evidence.length} 份材料无法确定时间范围，未判定是否覆盖检查期 ${period.from} ~ ${period.to}`;
     } else {
-      // 只有部分覆盖 / 无交集 / 时间不明 —— 一律不按完整覆盖处理
+      // 有日期的材料部分覆盖 / 无交集（可能夹带时间不明的材料）—— 一律不按完整覆盖处理
       status = 'partial';
       const segs = evidence.filter((e) => e.periodFrom || e.periodTo)
         .map((e) => `${e.name}：${e.periodFrom || '不详'} ~ ${e.periodTo || '不详'}`);
@@ -306,13 +320,16 @@ function main() {
       category: it.category || '', src: it.src,
       categories: cats, evidence, status,
       statusCn: S.STATUS_CN[status], coverageNote,
-      note: status === 'missing'
-        ? '未找到对应材料；不得用相近材料充数，也不得事后补编记录'
-        : (status === 'partial' ? '资料存在但时间范围未完整覆盖检查期，须如实说明覆盖区间' : ''),
+      note: ({
+        missing: '未找到对应材料；不得用相近材料充数，也不得事后补编记录',
+        partial: '资料存在但时间范围未完整覆盖检查期，须如实说明覆盖区间',
+        unknownPeriod: '资料存在但缺起始日期、截止日期（资料清单未填报，文件名中也无日期），是否覆盖检查期未判定；须由车间核实材料实际起止日期，不得按完整覆盖报送',
+      })[status] || '',
     };
     items.push(item);
     if (status === 'ready') ready.push(item);
     else if (status === 'partial') partialCoverage.push(item);
+    else if (status === 'unknownPeriod') unknownPeriod.push(item);
     else missing.push(item);
   }
 
@@ -330,10 +347,11 @@ function main() {
   if (unmatched.length) warnings.push(`有 ${unmatched.length} 份材料未对应到任何检查项，已列入「未对应材料」由人工确认`);
   if (missing.length) warnings.push(`有 ${missing.length} 个检查项未找到对应材料，须如实向检查组说明，不得用相近材料充数`);
   if (partialCoverage.length) warnings.push(`有 ${partialCoverage.length} 个检查项的材料未完整覆盖检查期，须说明覆盖区间`);
+  if (unknownPeriod.length) warnings.push(`有 ${unknownPeriod.length} 个检查项的材料无法确定时间范围（期限未知：资料清单未填起止日期，文件名中也无日期），未判定是否覆盖检查期，须核实起止日期`);
 
   const counts = {
     items: items.length, ready: ready.length, missing: missing.length,
-    partialCoverage: partialCoverage.length, unmatched: unmatched.length,
+    partialCoverage: partialCoverage.length, unknownPeriod: unknownPeriod.length, unmatched: unmatched.length,
     materials: materials.length,
   };
 
@@ -346,7 +364,7 @@ function main() {
       specProvided: a.spec || null, lastPackage: a.last || null,
       generatedAt: C.localDateTime(), statement: STATEMENT,
     },
-    counts, items, ready, missing, partialCoverage, unmatched,
+    counts, items, ready, missing, partialCoverage, unknownPeriod, unmatched,
     materials: materials.map((m) => ({
       name: m.name, location: m.location, declaredType: m.declaredType || null,
       periodFrom: (m.period && m.period.from) || null, periodTo: (m.period && m.period.to) || null,
@@ -369,10 +387,12 @@ function main() {
   const gapRows = [['检查项序号', '检查项', '缺口类型', '说明', '出处']];
   for (const it of missing) gapRows.push([it.no, it.text, '未找到对应材料', it.note, it.src]);
   for (const it of partialCoverage) gapRows.push([it.no, it.text, '覆盖不全', it.coverageNote, it.src]);
+  const upRows = [['检查项序号', '检查项', '对应材料', '覆盖情况', '说明', '出处']];
+  for (const it of unknownPeriod) upRows.push([it.no, it.text, it.evidence.map((e) => e.name).join('；'), it.coverageNote, it.note, it.src]);
   const unmRows = [['文件名', '存放位置', '标注类型', '起始', '截止', '说明']];
   for (const u of unmatched) unmRows.push([u.name, u.location, u.declaredType || '—', u.periodFrom || '—', u.periodTo || '—', u.note]);
   writeXlsx(path.join(outDir, '资料清单.xlsx'), {
-    '资料对照': listRows, '缺口清单': gapRows, '未对应材料': unmRows,
+    '资料对照': listRows, '缺口清单': gapRows, '期限未知': upRows, '未对应材料': unmRows,
     '声明': [['声明'], [STATEMENT]],
   });
 
@@ -383,10 +403,14 @@ function main() {
   if (missing.length) {
     L.push(`> **${GAP_ALERT}**`);
     L.push('');
-    L.push(`> 未找到对应材料 ${missing.length} 项${partialCoverage.length ? `，覆盖不全 ${partialCoverage.length} 项` : ''}，明细见第三节。`);
+    L.push(`> 未找到对应材料 ${missing.length} 项${partialCoverage.length ? `，覆盖不全 ${partialCoverage.length} 项` : ''}${unknownPeriod.length ? `，期限未知 ${unknownPeriod.length} 项` : ''}，缺口明细见第三节${unknownPeriod.length ? '，期限未知明细见第五节' : ''}。`);
     L.push('');
   } else if (partialCoverage.length) {
     L.push(`> **【注意】有 ${partialCoverage.length} 个检查项的材料未完整覆盖检查期，须如实说明覆盖区间，不得按完整覆盖报送**`);
+    L.push('');
+  }
+  if (!missing.length && unknownPeriod.length) {
+    L.push(`> **【注意】有 ${unknownPeriod.length} 个检查项的材料无法确定时间范围（期限未知），未判定是否覆盖检查期，须核实材料起止日期，不得按完整覆盖报送**`);
     L.push('');
   }
   L.push('## 一、检查基本信息');
@@ -404,6 +428,7 @@ function main() {
     ['资料齐全', counts.ready],
     ['未找到对应材料', counts.missing],
     ['覆盖不全', counts.partialCoverage],
+    ['期限未知', counts.unknownPeriod],
     ['未对应材料', counts.unmatched],
     ['生成时间', `${C.localDateTime()}（北京时间）`],
   ]));
@@ -435,20 +460,30 @@ function main() {
     L.push('> 覆盖不全项按实际覆盖区间说明，**不得按完整覆盖报送**，缺口区间不得补录记录。');
     L.push('');
   }
-  L.push('## 五、未对应材料');
+  L.push('## 五、期限未知项');
+  L.push('');
+  if (!unknownPeriod.length) L.push(period ? '_无期限未知的检查项。_\n' : '_未指定检查期，不做时间覆盖判定。_\n');
+  else {
+    L.push(C.mdTable(['序号', '检查项', '对应材料', '覆盖情况', '缺少的信息与处理'],
+      unknownPeriod.map((x) => [x.no, `**${x.text}**`,
+        x.evidence.map((e) => e.name).join('<br>'), x.coverageNote, x.note])));
+    L.push('> 期限未知项既不算资料齐全，也不算覆盖不全：材料在，但起止日期无从判断。**须由车间核实材料实际起止日期后再说明，不得按完整覆盖报送，不得补录记录。**');
+    L.push('');
+  }
+  L.push('## 六、未对应材料');
   L.push('');
   L.push(C.mdTable(['文件名', '存放位置', '标注类型', '时间范围', '说明'],
     unmatched.map((x) => [x.name, x.location, x.declaredType || '—',
       x.periodFrom || x.periodTo ? `${x.periodFrom || '不详'} ~ ${x.periodTo || '不详'}` : '—', x.note])));
-  L.push('## 六、归集包目录建议');
+  L.push('## 七、归集包目录建议');
   L.push('');
-  if (!ready.length && !partialCoverage.length) L.push('_暂无可归集的材料。_\n');
+  if (!ready.length && !partialCoverage.length && !unknownPeriod.length) L.push('_暂无可归集的材料。_\n');
   else {
     for (const it of items) {
       if (it.status === 'missing') continue;
       L.push(`- \`${it.no}-${it.text.slice(0, 20)}/\``);
       for (const e of it.evidence) L.push(`  - ${e.name}　（现存放：${e.location}）`);
-      if (it.status === 'partial') L.push(`  - 【注意】${it.coverageNote}`);
+      if (it.status === 'partial' || it.status === 'unknownPeriod') L.push(`  - 【注意】${it.coverageNote}`);
     }
     L.push('');
     if (missing.length) {
@@ -456,10 +491,10 @@ function main() {
       L.push('');
     }
   }
-  L.push('## 七、准备工作提示');
+  L.push('## 八、准备工作提示');
   L.push('');
   L.push('<!-- ANALYSIS_START -->');
-  L.push('（由模型依据 references/evidence-rules.md 口径撰写 200~400 字，结构：资料齐备情况 → 缺口项及其影响 → 覆盖不全项的说明口径 → 迎检准备建议。数字一律引用 evidence.json 的 counts；不判定检查项是否达标合规；不建议用其他材料替代缺失资料，不建议补编记录。）');
+  L.push('（由模型依据 references/evidence-rules.md 口径撰写 200~400 字，结构：资料齐备情况 → 缺口项及其影响 → 覆盖不全与期限未知项的说明口径 → 迎检准备建议。数字一律引用 evidence.json 的 counts；不判定检查项是否达标合规；不建议用其他材料替代缺失资料，不建议补编记录。）');
   L.push('<!-- ANALYSIS_END -->');
   L.push('');
   L.push('---');

@@ -85,9 +85,11 @@ D.citeOf({file:'a.md', loc:'第5行', clause:'4.1'}); // 'a.md 第4.1条（第5�
 
 每条 clause 形如 `{id, text, topicHint, numeric, source:{file, loc, clause}}`。markdown 标题作为 `topicHint`，引用块与表格分隔行跳过。
 
+`.docx` 经 `docx-lite.js` 的 `docxToText` 先解压取 `word/document.xml` 再解析，只取正文段落与表格（页眉页脚不入条款）；段落位置写「第N段」，表格行写「表N第M行」。文件损坏或不是 zip 包时 warning「资料「X.docx」无法解析（…），已跳过」，不中断。
+
 ## lib/docx-lite.js
 
-从 `04-台账档案与资料管理/technical-document-finder/scripts/lib/docx-lite.js` 复制，用于读 Word 规程。不要改动。
+从 `04-台账档案与资料管理/technical-document-finder/scripts/lib/docx-lite.js` 复制，用于读 Word 规程（`docsrc.js` 调用其 `docxToText`）。不要改动。
 
 ## make-sample.js
 
@@ -105,4 +107,4 @@ node scripts/make-sample.js --out examples [--seed <n>]
 node scripts/selftest.js
 ```
 
-215 条断言，覆盖：数值识别（含条款号 / 年份不误判）、六类培训对象深度（含复岗 / 四新 / 三级安全教育的厂级归口声明）、通用原理库无数值全扫与 builtin 标记、规程类拦截（含「用火作业许可证办理流程」）、**无资料时正则扫描产出不得出现带数值的答案**、数值题出处完整性、题量不足不凑数、干扰项无数值、判断题否定式（数字序列一致、复合词不误改、`--no-negative-judge`）、题型限定、设备清单别名与合计行、SAP IH08 列名（功能位置作位号、8 位设备号不作位号）、学时 null、16 项参数校验、资料格式与出处写法、培训类声明行与建议稿抬头、无 emoji、TYPE_PATTERNS 与 operator-anomaly-guide 同源、SKILL/training-rules 文档同步、make-sample SAP 样例可再生。
+225 条断言，覆盖：数值识别（含条款号 / 年份不误判）、六类培训对象深度（含复岗 / 四新 / 三级安全教育的厂级归口声明）、通用原理库无数值全扫与 builtin 标记、规程类拦截（含「用火作业许可证办理流程」）、**无资料时正则扫描产出不得出现带数值的答案**、数值题出处完整性、题量不足不凑数、干扰项无数值、判断题否定式（数字序列一致、复合词不误改、`--no-negative-judge`）、题型限定、设备清单别名与合计行、SAP IH08 列名（功能位置作位号、8 位设备号不作位号）、学时 null、16 项参数校验、资料格式与出处写法（含 docx 段落 / 表格行出处、损坏 docx warning 跳过）、培训类声明行与建议稿抬头、无 emoji、TYPE_PATTERNS 与 operator-anomaly-guide 同源、SKILL/training-rules 文档同步、make-sample SAP 样例可再生。

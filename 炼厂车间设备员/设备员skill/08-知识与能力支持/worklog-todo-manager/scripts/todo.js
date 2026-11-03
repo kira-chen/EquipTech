@@ -158,21 +158,100 @@ function loadAny(p) {
   return { kind: 'book', data: readXlsx(p), name: path.basename(p) };
 }
 
-/** 生成待办项的稳定 key：来源类型 + 业务编号/位号 + 事项摘要 */
-function itemKey(it) {
-  return [it.kind, it.sub || '', it.refNo || it.tag || '', (it.title || '').slice(0, 24)].join('|');
-}
-
 /** 归一化为查重用的文本指纹：去标点与空白 */
 function fingerprint(s) {
-  return C.str(s).replace(/[\s，,。.、；;：:（）()【】\[\]「」""''/\\-]/g, '');
+  return C.str(s).replace(/[\s，,。.、；;：:（）()【】\[\]「」""''/\\|-]/g, '');
+}
+
+// ---------------------------------------------------------------- 待办 key（结转匹配用）
+/**
+ * key = 类型 + 单号 + 位号：`<kind>|<单号>|<位号>`；无单号时退回稳定的事项主体：`<kind>||<位号>|<主体指纹>`。
+ * 不含子类（超期/临期/停滞）与标题——停滞天数、临期转超期、交接状态变化都不改变 key，次日重跑上游不出重复。
+ * - 单号（keyRef）：工单号、隐患编号、特种设备注册代码、校验证书号、待办表「编号」列；
+ *   缺陷登记号由 defect-intake-grading 按运行当日生成、次日重跑会变，不作单号（有真实通知单号时用通知单号）。
+ * - 主体（keyText）：润滑部位、隐患/缺陷描述、交接事项内容、待办文字；只在无单号时参与 key。
+ * - 校验「不合格未整改」与「超期/临期」是两件事，类型写作 `calibration:fail` 以区分。
+ * 同一次运行内撞 key（如同一工单既超期又停滞）时，后出现的追加 `#<子类>`。
+ */
+const KEY_SUBS = new Set(['overdue', 'stalled', 'dueSoon', 'unverified', 'unresolvedFail', 'followup', 'pending', 'manual']);
+const keySeg = (s) => C.str(s).replace(/[|#]/g, '/');
+function keyKind(kind, sub) { return kind === 'calibration' && sub === 'unresolvedFail' ? 'calibration:fail' : kind; }
+function itemKey(it) {
+  const kind = keyKind(it.kind, it.sub);
+  const ref = keySeg(it.keyRef);
+  const tag = keySeg(it.tag);
+  if (ref) return `${kind}|${ref}|${tag}`;
+  return `${kind}||${tag}|${fingerprint(it.keyText).toLowerCase()}`;
+}
+/** 旧版 key（类型|子类|单号或位号|标题前 24 字）：升级兼容用 */
+function legacyKey(it) {
+  return [it.kind, it.sub || '', it.refNo || it.tag || '', (it.title || '').slice(0, 24)].join('|');
+}
+function isLegacyKey(k) {
+  const p = C.str(k).split('|');
+  return p.length >= 4 && KEY_SUBS.has(p[1]);
+}
+/**
+ * 上一日结转项的 key：新版原样沿用；旧版有单号的按单号重建。
+ * 旧版无单号的保留旧 key：本日条目的主体取描述/部位/内容，旧项只有标题，按标题重建会对不上；
+ * 保留旧 key 后，之后每天仍按「类型 + 位号 + 主体」模糊匹配，对上本日条目时改用本日条目的新版 key。
+ */
+const REF_KINDS = new Set(['orders', 'hazard', 'inspection', 'calibration', 'sheet']);
+function upgradeKey(x) {
+  if (x.key && !isLegacyKey(x.key)) return x.key;
+  const ref = REF_KINDS.has(x.kind) ? x.refNo : '';
+  if (!ref && x.key) return x.key;
+  return itemKey({ kind: x.kind, sub: x.sub, tag: x.tag, keyRef: ref, keyText: x.title });
+}
+/** 给本次运行的条目定 key：撞 key 的追加 #子类（内部字段 keyRef/keyText 在结转匹配后删除，不进产出） */
+function assignKeys(list) {
+  const used = new Set();
+  for (const it of list) {
+    let k = itemKey(it);
+    if (used.has(k)) {
+      const base = `${k}#${it.sub || 'dup'}`;
+      k = base;
+      for (let n = 2; used.has(k); n++) k = `${base}-${n}`;
+    }
+    used.add(k);
+    it.key = k;
+  }
+}
+
+// ---------------------------------------------------------------- 状态归一
+// 待办表「状态」：先判否定前缀（未/待/不/非），再按 SAP 六态（common.js normSapStatus，口径对照第四节）：
+// 已闭环（CLSD/NOCO/已关闭/已验收）→ 不进待办；已取消（DLFL/LKD）→ 不进待办并 warning；
+// 待验收（TECO/CNF/技术完成/已完工）→ 仍是待办（技术完成不是关闭，待设备员验收）；
+// 本人写的「已完成 / 完成」按已办结不进待办。
+function sheetStatus(v) {
+  const s = C.str(v).replace(/\s+/g, '');
+  if (!s) return 'open';
+  if (/^(未|待|不|非)/.test(s)) return 'open';
+  // 「已删除 / 删除」是 EAM 导出 DLFL 的中文写法，common.js 的已取消词表未收，这里按已取消处理
+  if (/删除/.test(s)) return 'cancelled';
+  const k = C.normSapStatus(s);
+  if (k === '已闭环') return 'closed';
+  if (k === '已取消') return 'cancelled';
+  if (k === '待验收') return /^(已完成|完成)$/.test(s) ? 'closed' : 'open';
+  if (k) return 'open';
+  if (/已完成|已闭环|已关闭|完成$/.test(s)) return 'closed';
+  return 'open';
+}
+/** 交接记录（shift-handover-record）的占位写法：位号/责任人/期限缺失时写「待明确」 */
+const HANDOVER_TBD = /^(（待补）|待补|待定|待明确)$/;
+/** 交接状态写进标题的后缀：「未完成」不写；「未完成（待验收）」只取括号里的「（待验收）」，避免括号套括号 */
+function handoverStateNote(state) {
+  const s = C.str(state);
+  if (!s || s === '未完成') return '';
+  const m = s.match(/^未完成[（(](.+)[）)]$/);
+  return `（${m ? m[1] : s}）`;
 }
 
 // ---------------------------------------------------------------- 各上游 JSON 的待办抽取
 function fromOrders(j, srcName, push) {
   for (const x of j.overdue || []) {
     push({
-      kind: 'orders', sub: 'overdue', refNo: x.no || '', tag: x.tag || '', name: x.name || '',
+      kind: 'orders', sub: 'overdue', refNo: x.no || '', keyRef: x.no, keyText: x.name || x.fault, tag: x.tag || '', name: x.name || '',
       title: `工单 ${x.no || '（无单号）'} 超期未闭环：${x.fault || x.name || x.tag || ''}`.trim(),
       dueDate: C.normDate(x.dueAt), owner: x.party || x.owner || '', srcName,
       detail: x.reason || '', srcRef: x.source || '',
@@ -181,7 +260,7 @@ function fromOrders(j, srcName, push) {
   }
   for (const x of j.stalled || []) {
     push({
-      kind: 'orders', sub: 'stalled', refNo: x.no || '', tag: x.tag || '', name: x.name || '',
+      kind: 'orders', sub: 'stalled', refNo: x.no || '', keyRef: x.no, keyText: x.name || x.fault, tag: x.tag || '', name: x.name || '',
       title: `工单 ${x.no || '（无单号）'} 停滞 ${x.idleDays} 天（最后节点：${x.lastNode || '—'}）`,
       dueDate: null, owner: x.party || x.owner || '', srcName,
       detail: x.reason || '', srcRef: x.source || '', noDueReason: '停滞工单无要求完成时间',
@@ -190,7 +269,7 @@ function fromOrders(j, srcName, push) {
   }
   for (const x of j.dueSoon || []) {
     push({
-      kind: 'orders', sub: 'dueSoon', refNo: x.no || '', tag: x.tag || '', name: x.name || '',
+      kind: 'orders', sub: 'dueSoon', refNo: x.no || '', keyRef: x.no, keyText: x.name || x.fault, tag: x.tag || '', name: x.name || '',
       title: `工单 ${x.no || '（无单号）'} 临期待闭环：${x.name || x.tag || ''}`.trim(),
       dueDate: C.normDate(x.dueAt), owner: x.party || x.owner || '', srcName,
       detail: '', srcRef: x.source || '',
@@ -201,7 +280,7 @@ function fromOrders(j, srcName, push) {
 
 function fromHazard(j, srcName, push) {
   const mk = (x, sub, titlePrefix) => ({
-    kind: 'hazard', sub, refNo: x.no || '', tag: '', name: '',
+    kind: 'hazard', sub, refNo: x.no || '', tag: '', name: '', keyRef: x.no, keyText: x.desc,
     title: `${titlePrefix}${x.no ? `隐患 ${x.no}` : '隐患'}：${x.desc || '（无描述）'}`,
     dueDate: C.normDate(x.deadline), owner: x.owner || x.unit || '', srcName,
     detail: x.measure || '', srcRef: x.sheet ? `${x.sheet} 第${x.row}行` : '',
@@ -219,7 +298,7 @@ function fromHazard(j, srcName, push) {
 function fromInspection(j, srcName, push) {
   for (const x of j.overdue || []) {
     push({
-      kind: 'inspection', sub: 'overdue', refNo: x.regCode || '', tag: x.tag || '', name: x.name || '',
+      kind: 'inspection', sub: 'overdue', refNo: x.regCode || '', keyRef: x.regCode, keyText: x.category, tag: x.tag || '', name: x.name || '',
       title: `${x.category || '特种设备'} ${x.tag} 定期检验已超期（应检 ${x.nextDate}）`,
       dueDate: C.normDate(x.nextDate), owner: x.unit || '', srcName,
       detail: x.name || '', srcRef: x.sheet ? `${x.sheet} 第${x.row}行` : '',
@@ -228,7 +307,7 @@ function fromInspection(j, srcName, push) {
   }
   for (const x of j.dueSoon || []) {
     push({
-      kind: 'inspection', sub: 'dueSoon', refNo: x.regCode || '', tag: x.tag || '', name: x.name || '',
+      kind: 'inspection', sub: 'dueSoon', refNo: x.regCode || '', keyRef: x.regCode, keyText: x.category, tag: x.tag || '', name: x.name || '',
       title: `${x.category || '特种设备'} ${x.tag} 定期检验临期（应检 ${x.nextDate}）`,
       dueDate: C.normDate(x.nextDate), owner: x.unit || '', srcName,
       detail: x.name || '', srcRef: x.sheet ? `${x.sheet} 第${x.row}行` : '',
@@ -240,7 +319,7 @@ function fromInspection(j, srcName, push) {
 function fromCalibration(j, srcName, push) {
   for (const x of j.overdue || []) {
     push({
-      kind: 'calibration', sub: 'overdue', refNo: x.cert || '', tag: x.tag || '', name: x.name || '',
+      kind: 'calibration', sub: 'overdue', refNo: x.cert || '', keyRef: x.cert, keyText: '', tag: x.tag || '', name: x.name || '',
       title: `${x.category || '仪表'} ${x.tag} 校验已超期（应校 ${x.nextDate || '—'}）`,
       dueDate: C.normDate(x.nextDate), owner: '', srcName,
       detail: x.name || '', srcRef: x.sheet ? `${x.sheet} 第${x.row}行` : '',
@@ -249,7 +328,7 @@ function fromCalibration(j, srcName, push) {
   }
   for (const x of j.dueSoon || []) {
     push({
-      kind: 'calibration', sub: 'dueSoon', refNo: x.cert || '', tag: x.tag || '', name: x.name || '',
+      kind: 'calibration', sub: 'dueSoon', refNo: x.cert || '', keyRef: x.cert, keyText: '', tag: x.tag || '', name: x.name || '',
       title: `${x.category || '仪表'} ${x.tag} 校验临期（应校 ${x.nextDate || '—'}）`,
       dueDate: C.normDate(x.nextDate), owner: '', srcName,
       detail: x.name || '', srcRef: x.sheet ? `${x.sheet} 第${x.row}行` : '',
@@ -258,7 +337,7 @@ function fromCalibration(j, srcName, push) {
   }
   for (const x of j.unresolvedFail || []) {
     push({
-      kind: 'calibration', sub: 'unresolvedFail', refNo: x.cert || '', tag: x.tag || '', name: x.name || '',
+      kind: 'calibration', sub: 'unresolvedFail', refNo: x.cert || '', keyRef: x.cert, keyText: '', tag: x.tag || '', name: x.name || '',
       title: `${x.category || '仪表'} ${x.tag} 上次校验不合格且无整改记录，须先整改后复校`,
       dueDate: null, owner: '', srcName,
       detail: x.resultRaw || '', srcRef: x.sheet ? `${x.sheet} 第${x.row}行` : '',
@@ -271,18 +350,18 @@ function fromCalibration(j, srcName, push) {
 function fromLube(j, srcName, push) {
   for (const x of j.overdue || []) {
     push({
-      kind: 'lube', sub: 'overdue', refNo: '', tag: x.tag || '', name: x.name || '',
+      kind: 'lube', sub: 'overdue', refNo: '', keyRef: '', keyText: x.part, tag: x.tag || '', name: x.name || '',
       title: `${x.tag} ${x.part || ''} 润滑已逾期（${x.level || ''}，应加换油 ${x.dueDate}）`.replace(/\s+/g, ' ').trim(),
-      dueDate: C.normDate(x.dueDate), owner: '', srcName,
+      dueDate: C.normDate(x.dueDate), owner: x.owner || '', srcName,
       detail: [x.oil, x.mode].filter(Boolean).join(' / '), srcRef: x.sheet ? `${x.sheet} 第${x.row}行` : '',
       prio: priorityOf('lube', 'overdue'),
     });
   }
   for (const x of j.dueSoon || []) {
     push({
-      kind: 'lube', sub: 'dueSoon', refNo: '', tag: x.tag || '', name: x.name || '',
+      kind: 'lube', sub: 'dueSoon', refNo: '', keyRef: '', keyText: x.part, tag: x.tag || '', name: x.name || '',
       title: `${x.tag} ${x.part || ''} 润滑临期（应加换油 ${x.dueDate}）`.replace(/\s+/g, ' ').trim(),
-      dueDate: C.normDate(x.dueDate), owner: '', srcName,
+      dueDate: C.normDate(x.dueDate), owner: x.owner || '', srcName,
       detail: [x.oil, x.mode].filter(Boolean).join(' / '), srcRef: x.sheet ? `${x.sheet} 第${x.row}行` : '',
       prio: priorityOf('lube', 'dueSoon'),
     });
@@ -295,11 +374,19 @@ function fromDefects(j, srcName, push) {
     const dl = defectLevel(x.level, x.levelCn);
     if (dl.legacy) warnings.push(`${srcName} 缺陷 ${x.no || '（无编号）'} 等级「${x.levelCn || x.level}」为旧 I~IV 口径（已废止），已按 I→A/II→B/III、IV→C 映射为 ${dl.level} 级，请核对`);
     const levelCn = dl.level ? { A: 'A 级（重大）', B: 'B 级（严重）', C: 'C 级（一般）' }[dl.level] : (x.levelCn || '未定级');
+    // defect-intake-grading 输出 notification 为通知单草稿对象（type/typeCn/sapPriority/shortText/requiredEnd，无通知单号，号由 SAP 生成）；
+    // 兼容旧结构的 notificationNo 字符串
+    const nf = x.notification && typeof x.notification === 'object' ? x.notification : null;
+    const notifNo = C.str(x.notificationNo) || (typeof x.notification === 'string' ? C.str(x.notification) : '') || (nf ? C.str(nf.no || nf.notificationNo) : '');
+    const notifText = notifNo ? `通知单 ${notifNo}`
+      : nf && (nf.typeCn || nf.shortText) ? `通知单草稿${nf.typeCn ? ` ${C.str(nf.typeCn)}` : ''}${nf.shortText ? `「${C.str(nf.shortText)}」` : ''}（号由 SAP 生成）` : '';
     push({
       kind: 'defects', sub: 'followup', refNo: x.no || '', tag: x.tag || '', name: x.name || '',
+      // 缺陷登记号按 defect-intake-grading 运行当日生成，次日重跑会变，不作 key 单号；有真实通知单号时用通知单号
+      keyRef: notifNo, keyText: x.desc,
       title: `缺陷 ${x.no || '（无编号）'}（${levelCn}）${x.tag}：${x.desc || ''}`,
       dueDate: due, owner: x.by || '', srcName,
-      detail: [x.basis, x.notificationNo ? `通知单 ${x.notificationNo}` : ''].filter(Boolean).join('；'), srcRef: x.srcRow ? `第${x.srcRow}行` : '',
+      detail: [x.basis, notifText].filter(Boolean).join('；'), srcRef: x.srcRow ? `第${x.srcRow}行` : '',
       noDueReason: due ? null : '缺陷未定级或缺发现时间，脚本未生成处理时限',
       prio: priorityOf('defects', 'followup', { level: dl.level }),
     });
@@ -313,12 +400,15 @@ function fromHandover(j, srcName, push, date) {
   for (const x of j.pending || []) {
     const due = C.normDate(x.due);
     const rawDue = C.str(x.due || x.dueText);
-    if (rawDue && !due && !/待定|未填|TBD|—/.test(rawDue)) warnings.push(`${srcName} 交接事项「${C.str(x.content).slice(0, 20)}」期限「${rawDue}」无法解析，按无到期日处理（未自行设定到期日）`);
+    if (rawDue && !due && !/待定|待明确|待补|未填|TBD|—/.test(rawDue)) warnings.push(`${srcName} 交接事项「${C.str(x.content).slice(0, 20)}」期限「${rawDue}」无法解析，按无到期日处理（未自行设定到期日）`);
     const overdue = due ? C.diffDays(due, date) < 0 : false;
+    // 交接记录缺位号/责任人时写占位「待明确」（旧版「（待补）」），不当作位号或姓名
+    const tag = HANDOVER_TBD.test(C.str(x.tag)) ? '' : C.str(x.tag);
     push({
-      kind: 'handover', sub: overdue ? 'overdue' : 'pending', refNo: '', tag: C.str(x.tag).replace(/^（待补）$|^待定$/, ''), name: C.str(x.name),
-      title: `交接未完成｜${C.str(x.tag) || '（无位号）'} ${C.str(x.content) || '（无内容）'}${x.state && x.state !== '未完成' ? `（${x.state}）` : ''}`.trim(),
-      dueDate: due, owner: C.str(x.owner).replace(/^（待补）$/, ''), srcName,
+      kind: 'handover', sub: overdue ? 'overdue' : 'pending', refNo: '', tag, name: C.str(x.name),
+      keyRef: '', keyText: x.content,
+      title: `交接未完成｜${tag || '（无位号）'} ${C.str(x.content) || '（无内容）'}${handoverStateNote(x.state)}`.trim(),
+      dueDate: due, owner: HANDOVER_TBD.test(C.str(x.owner)) ? '' : C.str(x.owner), srcName,
       detail: [x.handling, x.originShift && x.originShift !== shiftLabel ? `最初来自 ${x.originShift}` : '', x.carryTimes ? `交接记录中已连续结转 ${x.carryTimes} 次` : ''].filter(Boolean).join('；'),
       srcRef: x.sheet ? `${x.sheet} 第${x.row}行` : `交接记录（${shiftLabel}）`,
       noDueReason: due ? null : '交接记录未写明期限，脚本未自行设定',
@@ -334,12 +424,18 @@ function fromSheet(rows, sheetName, srcName, push) {
     const title = C.str(r['事项']);
     if (!title) { warnings.push(`工作表「${sheetName}」第${r._row}行 事项为空，已跳过`); continue; }
     const st = C.str(r['状态']);
-    if (st && /已完成|已闭环|已关闭|完成$/.test(st)) continue;   // 表中已标完成的不再进待办
+    const ss = sheetStatus(st);
+    if (ss === 'closed') continue;   // 表中已标完成 / 已关闭（CLSD、NOCO）的不再进待办
+    if (ss === 'cancelled') {
+      warnings.push(`工作表「${sheetName}」第${r._row}行「${title}」状态「${st}」为已取消/删除标记，未纳入待办；如仍需跟进请改状态后重跑`);
+      continue;
+    }
     const rawDue = C.str(r['到期日']);
     const due = C.normDate(r['到期日']);
     if (rawDue && !due) warnings.push(`工作表「${sheetName}」第${r._row}行 到期日「${rawDue}」无法解析，该项按无到期日处理（未自行设定到期日）`);
     push({
       kind: 'sheet', sub: 'manual', refNo: C.str(r['编号']), tag: C.str(r['位号']), name: '',
+      keyRef: r['编号'], keyText: title,
       title, dueDate: due, owner: C.str(r['责任人']), srcName,
       detail: C.str(r['备注']), srcRef: `${sheetName} 第${r._row}行`,
       srcLabel: C.str(r['来源']) || null,
@@ -362,7 +458,7 @@ function fromText(text, srcName, push) {
     const m = body.match(/(?:截止|到期|前完成|完成期限)[：:\s]*((?:\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2})|(?:\d{8}))/);
     const due = m ? C.normDate(m[1]) : null;
     push({
-      kind: 'text', sub: 'manual', refNo: '', tag: '', name: '',
+      kind: 'text', sub: 'manual', refNo: '', tag: '', name: '', keyRef: '', keyText: body,
       title: body, dueDate: due, owner: '', srcName,
       detail: '', srcRef: `${srcName} 第${n}条`,
       noDueReason: due ? null : '文字待办未写明到期日',
@@ -429,6 +525,8 @@ function main() {
     sources.push(`${got.name}→${SRC_CN.sheet}`);
   }
 
+  assignKeys(items);
+
   // ---- 上一日结转：原样保留原始到期日与来源，绝不自动延期、绝不静默丢弃
   let carriedOver = [];
   if (a.prev) {
@@ -438,13 +536,31 @@ function main() {
     const prevDate = (prev.meta && prev.meta.date) || null;
     const prevItems = prev.items || [];
     if (!prevItems.length) warnings.push(`上一日 todo.json（${path.basename(a.prev)}）中没有 items，无可结转项`);
-    const present = new Set(items.map(itemKey));
+    const byKey = new Map(items.map((y) => [y.key, y]));   // 只含本日来源条目
+    const usedKeys = new Set(byKey.keys());
+    const byLegacy = new Map(items.map((y) => [legacyKey(y), y]));
+    const claimed = new Set();   // 旧版 key 的模糊匹配一对一，避免两条旧项并到同一条本日项上
+    /** 找本日来源中的同一事项：新版 key 相等（撞 key 后缀找不到时退回基础 key）；旧版 key 再按旧 key 原值、类型 + 位号 + 主体匹配 */
+    const findCurrent = (x, key) => {
+      const legacy = isLegacyKey(x.key);
+      const tryKeys = legacy && x.sub ? [`${key}#${x.sub}`, key] : [key, key.split('#')[0]];
+      for (const k of tryKeys) if (byKey.has(k)) return byKey.get(k);
+      if (!legacy) return null;
+      const old = byLegacy.get(x.key);
+      if (old && !claimed.has(old)) return old;
+      const fpTitle = fingerprint(x.title).toLowerCase();
+      if (REF_KINDS.has(x.kind) && x.refNo) return null;   // 有单号的旧项只按单号对，不做模糊匹配
+      return items.find((y) => !claimed.has(y) && !y.carried && !y.keyRef && y.kind === x.kind
+        && keyKind(y.kind, y.sub) === keyKind(x.kind, x.sub) && C.str(y.tag) === C.str(x.tag)
+        && (y.tag || y.keyText) && (!y.keyText || fpTitle.includes(fingerprint(y.keyText).toLowerCase()))) || null;
+    };
     const doneSet = new Set((prev.doneKeys || []));
     for (const x of prevItems) {
       if (x.status === 'done') continue;                 // 上一日已标完成的不再结转
       if (doneSet.has(x.key)) continue;
-      const key = x.key || itemKey(x);
+      const key = upgradeKey(x);                         // 旧版 key（含子类与标题）升级为新版
       const carried = {
+        key,
         kind: x.kind, sub: x.sub, refNo: x.refNo || '', tag: x.tag || '', name: x.name || '',
         title: x.title, dueDate: x.dueDate || null,      // 原始到期日原样保留
         owner: x.owner || '', srcName: x.srcName || '',
@@ -457,9 +573,10 @@ function main() {
         originalDueDate: x.originalDueDate || x.dueDate || null,
         originalSource: x.originalSource || `${SRC_CN[x.kind] || x.kind}｜${x.srcName || '—'}`,
       };
-      if (present.has(key)) {
+      const cur = findCurrent(x, key);
+      if (cur) {
         // 本日来源中已再次出现同一事项：不重复列，但把结转标记合并到本日项上
-        const cur = items.find((y) => itemKey(y) === key);
+        claimed.add(cur);
         cur.carried = true;
         cur.carriedFrom = carried.carriedFrom;
         cur.carriedRounds = carried.carriedRounds;
@@ -467,6 +584,13 @@ function main() {
         cur.originalSource = carried.originalSource;
         continue;
       }
+      // 结转项 key 与本日已有 key 撞上时（如两条旧项升级后同 key）加后缀，保持唯一
+      if (usedKeys.has(carried.key)) {
+        const base = `${carried.key}#${carried.sub || 'dup'}`;
+        carried.key = base;
+        for (let n = 2; usedKeys.has(carried.key); n++) carried.key = `${base}-${n}`;
+      }
+      usedKeys.add(carried.key);
       items.push(carried);
     }
     carriedOver = items.filter((x) => x.carried);
@@ -478,7 +602,8 @@ function main() {
 
   // ---- 计算到期分桶与逾期天数
   for (const it of items) {
-    it.key = itemKey(it);
+    if (!it.key) it.key = itemKey(it);
+    delete it.keyRef; delete it.keyText;
     it.priority = it.prio;
     delete it.prio;
     it.priorityCn = PRIO_CN[it.priority] || it.priority;

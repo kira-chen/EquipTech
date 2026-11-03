@@ -62,12 +62,43 @@ function ruleCategories(text) {
   return hit;
 }
 
-/** 资料名称落在哪些类别（可多类） */
+/**
+ * 资料侧别名：系统导出文件（EAM / SAP PM / 作业票系统）的常用名称，类别词表认不出时补充。
+ * 只收「这个名称本身就是该类资料」的说法，正则作用在归一后的名称上（已去掉空白与 . - _ 等分隔符）。
+ *  - 故障记录：EAM 故障历史导出，每行带处理措施（实际检修做法），与「检修历史」「维修记录」是同一份数据，
+ *    算检修记录；同时仍按「故障」二字归缺陷隐患类。只带「故障」二字的（故障率统计等）不算检修记录。
+ *  - 通知单：SAP PM 维修通知单，即缺陷/故障报修单。只认以「通知单」开头，或前缀为维修/缺陷/故障/报修/设备/PM/SAP 的，
+ *    「停电通知单」「会议通知单」「整改通知单」不归。
+ *  - 作业清单：作业票系统导出的作业票清单。只认以「作业清单」开头的，「检修作业清单」这类说的是检修工作量，不归作业许可。
+ */
+const FILE_ALIASES = [
+  { key: 'maintenance', re: /故障记录|故障维修|故障处理记录|检修历史|维修历史|维修工单|检修工单|^工单/i },
+  { key: 'defect', re: /(?:^|维修|缺陷|故障|报修|设备|PM|SAP)通知单/i },
+  { key: 'permit', re: /^作业清单|作业票清单|特殊作业/i },
+];
+
+/** 资料名称落在哪些类别（可多类）：类别词表 + 资料侧别名，均为正面命中 */
 function fileCategories(name) {
   const t = norm(name);
   const hit = [];
-  for (const c of CATEGORIES) if (c.file.some((k) => t.includes(k))) hit.push(c.key);
+  for (const c of CATEGORIES) {
+    if (c.file.some((k) => t.includes(k)) || FILE_ALIASES.some((a) => a.key === c.key && a.re.test(t))) hit.push(c.key);
+  }
   return hit;
+}
+
+/**
+ * 一份资料的归类：先读资料清单的「资料类型」列，再读资料名称，两者命中的类别合并。
+ * 返回 {keys, from}，from[key] 记该类别最先由哪一列认出：「资料类型」/「资料名称」/「资料名称+资料类型」（两列连读才命中）。
+ * 「台账」「记录」「文件」这类泛称落不到任何具体类别，资料名称也认不出时就归不进任何类别，**不按信息缺失推断**。
+ */
+function materialCategories(name, declaredType) {
+  const type = String(declaredType === null || declaredType === undefined ? '' : declaredType).trim();
+  const from = {};
+  if (type) for (const k of fileCategories(type)) from[k] = '资料类型';
+  for (const k of fileCategories(name)) if (!from[k]) from[k] = '资料名称';
+  if (type) for (const k of fileCategories(`${name} ${type}`)) if (!from[k]) from[k] = '资料名称+资料类型';
+  return { keys: CATEGORIES.map((c) => c.key).filter((k) => from[k]), from };
 }
 
 /**
@@ -166,8 +197,8 @@ const STATUS_KEYS = Object.keys(STATUS_CN);
 const FORBIDDEN_TERMS = ['符合', '不符合', '达标', '不达标', '合规', '违规', '违法', '合格', '不合格', '法律责任'];
 
 module.exports = {
-  CATEGORIES, CAT_BY_KEY, FEATURE_TERMS, VAGUE_TERMS,
-  norm, ruleCategories, fileCategories, featureWords, matchRule,
+  CATEGORIES, CAT_BY_KEY, FEATURE_TERMS, VAGUE_TERMS, FILE_ALIASES,
+  norm, ruleCategories, fileCategories, materialCategories, featureWords, matchRule,
   hasConcreteTarget, vagueness,
   STATUS_CN, STATUS_KEYS, FORBIDDEN_TERMS,
 };

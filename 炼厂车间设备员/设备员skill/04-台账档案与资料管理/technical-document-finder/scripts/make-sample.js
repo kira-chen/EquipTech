@@ -12,7 +12,9 @@
  *   - P-1101A 旧版说明书 .doc（伪文件，旧版 Office 格式 → 只做文件定位，提示另存为 .docx）
  *   - P-1101A 铭牌照片 .png（伪文件，无文字层）
  *   - 资料目录清单 .xlsx（含一条已登记但无实体文件的条目：性能曲线）
- *   - 设备台账 .xlsx（SAP PM 技术对象清单列名：功能位置 / 设备 / 设备描述 / 型号编号 / 制造商，供 --ledger 用）
+ *   - 资料目录补充 .csv（CSV 格式目录清单，登记 P-1101B 说明书，无实体文件）
+ *   - 设备台账 .xlsx（SAP PM 技术对象清单列名：功能位置 / 设备 / 设备描述 / 型号编号 / 制造商，供 --ledger 用）；
+ *     P-1101A / P-1101B 同名同型号（A/B 泵），验证不唯一的名称、型号不作关联线索、查 B 不带出 A 的资料
  */
 const fs = require('fs');
 const path = require('path');
@@ -150,13 +152,21 @@ const CATALOG_BOOK = {
 };
 writeXlsx(path.join(out, 'sample-doc-catalog.xlsx'), CATALOG_BOOK);
 writeXlsx(path.join(docsDir, '资料目录清单.xlsx'), CATALOG_BOOK);
+// CSV 格式的补充目录（带 BOM，Excel 可直接打开）：登记 P-1101B 说明书，路径下无实体文件
+fs.writeFileSync(path.join(docsDir, '资料目录补充.csv'), '\uFEFF' + [
+  '文件名,资料类型,关联位号,版本,存放位置,归档日期',
+  'P-1101B常压塔顶回流泵使用说明书.pdf,说明书,P-1101B,A/0,设备室档案柜1-4,2012-06-20',
+  '',
+].join('\n'), 'utf8');
 
 // ---------------- 7. 设备台账 xlsx（供 --ledger，SAP PM 技术对象清单列名）----------------
+// P-1101A / P-1101B 为 A/B 泵：设备描述、型号相同（SAP 台账常见），名称与型号都不能作为关联线索
 const eq8 = (i) => String(10001000 + seed * 17 + i);
 writeXlsx(path.join(out, 'sample-equipment-ledger.xlsx'), {
   '技术对象清单': [
     ['功能位置', '设备', '设备描述', '型号编号', '制造商', '开始日期', '对象类型'],
-    ['P-1101A', eq8(1), '常压塔顶回流泵A', model, maker, '2012-06-15', '离心泵'],
+    ['P-1101A', eq8(1), '常压塔顶回流泵', model, maker, '2012-06-15', '离心泵'],
+    ['P-1101B', eq8(4), '常压塔顶回流泵', model, maker, '2012-06-15', '离心泵'],
     ['E-1201', eq8(2), '原油换热器', 'BES-800-2.5', pick(MAKERS), '2012-06-15', '换热器'],
     ['V-1301', eq8(3), '原油缓冲罐', 'φ3000×8000', pick(MAKERS), '2012-06-15', '压力容器'],
   ],

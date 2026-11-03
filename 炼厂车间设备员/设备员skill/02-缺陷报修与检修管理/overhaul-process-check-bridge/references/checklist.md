@@ -8,6 +8,7 @@
 ## 源技能执行
 - [ ] 按源技能 SKILL.md 走完 docx2text → plan.json（作业项与类型标签、工期、承修单位、null 措施已向用户复述确认）→ check.js
 - [ ] 传给 `merge-report.js` 的是 `result.json`，不是 `summary.json`
+- [ ] 已用 `--plan` 传入交给 check.js 的同一份 `plan.json`（方案编号、作业类型标签由此读取）；plan 与 result 不一致的 warning 已核对
 - [ ] 检修分级已按 大检修 / 日常维修 / 抢修 / 专项 传入（旧值映射的 warning 已告知用户），分级未影响判定
 
 ## 结果转达（脚本已固化，交付前复核）

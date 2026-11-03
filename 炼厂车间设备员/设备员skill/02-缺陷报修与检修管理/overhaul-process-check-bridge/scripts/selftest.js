@@ -100,29 +100,57 @@ r = runChk([], { SKILL_PACK_ROOT: packRoot2 });
 eq(r.s.available, true, '5.7 技能包子目录被改名时一级扫描仍能命中');
 
 // ============ 6. make-sample 可再生 ============
-const ex1 = path.join(work, 'ex1');
-let m = spawnSync(process.execPath, [MKS, '--out', ex1], { encoding: 'utf8' });
-const ms = JSON.parse(m.stdout.trim().split('\n').pop());
-eq(ms.ok, true, '6.1 make-sample 运行成功');
-ok(['sample-overhaul-result.json', 'sample-overhaul-result-summary-mismatch.json', 'sample-workshop-notes.json', 'sample-workshop-notes-bad.json'].every((f) => ms.files.includes(f)), '6.2 四份 JSON 样例齐全');
-const ex7 = path.join(work, 'ex7');
-m = spawnSync(process.execPath, [MKS, '--out', ex7, '--seed', '7'], { encoding: 'utf8' });
-const ms7 = JSON.parse(m.stdout.trim().split('\n').pop());
-ok(ms7.planNo !== ms.planNo, '6.3 seed 改变方案编号');
+// make-sample 要调用依赖技能 overhaul-safety-check 生成真实 result.json。依赖技能不在本仓库（skill-pack-local 不入库），
+// 找不到时改用已入库的 examples/，跳过需要依赖技能的断言并在结尾说明，不让其他成员的自测和打包因此失败。
+const depInfo = runChk([]).s;
+const depRoot = depInfo.available ? depInfo.root : null;
+let skipped = 0;
+const ex1 = depRoot ? path.join(work, 'ex1') : path.join(ROOT, 'examples');
+let ms = {};
+if (depRoot) {
+  let m = spawnSync(process.execPath, [MKS, '--out', ex1], { encoding: 'utf8' });
+  ms = JSON.parse(m.stdout.trim().split('\n').pop());
+  eq(ms.ok, true, '6.1 make-sample 运行成功');
+  ok(['sample-overhaul-plan.json', 'sample-overhaul-result.json', 'sample-overhaul-result-summary-mismatch.json', 'sample-workshop-notes.json', 'sample-workshop-notes-bad.json'].every((f) => (ms.files || []).includes(f)), '6.2 五份 JSON 样例齐全（含源技能输入 plan.json）');
+  const ex7 = path.join(work, 'ex7');
+  m = spawnSync(process.execPath, [MKS, '--out', ex7, '--seed', '7'], { encoding: 'utf8' });
+  const ms7 = JSON.parse(m.stdout.trim().split('\n').pop());
+  ok(ms7.planNo !== ms.planNo, '6.3 seed 改变方案编号');
+  const s1 = JSON.parse(fs.readFileSync(path.join(ex1, 'sample-overhaul-result.json'), 'utf8'));
+  const s7 = JSON.parse(fs.readFileSync(path.join(ex7, 'sample-overhaul-result.json'), 'utf8'));
+  eq(JSON.stringify(s7.summary), JSON.stringify(s1.summary), '6.4 seed 改变数值但四项计数不变');
+} else skipped += 4;
 const src1 = JSON.parse(fs.readFileSync(path.join(ex1, 'sample-overhaul-result.json'), 'utf8'));
-const src7 = JSON.parse(fs.readFileSync(path.join(ex7, 'sample-overhaul-result.json'), 'utf8'));
-eq(JSON.stringify(src7.summary), JSON.stringify(src1.summary), '6.4 seed 改变数值但四项计数不变');
 ok(Array.isArray(src1.findings) && src1.disclaimer && src1.findings.every((f) => 'name' in f && 'advice' in f && 'jobs' in f), '6.5 样例结构与源技能 result.json 一致（name / advice / jobs）');
+// 2026-11-03 #15：样例 result.json 须是依赖技能的真实输出——顶层字段、规则号、规则名都要对得上真实规则库
+if (depRoot) ok(true, '6.6 开发库内可找到依赖技能 overhaul-safety-check（样例按其真实输出生成）'); else skipped++;
+const REAL_KEYS = ['unit', 'project', 'contractor', 'duration_days', 'jobs_count', 'summary', 'skipped', 'findings', 'extraction_notes', 'disclaimer'];
+eq(Object.keys(src1).join(','), REAL_KEYS.join(','), '6.7 样例 result.json 顶层字段与依赖技能 check.js 输出一致（不含 plan_no / job_types）');
+const PLAN1 = path.join(ex1, 'sample-overhaul-plan.json');
+if (depRoot) {
+  const depRules = JSON.parse(fs.readFileSync(path.join(depRoot, 'references', 'checklist.json'), 'utf8')).rules;
+  const ruleName = new Map(depRules.map((x) => [x.id, x.name]));
+  ok(depRules.length > 0 && src1.findings.filter((f) => !/^UND-/.test(f.rule_id)).every((f) => ruleName.get(f.rule_id) === f.name), '6.8 样例 findings 的规则号与规则名都在真实规则库 checklist.json 中');
+  let realRes = null;
+  if (fs.existsSync(PLAN1)) {
+    const rd = path.join(work, 'real-check');
+    spawnSync(process.execPath, [path.join(depRoot, 'scripts', 'check.js'), '--input', PLAN1, '--out', rd], { encoding: 'utf8' });
+    if (fs.existsSync(path.join(rd, 'result.json'))) realRes = JSON.parse(fs.readFileSync(path.join(rd, 'result.json'), 'utf8'));
+  }
+  ok(!!realRes && JSON.stringify(realRes) === JSON.stringify(src1), '6.9 样例 result.json 与依赖技能对样例 plan.json 的真实输出逐字一致');
+} else skipped += 2;
+const plan1 = fs.existsSync(PLAN1) ? JSON.parse(fs.readFileSync(PLAN1, 'utf8')) : {};
+ok(!!plan1.plan_no && (!depRoot || plan1.plan_no === ms.planNo), '6.10 样例 plan.json 带方案编号（plan_no）');
 
 // ============ 7. 【核心】源技能 JSON → 合并报告不改写判定 ============
 const RES = path.join(ex1, 'sample-overhaul-result.json');
 const NOTES = path.join(ex1, 'sample-workshop-notes.json');
-r = runMrg(['--result', RES, '--notes', NOTES, '--object', 'E-1201 检修方案'], 'main');
+r = runMrg(['--result', RES, '--plan', PLAN1, '--notes', NOTES, '--object', 'E-1201 检修方案'], 'main');
 eq(r.s.ok, true, '7.1 合并转达成功');
 eq(r.s.counts.must_fix, 3, '7.2 缺失计数按 findings 重算');
-eq(r.s.counts.should_improve, 2, '7.3 建议完善计数');
-eq(r.s.counts.undetermined, 1, '7.4 未判定计数');
-eq(r.s.counts.pass, 4, '7.5 已有计数');
+eq(r.s.counts.should_improve, 5, '7.3 建议完善计数');
+eq(r.s.counts.undetermined, 9, '7.4 未判定计数（按作业类型聚合后的条数）');
+eq(r.s.counts.pass, 36, '7.5 已有计数');
 eq(JSON.stringify(r.j.findings), JSON.stringify(src1.findings), '7.6 **findings 逐条深拷贝，与源技能一字不差（含 name/advice/jobs）**');
 ok(r.j.findings.every((f, i) => f.rule_id === src1.findings[i].rule_id && f.severity === src1.findings[i].severity), '7.7 顺序与级别均未重排');
 eq(r.j.meta.sourceDisclaimer, src1.disclaimer, '7.8 源技能声明行原文保留在 bridge.json');
@@ -131,18 +159,18 @@ ok(r.md.includes(src1.disclaimer), '7.10 **md 含源技能声明行原文**');
 ok(r.md.includes(DECL), '7.11 **md 含本技能声明行原文**');
 ok(r.md.indexOf(src1.disclaimer) < r.md.indexOf(DECL), '7.12 源技能声明行在前，本技能声明行追加在后');
 for (const f of src1.findings.filter((x) => x.severity !== 'pass')) ok(r.md.includes(f.message) && r.md.includes(f.detail), `7.13 ${f.rule_id} 的 message 与 detail 原文出现在 md`);
-ok(r.md.includes('补一节「作业风险分析（JSA）」'), '7.14 源技能 advice（方案里怎么补）原文转达');
-ok(/动火点周围可燃物清理与隔离/.test(r.md), '7.15 源技能标签原词「动火」照搬，未被改写为「用火」');
+ok(r.md.includes('补充风险辨识章节：逐项作业开展 JSA'), '7.14 源技能 advice（方案里怎么补）原文转达');
+ok(/动火点可燃物清理/.test(r.md) && /含动火作业但方案未写明动火点周边可燃物清理措施/.test(r.md), '7.15 源技能标签原词「动火」照搬，未被改写为「用火」');
 ok(/动火（用火作业）/.test(r.md) && /盲板抽堵（盲板抽堵作业）/.test(r.md), '7.16 **作业类型标签加注作业许可八大类名称（不改源值）**');
-eq(r.j.sourceMeta.jobTypes.join(','), '动火,盲板抽堵,临时用电', '7.17 源 job_types 原值保留');
+eq(r.j.sourceMeta.jobTypes.join(','), '动火,盲板抽堵,临时用电', '7.17 作业类型标签取 plan.json 各作业 job_types 原值（去重、按出现顺序）');
 ok(/## 三、未判定项/.test(r.md) && /UND-高处/.test(r.md.split('## 三、未判定项')[1].split('## 四、')[0]), '7.18 未判定项单列一节且含聚合规则号');
 ok(/【未判定】/.test(r.md) && /不改写为已有或缺失/.test(r.md), '7.19 未判定项说明保持未判定、不改写');
 ok(/【注意】未判定项既不代表措施已有，也不代表缺失/.test(r.md), '7.20 有未判定项时结论段出现【注意】提示');
 ok(/逐条照搬源技能结果，未合并、未归类、未调整级别/.test(r.md), '7.21 缺失项节声明逐条照搬');
 ok(/以下内容原文引自源技能判定结果，本技能未做任何改写/.test(r.md), '7.22 结论段声明未改写');
-ok(/缺失（必须补充）3 项/.test(r.md) && /已有 4 项/.test(r.md), '7.23 结论行用源技能四级中文（缺失 / 已有）');
+ok(/缺失（必须补充）3 项/.test(r.md) && /已有 36 项/.test(r.md), '7.23 结论行用源技能四级中文（缺失 / 已有）');
 ok(/## 四、已有措施/.test(r.md) && /TE-001/.test(r.md), '7.24 已有措施也逐条列出');
-ok(/## 附：源技能抽取说明（原文）/.test(r.md) && /jobs\[2\]\.job_types/.test(r.md), '7.25 源技能抽取说明原文附在报告');
+ok(/## 附：源技能抽取说明（原文）/.test(r.md) && /jobs\[4\]\.job_types/.test(r.md), '7.25 源技能抽取说明原文附在报告');
 eq(r.j.sourceSummary.must_fix, 3, '7.26 源 summary 原值保留');
 ok(!EMOJI.test(r.md), '7.27 md 不含 emoji');
 ok(/<!-- ANALYSIS_START -->/.test(r.md) && /<!-- ANALYSIS_END -->/.test(r.md), '7.28 分析段占位符存在');
@@ -150,9 +178,13 @@ ok(/不得审查方案技术内容/.test(r.md.split('<!-- ANALYSIS_START -->')[1
 ok(fs.existsSync(path.join(r.out, 'summary.json')) && JSON.parse(fs.readFileSync(path.join(r.out, 'summary.json'), 'utf8')).ok === true, '7.30 summary.json 落盘');
 ok(['## 一、核查结论（引自 overhaul-safety-check）', '## 二、措施缺失项（缺失 / 建议完善）', '## 三、未判定项', '## 四、已有措施', '## 五、车间侧补充提示（非规则判定）', '## 六、整改建议'].every((h) => r.md.includes(h)), '7.31 六节结构齐全');
 eq(r.j.meta.objectName, 'E-1201 检修方案', '7.32 --object 写入对象名');
-ok(/【缺失（必须补充）】G-003 风险辨识与 JSA/.test(r.md) && /【未判定】UND-高处/.test(r.md), '7.33 整改建议按源级别逐条列出');
+ok(/【缺失（必须补充）】G-006 风险辨识与 JSA/.test(r.md) && /【未判定】UND-高处/.test(r.md), '7.33 整改建议按源级别逐条列出');
 ok(/各专项措施最终仍以开工时逐票办理的作业票为准/.test(r.md) && /permit-precheck-bridge/.test(r.md), '7.34 整改建议末尾提示作业票为准并互指作业票预检');
 ok(/承修单位（contractor）/.test(r.md) && /工期天数（duration_days）/.test(r.md), '7.35 源技能字段表含承修单位与工期');
+eq(r.j.sourceMeta.plan_no, plan1.plan_no, '7.36 **方案编号取自 plan.json（依赖技能 result.json 不含 plan_no）**');
+eq(r.j.meta.planFile, PLAN1, '7.37 bridge.json 记录 plan.json 路径');
+ok(r.md.includes(`方案编号（plan_no）| ${plan1.plan_no}`) || r.md.includes(`方案编号（plan_no） | ${plan1.plan_no}`), '7.38 md 源技能字段表出现方案编号');
+ok(/取自 plan\.json/.test(r.md), '7.39 md 注明方案编号与作业类型取自 plan.json');
 
 // ============ 8. 检修分级口径 ============
 r = runMrg(['--result', RES, '--repair-type', '日常维修'], 'rt');
@@ -216,7 +248,14 @@ ok(r.s.warnings.some((w) => w.includes('无 disclaimer')), '11.6 源技能无声
 eq(r.j.meta.sourceDisclaimer, null, '11.7 无声明行时不伪造源声明');
 ok(r.md.includes(DECL), '11.8 本技能声明行仍在');
 eq(r.j.sourceMeta.jobTypes.length, 0, '11.9 源 result 无 job_types 时为空数组，不猜测');
-ok(!/作业类型标签/.test(r.md), '11.10 无 job_types 时 md 不出现标签行');
+ok(!/\| 作业类型标签（/.test(r.md), '11.10 无 job_types 时 md 字段表不出现作业类型标签行');
+ok(r.s.warnings.some((w) => /--plan/.test(w) && /plan_no/.test(w)), '11.11 未传 --plan 且源结果无 plan_no/job_types 时 warning 提示传 --plan');
+eq(r.j.sourceMeta.plan_no, null, '11.12 不传 --plan 时方案编号为 null，不猜测');
+const legacy = JSON.parse(JSON.stringify(src1));
+legacy.plan_no = 'JX-旧样例-01'; legacy.job_types = ['动火'];
+r = runMrg(['--result', wj('legacy.json', legacy)], 'legacy');
+ok(r.j.sourceMeta.plan_no === 'JX-旧样例-01' && r.j.sourceMeta.jobTypes.join(',') === '动火', '11.13 源结果自带 plan_no / job_types 时（旧格式）仍照搬');
+ok(!r.s.warnings.some((w) => /--plan/.test(w)), '11.14 源结果自带两项时不提示 --plan');
 
 // ============ 12. 无未判定 / 无缺失 ============
 const clean = JSON.parse(JSON.stringify(src1));
@@ -245,6 +284,37 @@ eq(r.s.ok, false, '13.8 未知参数报错');
 r = runMrg(['--result'], 'novalue');
 eq(r.s.ok, false, '13.9 --result 缺值报错');
 
+// ============ 15. 真实链路：依赖技能 check.js → result.json → merge-report（2026-11-03 #15） ============
+if (depRoot) {
+  const rd = path.join(work, 'chain');
+  spawnSync(process.execPath, [path.join(depRoot, 'scripts', 'check.js'), '--input', PLAN1, '--out', rd], { encoding: 'utf8' });
+  const RR = path.join(rd, 'result.json');
+  const real = fs.existsSync(RR) ? JSON.parse(fs.readFileSync(RR, 'utf8')) : {};
+  ok(!('plan_no' in real) && !('job_types' in real), '15.1 依赖技能真实 result.json 不含 plan_no / job_types（缺陷前提）');
+  r = runMrg(['--result', RR], 'chain-noplan');
+  ok(r.j && r.j.sourceMeta.plan_no === null && r.j.sourceMeta.jobTypes.length === 0, '15.2 不传 --plan：plan_no 为 null、jobTypes 为空，不猜测');
+  r = runMrg(['--result', RR, '--plan', PLAN1], 'chain-plan');
+  eq(r.s.ok, true, '15.3 传 --plan 运行成功');
+  eq(r.j && r.j.sourceMeta.plan_no, plan1.plan_no, '15.4 **真实链路下 sourceMeta.plan_no 取自 plan.json，不为 null**');
+  eq(r.j && r.j.sourceMeta.jobTypes.join(','), '动火,盲板抽堵,临时用电', '15.5 **真实链路下 jobTypes 取自 plan.json，不为空**');
+  ok(r.j && r.j.sourceMeta.jobTypesCn.includes('动火（用火作业）'), '15.6 plan.json 取到的标签同样加注八大类名称');
+  eq(r.j && JSON.stringify(r.j.findings), JSON.stringify(real.findings), '15.7 传 --plan 不影响 findings 逐条照搬');
+  ok(r.s.warnings && !r.s.warnings.some((w) => /不一致/.test(w)), '15.8 plan.json 与 result.json 一致时无不一致 warning');
+  const other = JSON.parse(JSON.stringify(plan1)); other.project = '另一份方案'; other.jobs = other.jobs.slice(0, 2);
+  r = runMrg(['--result', RR, '--plan', wj('other-plan.json', other)], 'chain-other');
+  ok(r.s.ok && r.s.warnings.some((w) => /project/.test(w) && /不一致/.test(w)), '15.9 plan.json 与 result.json 项目名不一致时 warning');
+  ok(r.s.warnings.some((w) => /作业项数/.test(w) && /不一致/.test(w)), '15.10 作业项数不一致时 warning');
+} else skipped += 10;
+r = runMrg(['--result', RES, '--plan', '/不存在/plan.json'], 'noplanfile');
+ok(r.s.ok === false && /plan\.json|方案数据/.test(r.s.error), '15.11 --plan 文件不存在报错');
+r = runMrg(['--result', RES, '--plan', wj('bad-plan.json', '{坏')], 'badplan');
+eq(r.s.ok, false, '15.12 --plan JSON 非法报错');
+r = runMrg(['--result', RES, '--plan', wj('arr-plan.json', [1, 2])], 'arrplan');
+eq(r.s.ok, false, '15.13 --plan 不是对象报错');
+const pl2 = JSON.parse(JSON.stringify(plan1)); pl2.plan_no = null;
+r = runMrg(['--result', RES, '--plan', wj('plan-noid.json', pl2)], 'plannoid');
+ok(r.s.ok && r.j.sourceMeta.plan_no === null && r.s.warnings.some((w) => /plan_no/.test(w) && /为空/.test(w)), '15.14 plan.json 无方案编号时为 null 并 warning，不猜测');
+
 // ============ 14. 文档口径（出现与不出现两个方向） ============
 const skill = fs.readFileSync(path.join(ROOT, 'SKILL.md'), 'utf8');
 ok(/安全措施核查/.test(skill) && /大检修/.test(skill) && /日常维修/.test(skill), '14.1 SKILL.md 用中石化检修分级与「安全措施核查」限定');
@@ -262,11 +332,13 @@ ok(/检修方案/.test(rules) && /大检修/.test(rules) && /三查四定/.test(
 const other = path.join(ROOT, '..', 'permit-precheck-bridge', 'references', 'bridge-rules.md');
 ok(!fs.existsSync(other) || fs.readFileSync(other, 'utf8') !== rules, '14.12 references 不再与 permit bridge 逐字重复');
 const readme = fs.readFileSync(path.join(ROOT, 'scripts', 'README.md'), 'utf8');
+ok(/--plan/.test(skill) && /--plan/.test(readme), '14.15 SKILL.md 与 scripts/README 记录 --plan');
 ok(/merge-report\.js/.test(readme) && /tmpdir/.test(readme) && /--repair-type/.test(readme), '14.13 scripts/README 记录 merge-report、默认输出目录与 --repair-type');
 ok(fs.existsSync(path.join(ROOT, 'references', 'input-spec.md')), '14.14 references/input-spec.md 存在');
 
 console.log('\n' + '='.repeat(56));
 console.log('overhaul-process-check-bridge 自测：' + pass + ' 通过，' + fail + ' 失败');
+if (skipped) console.log(`另有 ${skipped} 条需要依赖技能 overhaul-safety-check 的断言已跳过（make-sample 再生与真实链路），样例改用已入库的 examples/。安装依赖技能或设置 SKILL_PACK_ROOT 后可全量运行。`);
 if (failures.length) { console.log('\n失败项：'); failures.forEach((f) => console.log('  ✗ ' + f)); }
 console.log('='.repeat(56));
 try { fs.rmSync(work, { recursive: true, force: true }); } catch (e) {}

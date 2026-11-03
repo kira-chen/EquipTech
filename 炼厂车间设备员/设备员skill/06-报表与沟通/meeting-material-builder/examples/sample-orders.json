@@ -1,41 +1,69 @@
 {
+  "meta": {
+    "workshop": "常减压车间",
+    "date": "2026-09-21",
+    "slaSource": "脚本默认口径"
+  },
   "counts": {
     "total": 14,
+    "known": 13,
+    "unknownStatus": 1,
     "open": 9,
     "overdue": 3,
     "stalled": 3,
+    "dueSoon": 4,
     "closedInRange": 3,
-    "closedAll": 3
+    "closedAll": 3,
+    "cancelled": 1
   },
-  "metrics": {
-    "closeRate": 25,
-    "avgCycleDays": 6.9
-  },
-  "byStatus": {
-    "施工中": 5,
-    "已派工": 4
-  },
+  "byStatus": [
+    {
+      "status": "施工中",
+      "count": 5
+    },
+    {
+      "status": "已派工",
+      "count": 4
+    }
+  ],
   "overdue": [
     {
       "no": "WO-26090101",
       "tag": "P-1101B",
-      "desc": "更换机械密封",
-      "overdueDays": 5,
-      "owner": "检修一队"
+      "name": "常压塔顶回流泵B",
+      "status": "施工中",
+      "vendor": "检修一队",
+      "owner": "班长孙",
+      "party": "检修一队 / 班长孙",
+      "fault": "更换机械密封",
+      "overdueDays": 5
     },
     {
       "no": "WO-26090102",
       "tag": "K-1201",
-      "desc": "压缩机出口温度检查",
-      "overdueDays": 6,
-      "owner": "检修二队"
+      "name": "循环氢压缩机",
+      "status": "施工中",
+      "vendor": "检修二队",
+      "owner": "项目经理李",
+      "party": "检修二队 / 项目经理李",
+      "fault": "压缩机出口温度检查",
+      "overdueDays": 6
     },
     {
       "no": "WO-26090103",
       "tag": "E-1301",
-      "desc": "法兰渗漏处理",
-      "overdueDays": 7,
-      "owner": "保运队"
+      "name": "常压塔顶冷却器",
+      "status": "施工中",
+      "vendor": "保运队",
+      "owner": "工长赵",
+      "party": "保运队 / 工长赵",
+      "fault": "法兰渗漏处理",
+      "overdueDays": 7
     }
-  ]
+  ],
+  "metrics": {
+    "closeRate": 25,
+    "avgCycleDays": 6.9,
+    "cycleSample": 2
+  }
 }

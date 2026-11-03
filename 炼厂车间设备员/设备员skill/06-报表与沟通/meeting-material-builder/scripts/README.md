@@ -52,9 +52,9 @@ node "<技能目录>/scripts/build.js" \
 
 | 文件 | 来源技能 | 识别特征 | 抽取内容 |
 |---|---|---|---|
-| `hazard.json` | hazard-closure-tracker | `majorHazards` | 隐患总数、重大隐患、超期、闭环率；重大隐患进问题项 |
+| `hazard.json` | hazard-closure-tracker | `majorHazards` | 隐患总数、重大隐患、超期（`counts.total/major/overdue`）、闭环率（`metrics.closureRate`，兼容旧字段 `closeRate`）；未闭环的重大隐患进问题项，已闭环（bucket=closed，已整改且已验收）的进「主要工作」 |
 | `status.json` | inspection-data-digest | `byEquipment` + `abnormal` | 设备数、异常、未判定、漏检；异常项进问题项 |
-| `orders.json` | work-order-tracker | `byStatus` 或 `metrics.closeRate` | 工单总数、未闭环、超期、停滞、完成率；超期工单进问题项 |
+| `orders.json` | work-order-tracker | `byStatus` 或 `metrics.closeRate` | 工单总数、未闭环、超期、停滞、完成率；超期工单进问题项，责任方取 `vendor`（承修单位/工作中心），无 `vendor` 时才用 `owner` |
 | `defects.json` | defect-intake-grading | `counts.byLevel` + `defects` | 新增缺陷、各等级分布 |
 | `periodic.json` | equipment-weekly-monthly-report | `metrics` + `failures` + `dataGaps` | 指标键映射为中文（设备完好率 % / 静密封点泄漏率 ‰ / 大检修计划完成率 ……）；`dataGaps.recompute` 的指标与 `highlights` 进问题项；`basedOn` 数据覆盖进要点 |
 | `daily.json` | equipment-daily-report | `counts` + `status` + `orders` | counts 映射为中文（当日作业票、待验收工单……）；`special.list` 中异常的特护设备进问题项 |
@@ -90,7 +90,7 @@ node scripts/build.js \
 node scripts/make-sample.js --out examples [--seed <n>]
 ```
 
-生成 6 份样例：巡检汇总、工单跟踪、隐患跟踪、周报 `periodic.json`（指标键英文、1 项需复算、1 条重点事项）四个上游 JSON，外加无法识别的 JSON 与 Markdown 报表各一。
+生成 6 份样例：巡检汇总、工单跟踪（按 work-order-tracker 的 orders.json 结构裁剪）、隐患跟踪（按 hazard-closure-tracker 的 hazard.json 结构裁剪，闭环率字段 `metrics.closureRate`）、周报 `periodic.json`（指标键英文、1 项需复算、1 条重点事项）四个上游 JSON，外加无法识别的 JSON 与 Markdown 报表各一。
 
 ## selftest.js
 
@@ -98,4 +98,4 @@ node scripts/make-sample.js --out examples [--seed <n>]
 node scripts/selftest.js
 ```
 
-118 条断言，覆盖基础生成、数字不新增、听众层级差异（三档 + 旧称拒绝）、`--audience-spec` 名称与详略覆盖、`--weights`（生效 / 缺环节 / 和不为 1 / 未知环节 / 非数字）、`--hide-tags`、`slides` 提纲结构与不代拟、`periodic.json` / `daily.json` 中文标签映射与需复算指标进问题项、议题无数据不编造、不代拟、需决策与遗留、无法识别 JSON、隐患 JSON、内容量匹配、参数校验、表格输入提示、提纲内容、不做责任归因、无 emoji。
+132 条断言，覆盖基础生成、数字不新增、听众层级差异（三档 + 旧称拒绝）、`--audience-spec` 名称与详略覆盖、`--weights`（生效 / 缺环节 / 和不为 1 / 未知环节 / 非数字）、`--hide-tags`、`slides` 提纲结构与不代拟、`periodic.json` / `daily.json` 中文标签映射与需复算指标进问题项、议题无数据不编造、不代拟、需决策与遗留、无法识别 JSON、隐患 JSON（按上游真实结构读 `metrics.closureRate`、兼容 `closeRate`、null 不补 0；已闭环重大隐患改列主要工作、不进存在问题）、工单责任方取承修单位不点人名、内容量匹配、参数校验、表格输入提示、提纲内容、不做责任归因、无 emoji。

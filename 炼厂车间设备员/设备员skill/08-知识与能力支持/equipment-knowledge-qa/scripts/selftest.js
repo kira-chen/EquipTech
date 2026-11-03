@@ -457,6 +457,39 @@ const docxTxt = lite.docxToText(fs.readFileSync(path.join(S1, 'sample-docs', '�
 ok(/A 级（重大）/.test(docxTxt) && !/I 级缺陷/.test(docxTxt), 'J39 样例制度缺陷分级改为 A/B/C 三级');
 ok(/公司设备管理部门（机动部\/设备部）/.test(docxTxt), 'J40 样例制度用「公司设备管理部门（机动部/设备部）」口径');
 
+// ============ K. 缺陷修复（2026-11-03 全量核验 #6 #7）============
+// K1~K12 句末「X是什么」识别为术语定义（G9）；「原因/要求/做法/型号…是什么」这类不是问术语，不得误判
+const ct = (q) => { const c = R.classify(q); return `${c.questionType}/${c.ruleId}`; };
+eq(ct('往复压缩机液击是什么'), 'principle/G9', 'K1 句末「X是什么」判为原理概念类（术语定义 G9）');
+eq(ct('水锤是什么？'), 'principle/G9', 'K2 句末带问号同样识别');
+eq(ct('NPSH 是什么'), 'principle/G9', 'K3 英文缩写 + 空格 +「是什么」同样识别');
+eq(ct('检修要求是什么'), 'undetermined/U1', 'K4 反例：「要求是什么」不是术语定义，仍为未判定');
+eq(ct('这是什么'), 'undetermined/U1', 'K5 反例：「这是什么」指代不明，仍为未判定');
+eq(ct('这个东西是什么'), 'undetermined/U1', 'K5b 反例：「这个东西是什么」指代不明，仍为未判定');
+eq(ct('交接班流程是什么'), 'undetermined/U1', 'K6 反例：「流程是什么」不是术语定义，仍为未判定');
+eq(ct('设备泄漏的原因是什么'), 'principle/G2', 'K7 反例：「原因是什么」仍按机理成因 G2，不归 G9');
+eq(ct('汽蚀的现象是什么'), 'principle/G7', 'K8 反例：「现象是什么」仍按定性判别 G7');
+eq(ct('这台泵的型号是什么'), 'plant/P3', 'K9 反例：「型号是什么」仍按本厂设备型号 P3');
+ok(!R.classify('这台泵的型号是什么').matched.principle.some((m) => m.ruleId === 'G9'), 'K10 「型号是什么」不记入 G9');
+eq(ct('什么是汽蚀'), 'principle/G1', 'K11 原有「什么是X」仍为 G1，规则号不变');
+eq(ct('机械密封是什么原理'), 'principle/G3', 'K12 「是什么」不在句末时不归 G9');
+// 问本厂设备属性与参数设定（输送介质、联锁逻辑、油品、检修等级、报警值）不是术语定义，不得归 G9 按通用原理作答
+for (const q of ['原料泵输送介质是什么', '联锁逻辑是什么', '润滑油品种是什么', '检修等级是什么', '出口压力报警值是什么']) {
+  ok(!R.classify(q).matched.principle.some((m) => m.ruleId === 'G9'), `K12a 「${q}」不记入 G9`);
+}
+r = run(['--question', '往复压缩机液击是什么'], 'g9');
+eq(`${r.j.questionType}/${r.j.classification.ruleId}/${r.j.guidance.canAnswer}/${r.j.guidance.answerBasis}`, 'principle/G9/true/general-principle', 'K13 qa.js 端到端：「X是什么」按原理类作答并标注通用原理');
+// K14~K20 ≤4 字中文片段也做二字切分，原片段本身保留且排最前
+const kw = R.splitQuery('我们厂备用泵怎么规定的');
+eq(kw[0], '厂备用泵', 'K14 4 字片段原样保留且排在最前');
+ok(kw.includes('备用泵') && kw.includes('备用'), `K15 4 字片段切出「备用泵」「备用」（实际 ${JSON.stringify(kw)}）`);
+ok(R.splitQuery('机泵备用').includes('机泵') && R.splitQuery('机泵备用').includes('备用'), 'K16 4 字片段切出二字词');
+eq(JSON.stringify(R.splitQuery('什么是水锤')), '["水锤"]', 'K17 2 字片段只保留本身');
+ok(R.splitQuery('汽蚀余量').indexOf('汽蚀余量') < R.splitQuery('汽蚀余量').indexOf('汽蚀'), 'K18 长词排在短词前');
+r = run(['--question', '我们厂备用泵怎么规定的', '--docs', DOCS], 'shortseg');
+eq(r.j.guidance.canAnswer, true, 'K19 「厂备用泵」切词后命中厂内资料，可作答');
+ok(r.j.passages.some((p) => /一用一备/.test(p.text) && p.keywords.includes('备用')), 'K20 命中段落为车间备用件规定原文');
+
 console.log(`\n${'='.repeat(56)}`);
 console.log(`equipment-knowledge-qa 自测：${pass} 通过，${fail} 失败`);
 if (failures.length) { console.log('\n失败项：'); failures.forEach((f) => console.log('  ✗ ' + f)); }

@@ -427,6 +427,162 @@ const dupP = r.todo.possibleDuplicate.find((d) => d.anchor === 'P-1101B');
 ok(dupP && dupP.items.length === 4, '16.22 P-1101B 疑似重复组含工单/缺陷/待办表/交接 4 条，均保留');
 ok(/shift-handover-record/.test(r.list) || /工作交接/.test(r.list), '16.23 清单按来源分类出现工作交接');
 
+// ================================ 17. 结转 key 稳定：次日重跑上游（停滞天数变化、临期转超期、缺陷登记号按运行日重编）不出重复
+// 各上游 JSON 字段按真实产出结构（work-order-tracker / hazard-closure-tracker / special-equipment-inspection-due /
+// valve-instrument-calibration-ledger / lubrication-manager / defect-intake-grading / shift-handover-record）
+function upstream(day, dd) {
+  // dd：当日相对 DATE 的天数偏移；day 1 → 0，day 2 → 2
+  const d = (n) => D(n);
+  const p = (name) => `day${day}-${name}`;
+  return [
+    mkj(p('orders.json'), {
+      meta: {}, counts: {}, byStatus: [], closed: [],
+      overdue: [
+        { no: 'WO-1', notifNo: '10001', tag: 'P-01', name: '泵1', status: '施工中', priority: 2, fault: '机封漏', dueAt: d(-5), overdueDays: 5 + dd, party: '钳工班', owner: '李', reason: '备件未到', source: '工单台账 第3行' },
+        { no: 'WO-4', notifNo: '10004', tag: 'P-04', name: '泵4', status: '已派工', priority: 3, fault: '轴承异响', dueAt: d(-3), overdueDays: 3 + dd, party: '钳工班', owner: '李', reason: '', source: '工单台账 第6行' },
+        ...(day === 2 ? [{ no: 'WO-3', notifNo: '10003', tag: 'V-01', name: '罐1', status: '施工中', priority: 3, fault: '人孔渗漏', dueAt: d(1), overdueDays: 1, party: '铆焊班', owner: '赵', reason: '', source: '工单台账 第5行' }] : []),
+      ],
+      stalled: [
+        { no: 'WO-2', notifNo: '10002', tag: 'K-01', name: '压缩机', status: '施工中', priority: 3, lastNode: '开工时间', lastTime: d(-15) + ' 09:00', idleDays: 15 + dd, party: '钳工班', owner: '王', reason: '等厂家' },
+        { no: 'WO-4', notifNo: '10004', tag: 'P-04', name: '泵4', status: '已派工', priority: 3, lastNode: '派工时间', lastTime: d(-12) + ' 09:00', idleDays: 12 + dd, party: '钳工班', owner: '李', reason: '' },
+      ],
+      dueSoon: day === 1 ? [{ no: 'WO-3', notifNo: '10003', tag: 'V-01', name: '罐1', status: '施工中', priority: 3, dueAt: d(1), daysLeft: 1, party: '铆焊班', owner: '赵', source: '工单台账 第5行' }] : [],
+    }),
+    mkj(p('hazard.json'), {
+      majorHazards: [], unverified: [], counts: {},
+      overdue: day === 2 ? [{ no: 'YH-2', desc: '护栏变形', level: 'general', levelCn: '一般隐患', owner: '张', unit: '车间', deadline: d(1), measure: '校正补焊', sheet: '隐患台账', row: 7 }] : [],
+      dueSoon: day === 1 ? [{ no: 'YH-2', desc: '护栏变形', level: 'general', levelCn: '一般隐患', owner: '张', unit: '车间', deadline: d(1), measure: '校正补焊', sheet: '隐患台账', row: 7 }] : [],
+    }),
+    mkj(p('inspection.json'), {
+      dateConflict: [], prepMaterials: [], byCategory: [], counts: {},
+      overdue: day === 2 ? [{ tag: 'V-03', name: '回流罐', category: '压力容器', regCode: 'R002', unit: '车间', nextDate: d(1), overdueDays: 1, sheet: '特种设备台账', row: 18 }] : [],
+      dueSoon: day === 1 ? [{ tag: 'V-03', name: '回流罐', category: '压力容器', regCode: 'R002', unit: '车间', nextDate: d(1), remainDays: 1, sheet: '特种设备台账', row: 18 }] : [],
+    }),
+    mkj(p('calibration.json'), {
+      sendList: [], counts: {},
+      overdue: [{ tag: 'PSV-01', category: '安全阀', name: '塔顶安全阀', nextDate: d(-3), overdueDays: 3 + dd, safetyCritical: true, cert: 'C1', sheet: '校验台账', row: 9 }],
+      dueSoon: [],
+      unresolvedFail: [{ tag: 'PSV-01', category: '安全阀', name: '塔顶安全阀', resultRaw: '不合格', safetyCritical: true, cert: 'C1', sheet: '校验台账', row: 9 }],
+    }),
+    mkj(p('lube.json'), {
+      oilAnalysis: { provided: false }, consumption: null, counts: {},
+      overdue: day === 2 ? [{ tag: 'P-03', name: '回流泵A', part: '轴承箱', oil: 'L-TSA 46', mode: '油浴', owner: '张工', dueDate: d(1), overdueDays: 1, level: '轻微逾期', sheet: '润滑台账', row: 6 }] : [],
+      dueSoon: [
+        ...(day === 1 ? [{ tag: 'P-03', name: '回流泵A', part: '轴承箱', oil: 'L-TSA 46', mode: '油浴', owner: '张工', dueDate: d(1), remainDays: 1, sheet: '润滑台账', row: 6 }] : []),
+        { tag: 'P-03', name: '回流泵A', part: '联轴器', oil: '2# 锂基脂', mode: '脂润滑', owner: '张工', dueDate: d(6), remainDays: 6 - dd, sheet: '润滑台账', row: 7 },
+      ],
+    }),
+    mkj(p('defects.json'), {
+      meta: {}, counts: { total: 1, byLevel: { A: 0, B: 1, C: 0, undetermined: 0 } }, undetermined: [], possibleDuplicate: [],
+      defects: [{
+        // defect-intake-grading 的缺陷登记号按运行当日生成（QX-YYYYMMDD-序号），次日重跑会变
+        no: `QX-${d(dd).replace(/-/g, '')}-001`, tag: 'P-09', name: '泵9', part: '机械密封', desc: '机封滴漏约 5 滴/分', foundAt: d(-1) + ' 08:20', by: '张班',
+        level: 'B', levelCn: 'B 级（严重）', basis: '泄漏且介质易燃', ruleId: 'R03', dueDays: 3, dueDate: d(2),
+        notification: { type: 'M2', typeCn: 'M2 故障报告', sapPriority: 2, faultCode: '泄漏', shortText: 'P-09 机械密封 泄漏', requiredStart: d(-1), requiredEnd: d(2) },
+        srcRow: 2,
+      }],
+    }),
+    mkj(p('handover.json'), {
+      meta: { skill: 'shift-handover-record', workshop: '常减压车间', type: '值班交接', shift: '值班交接', handoverAt: d(dd - 1) + ' 17:00:00' },
+      counts: {}, focusItems: [], carriedOver: null,
+      pending: [
+        { tag: 'E-11', name: '换热器', content: '法兰复紧后观察 24 小时', state: day === 1 ? '未完成' : '未完成（已派工）', owner: '张设备', due: d(1) + ' 16:00', dueText: d(1) + ' 16:00', originShift: '常减压车间 值班交接 9月20日', carryTimes: day - 1, sheet: '本次记录', row: 3 },
+        { tag: '待明确', name: null, content: '三楼平台异响来源未确认', state: '未完成', owner: '待明确', due: null, dueText: '待明确', originShift: '常减压车间 值班交接 9月20日', carryTimes: day - 1, sheet: '本次记录', row: 4 },
+      ],
+    }),
+  ].join(',');
+}
+const day1 = run(upstream(1, 0), [], 'k-day1');
+eq(day1.summary.ok, true, '17.1 第一天 7 个上游汇集成功');
+const n1 = day1.summary.counts.total;
+eq(n1, 14, '17.2 第一天待办 14 项（工单 5 + 隐患 1 + 定检 1 + 校验 2 + 润滑 2 + 缺陷 1 + 交接 2）');
+eq(new Set(day1.todo.items.map((x) => x.key)).size, n1, '17.3 同一次运行内 key 唯一（WO-4 同时超期与停滞也不撞 key）');
+eq((day1.todo.items.find((x) => x.refNo === 'WO-2') || {}).key, 'orders|WO-2|K-01', '17.4 key = 类型 + 单号 + 位号，不含标题（停滞天数）');
+ok(day1.todo.items.filter((x) => x.kind === 'orders').every((x) => !/停滞|超期|临期/.test(x.key)), '17.5 工单 key 不含超期/停滞/临期等会变的字样');
+const day2 = run(upstream(2, 2), ['--prev', path.join(day1.out, 'todo.json')], 'k-day2', D(2));
+eq(day2.summary.ok, true, '17.6 第三天重跑上游 + --prev 成功');
+eq(day2.summary.counts.total, n1, '17.7 重跑上游后待办数不变，不出重复（停滞天数变、临期转超期、缺陷登记号重编）');
+eq(day2.summary.counts.carriedOver, n1, '17.8 前一日全部事项都对上本日条目并打结转标记');
+ok(day2.todo.items.every((x) => x.carried), '17.9 每一条都是结转合并，没有新增的孤立结转项');
+eq((day2.todo.items.find((x) => x.refNo === 'WO-3') || {}).sub, 'overdue', '17.10 WO-3 临期转超期后按本日状态显示');
+eq((day2.todo.items.find((x) => x.refNo === 'WO-3') || {}).carriedFrom, DATE, '17.11 临期转超期的工单保留最早结转日期');
+eq(day2.todo.items.filter((x) => x.kind === 'calibration').length, 2, '17.12 同一台安全阀的「超期」与「不合格未整改」仍为两条，不被 key 合并');
+eq(day2.todo.items.filter((x) => x.kind === 'lube').length, 2, '17.13 同位号不同部位的润滑点仍为两条');
+// 升级兼容：上一日 todo.json 是旧版 key（类型|子类|单号或位号|标题前 24 字），升级后第一次运行也不出重复
+const legacy = JSON.parse(fs.readFileSync(path.join(day1.out, 'todo.json'), 'utf8'));
+for (const it of legacy.items) it.key = [it.kind, it.sub || '', it.refNo || it.tag || '', (it.title || '').slice(0, 24)].join('|');
+const legacyPath = mkj('legacy-todo.json', legacy);
+const day2L = run(upstream(2, 2), ['--prev', legacyPath], 'k-day2-legacy', D(2));
+eq(day2L.summary.counts.total, n1, '17.14 旧版 key 的结转文件：升级后第一次运行不出重复');
+eq(day2L.summary.counts.carriedOver, n1, '17.15 旧版 key 的结转项全部对上本日条目');
+ok(day2L.todo.items.every((x) => !/^[a-z]+\|(overdue|stalled|dueSoon|unverified|unresolvedFail|followup|pending|manual)\|/.test(x.key)), '17.16 升级后写出的 key 为新格式（不再含子类与标题）');
+const day3L = run(upstream(2, 2), ['--prev', path.join(day2L.out, 'todo.json')], 'k-day3-legacy', D(3));
+eq(day3L.summary.counts.total, n1, '17.17 升级后连续运行仍不出重复');
+eq((day3L.todo.items.find((x) => x.refNo === 'WO-3') || {}).carriedRounds, 2, '17.18 升级前后结转轮次连续累加');
+// 本日上游已不再出现的事项：照旧结转，不丢
+const day2Gone = run(t1, ['--prev', path.join(day1.out, 'todo.json')], 'k-gone', D(2));
+eq(day2Gone.summary.counts.total, n1 + 1, '17.19 本日上游没有的事项照旧结转不丢（前一日 14 项 + 本日文字待办 1 项）');
+eq(day2Gone.summary.counts.carriedOver, n1, '17.20 前一日 14 项全部结转');
+// 旧版结转文件 → 次日来源缺席（只结转）→ 第三日来源再出现：无单号事项（缺陷、润滑、交接）不能因主体取法不同而重复
+const day2LG = run(t1, ['--prev', legacyPath], 'k-legacy-gone', D(2));
+const day3LG = run(upstream(2, 2), ['--prev', path.join(day2LG.out, 'todo.json')], 'k-legacy-back', D(3));
+eq(day3LG.summary.counts.total, n1 + 1, '17.21 旧版结转项隔一天来源缺席后再出现，不出重复（14 项 + 文字待办 1 项）');
+eq(new Set(day3LG.todo.items.map((x) => x.key)).size, day3LG.summary.counts.total, '17.22 第三日 key 唯一');
+// 交接状态「未完成（已派工）」写进标题时不出现括号套括号
+const hoE11 = day2.todo.items.find((x) => x.kind === 'handover' && x.tag === 'E-11') || {};
+ok(/法兰复紧后观察 24 小时（已派工）$/.test(hoE11.title || '') && !/（未完成（/.test(hoE11.title || ''), '17.23 交接状态「未完成（已派工）」标题写作「（已派工）」，不嵌套括号');
+
+// ================================ 18. 上游字段按真实产出读取
+const defReal = day1.todo.items.find((x) => x.kind === 'defects') || {};
+ok(/通知单草稿/.test(defReal.detail || '') && /M2 故障报告/.test(defReal.detail || ''), '18.1 缺陷 notification（对象）读出通知单草稿类型');
+ok(/P-09 机械密封 泄漏/.test(defReal.detail || ''), '18.2 缺陷 notification.shortText 写入 detail');
+ok(!/\[object Object\]|undefined/.test(defReal.detail || ''), '18.3 detail 不出现 [object Object] / undefined');
+const defOld = mkj('defects-oldno.json', { counts: { byLevel: {} }, defects: [{ no: 'QX-9', tag: 'P-99', desc: 'x', level: 'C', levelCn: 'C 级（一般）', dueDate: D(3), notificationNo: '10088001', srcRow: 2 }] });
+r = run(defOld, [], 'def-oldno');
+ok(/通知单 10088001/.test(r.todo.items[0].detail), '18.4 兼容带 notificationNo 字符串的旧结构');
+eq((day1.todo.items.find((x) => x.kind === 'lube' && /轴承箱/.test(x.title)) || {}).owner, '张工', '18.5 润滑 owner 按 lube.json 的 owner 读取');
+const hoTbd = day1.todo.items.find((x) => x.kind === 'handover' && /异响/.test(x.title)) || {};
+eq(hoTbd.tag, '', '18.6 交接记录位号占位「待明确」不作位号');
+ok(/（无位号）/.test(hoTbd.title || ''), '18.7 位号占位的交接事项标题写「（无位号）」');
+ok(!day1.todo.warnings.some((w) => w.includes('「待明确」无法解析')), '18.8 交接期限占位「待明确」不报无法解析');
+eq(hoTbd.owner, '', '18.9 交接责任人占位「待明确」不当作责任人姓名');
+
+// ================================ 19. 待办表状态：SAP 状态码按口径对照过滤
+const sheetSap = mkx('todo-sapstatus.xlsx', {
+  '待办清单': [
+    ['事项', '到期日', '工单号', '处理状态'],
+    ['CLSD 的工单', D(1), 'WO-A', 'CLSD'],
+    ['NOCO 的通知单', D(1), '100A', 'NOCO'],
+    ['已关闭的事项', D(1), 'WO-B', '已关闭'],
+    ['DLFL 删除标记的工单', D(1), 'WO-C', 'DLFL'],
+    ['TECO 技术完成待验收', D(1), 'WO-D', 'TECO'],
+    ['写着技术完成的', D(1), 'WO-E', '技术完成'],
+    ['写着未完成的', D(1), 'WO-F', '未完成'],
+    ['REL 已下达', D(1), 'WO-G', 'REL'],
+    ['自己做完了的', D(1), '', '已完成'],
+  ],
+});
+r = run(sheetSap, [], 'sheet-sapstatus');
+eq(r.summary.ok, true, '19.1 带 SAP 状态码的待办表可读');
+const has = (t) => r.todo.items.some((x) => x.title === t);
+ok(!has('CLSD 的工单'), '19.2 CLSD（已关闭）不进待办');
+ok(!has('NOCO 的通知单'), '19.3 NOCO（通知单已完成）不进待办');
+ok(!has('已关闭的事项'), '19.4 「已关闭」不进待办');
+ok(!has('DLFL 删除标记的工单'), '19.5 DLFL（删除标记）不进待办');
+ok(r.todo.warnings.some((w) => w.includes('DLFL') && w.includes('已取消')), '19.6 已取消的行有 warning，不静默跳过');
+ok(has('TECO 技术完成待验收'), '19.7 TECO（技术完成待验收）仍是待办，不算关闭');
+ok(has('写着技术完成的'), '19.8 「技术完成」归待验收，仍是待办');
+ok(has('写着未完成的'), '19.9 「未完成」不被「完成」误判为已完成');
+ok(has('REL 已下达'), '19.10 REL（已下达）仍是待办');
+ok(!has('自己做完了的'), '19.11 「已完成」仍按本人已办结不进待办（原口径不变）');
+eq(r.summary.counts.total, 4, '19.12 待办 4 项（TECO / 技术完成 / 未完成 / REL）');
+// 中文「已删除」（EAM 导出的 DLFL 中文写法）与 DLFL 同口径
+const sheetDel = mkx('todo-deleted.xlsx', { '待办清单': [['事项', '到期日', '工单号', '处理状态'], ['已删除的工单', D(1), 'WO-H', '已删除'], ['还在办的', D(1), 'WO-I', 'REL']] });
+r = run(sheetDel, [], 'sheet-deleted');
+ok(!r.todo.items.some((x) => x.title === '已删除的工单'), '19.13 「已删除」与 DLFL 同口径，不进待办');
+ok(r.todo.warnings.some((w) => w.includes('已删除') && w.includes('已取消')), '19.14 「已删除」的行有 warning，不静默跳过');
+eq(r.summary.counts.total, 1, '19.15 其余行照常进待办');
+
 // ---- 输出
 console.log(`\n${'='.repeat(56)}`);
 console.log(`worklog-todo-manager 自测：${pass} 通过，${fail} 失败`);

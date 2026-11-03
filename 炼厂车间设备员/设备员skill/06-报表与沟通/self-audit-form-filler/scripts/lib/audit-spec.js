@@ -136,13 +136,25 @@ const OBJECTIVE_RULES = [
  */
 const SOURCES = [
   { key: 'equipment', name: '设备台账', item: ['设备台账', '设备清单', '设备总数', '设备数量', '在用设备', '资产'], sheet: ['设备台账', '设备清单', '设备总表', '资产台账'] },
-  { key: 'special', name: '特种设备台账', item: ['特种设备', '压力容器', '压力管道', '锅炉', '起重机', '使用登记'], sheet: ['特种设备', '压力容器', '压力管道', '特种设备台账'] },
+  { key: 'special', name: '特种设备台账', item: ['特种设备', '压力容器', '压力管道', '锅炉', '起重机', '使用登记'], sheet: ['特种设备', '压力容器', '压力管道', '特种设备台账'],
+    // 同类多张表时的首选表：自查项写了哪类设备，就先取表名带该类设备的表
+    prefer: [
+      { item: ['压力容器'], sheet: ['压力容器'] },
+      { item: ['压力管道'], sheet: ['压力管道', '管道'] },
+      { item: ['起重'], sheet: ['起重'] },
+      { item: ['锅炉'], sheet: ['锅炉'] },
+    ] },
   { key: 'inspection', name: '检验检测台账', item: ['定期检验', '检验报告', '检测报告', '检验有效期', '法定检验', '探伤', '测厚'], sheet: ['检验台账', '检验记录', '定期检验', '检测台账'] },
   { key: 'calibration', name: '校验检定台账', item: ['校验', '检定', '计量器具', '标定', '仪表校验'], sheet: ['校验台账', '检定台账', '计量台账', '仪表校验'] },
   { key: 'safetyValve', name: '安全阀台账', item: ['安全阀', '安全附件', '爆破片', '铅封'], sheet: ['安全阀台账', '安全附件台账', '安全阀'] },
   { key: 'patrol', name: '巡检点检记录', item: ['巡检', '点检', '班检', '巡回检查'], sheet: ['巡检记录', '点检记录', '巡检台账'] },
   { key: 'maintenance', name: '检修维修记录', item: ['检修', '维修', '保养', '润滑'], sheet: ['检修记录', '维修记录', '检修台账', '保养记录'] },
-  { key: 'defect', name: '缺陷隐患台账', item: ['缺陷', '隐患', '报修', '故障', '整改单'], sheet: ['缺陷台账', '隐患台账', '缺陷记录', '隐患排查'] },
+  { key: 'defect', name: '缺陷隐患台账', item: ['缺陷', '隐患', '报修', '故障', '整改单'], sheet: ['缺陷台账', '隐患台账', '缺陷记录', '隐患排查'],
+    // 缺陷与隐患同属一类但不是一回事：问隐患取隐患表，问缺陷/报修/故障取缺陷表
+    prefer: [
+      { item: ['隐患'], sheet: ['隐患'] },
+      { item: ['缺陷', '报修', '故障', '消缺'], sheet: ['缺陷', '报修', '故障', '通知单'] },
+    ] },
   { key: 'training', name: '培训与资质台账', item: ['培训', '资质', '持证', '操作证', '上岗证', '特种作业人员', '证书'], sheet: ['培训记录', '资质台账', '人员台账', '持证台账'] },
   { key: 'drill', name: '演练记录', item: ['演练', '应急预案', '应急'], sheet: ['演练记录', '应急演练', '演练台账'] },
   { key: 'permit', name: '作业票台账', item: ['作业票', '动火', '受限空间', '高处作业', '吊装', '临时用电', '盲板'], sheet: ['作业票台账', '作业票', '票证台账'] },
@@ -194,12 +206,123 @@ function itemSources(text) {
   return out;
 }
 
-/** 数据表（sheet）名落在哪个数据源类别，取第一个命中；无命中返回 null */
+/** 在类别词表里找表名包含的最长关键词；同长按 SOURCES 顺序。返回类别 key 或 null */
+function longestHit(t, field) {
+  let best = null, len = 0;
+  for (const s of SOURCES) {
+    for (const k of s[field]) {
+      const nk = norm(k);
+      if (nk && t.includes(nk) && nk.length > len) { best = s.key; len = nk.length; }
+    }
+  }
+  return best;
+}
+
+/**
+ * 数据表（sheet）名落在哪个数据源类别；无命中返回 null。四轮，前一轮命中即返回：
+ *  1. 全等：表名与某类别的表名词完全相同（「特种设备台账」→ 特种设备，不会被「设备台账」抢走）
+ *  2. 表名包含类别表名词：取**最长**的那个词（更长更具体的优先，如「车间特种设备台账」→ 特种设备）
+ *  3. 类别表名词包含表名（表名是简写，如「巡检」「设备」）：按 SOURCES 顺序取第一个，与修复前口径一致，
+ *     避免「设备」这类简写表整张漏掉
+ *  4. 表名包含自查项用语：同样取最长的词
+ */
 function sheetSource(sheetName) {
   const t = norm(sheetName);
-  for (const s of SOURCES) if (s.sheet.some((k) => t.includes(norm(k)) || norm(k).includes(t))) return s.key;
-  for (const s of SOURCES) if (s.item.some((k) => t.includes(norm(k)))) return s.key;
+  if (!t) return null;
+  for (const s of SOURCES) if (s.sheet.some((k) => norm(k) === t)) return s.key;
+  const fwd = longestHit(t, 'sheet');
+  if (fwd) return fwd;
+  const rev = SOURCES.find((s) => s.sheet.some((k) => norm(k).includes(t)));
+  if (rev) return rev.key;
+  return longestHit(t, 'item');
+}
+
+/**
+ * 同一自查项能用的数据表不止一张时，按类别的首选表规则（SOURCES[].prefer）排序后取第一张。
+ * 首选规则：自查项写了某个词（如「隐患」），就先取表名带对应词（如「隐患」）的表。
+ * 都不命中首选规则时保持原表序（与旧行为一致）。
+ * 返回 { table, hitWord, basis }；basis 为多表时的选表说明，单表时为 null。
+ */
+function pickTable(text, cands) {
+  const ti = norm(text);
+  const hitOf = (t) => {
+    const s = SOURCES.find((x) => x.key === t.sourceKey);
+    if (!s || !s.prefer) return null;
+    // 先看表名；表名归不了类（类别取自文件名）时才看文件名，避免一个文件里几张表因文件名同时命中
+    const name = norm(sheetSource(t.sheet) ? t.sheet : `${t.file || ''}${t.sheet || ''}`);
+    for (const p of s.prefer) {
+      const w = p.item.find((k) => ti.includes(norm(k)));
+      if (w && p.sheet.some((k) => name.includes(norm(k)))) return w;
+    }
+    return null;
+  };
+  const scored = cands.map((t, i) => ({ t, i, w: hitOf(t) }));
+  scored.sort((a, b) => (b.w ? 1 : 0) - (a.w ? 1 : 0) || a.i - b.i);
+  const top = scored[0];
+  let basis = null;
+  if (cands.length > 1) {
+    const names = cands.map((t) => `${t.file}/${t.sheet}`).join('、');
+    basis = `可用数据表 ${cands.length} 张（${names}），${top.w ? `按自查项「${top.w}」选用表名对应的本表` : '自查项未指向其中某一张，取排在最前的本表'}`;
+  }
+  return { table: top.t, hitWord: top.w, basis };
+}
+
+/* ================================================================== 四、行过滤口径
+ * 自查项写了「在用」或某类特种设备时，只统计对应的行。
+ * 口径从严：状态或类别为空、写法认不出的行**不推断为符合**，单列「不详」并写明行号。
+ * 台账里没有对应列时，按全部记录取数，但在来源说明与 warning 里写明「未按 XX 筛选」。
+ */
+/** 使用状态列：先全等，再包含（裸「状态」只认全等，避免把「完好状态」当使用状态） */
+const STATUS_FIELDS = { exact: ['使用状态', '设备状态', '运行状态', '状态'], contains: ['使用状态', '设备状态', '运行状态'] };
+/** 中石化口径：在用设备 = 运行 + 备用，剔除停用、封存、报废等 */
+const STATUS_IN_USE = ['在用', '运行', '运行中', '备用'];
+const STATUS_NOT_IN_USE = ['停用', '封存', '闲置', '报废', '拆除', '停运', '调出', '调拨'];
+/** 设备类别列：先全等，再包含（裸「类别」「种类」只认全等，避免把「检验类别」「作业类别」当设备类别） */
+const CATEGORY_FIELDS = { exact: ['设备类别', '特种设备类别', '设备种类', '特种设备种类', '类别', '种类'], contains: ['设备类别', '设备种类'] };
+/**
+ * 特种设备类别：item = 自查项里的说法，value = 台账类别列里包含即算的写法，
+ * short = 只在特种设备、检验台账里、且整格等于该词时才算的简写（通用设备台账里的「容器」「管道」可能是常压容器、工艺管道）
+ */
+const SPECIAL_KINDS = [
+  { name: '压力容器', item: ['压力容器'], value: ['压力容器'], short: ['容器'] },
+  { name: '压力管道', item: ['压力管道'], value: ['压力管道'], short: ['管道'] },
+  { name: '锅炉', item: ['锅炉'], value: ['锅炉'] },
+  { name: '起重机械', item: ['起重机'], value: ['起重'] },
+  { name: '电梯', item: ['电梯'], value: ['电梯'] },
+  { name: '场（厂）内专用机动车辆', item: ['专用机动车辆', '厂内机动车辆', '叉车'], value: ['机动车辆', '叉车'] },
+  { name: '气瓶', item: ['气瓶'], value: ['气瓶'] },
+];
+
+/** 按「全等优先、再包含」在表头里找列 */
+function findHeader(header, spec) {
+  for (const w of spec.exact) { const h = header.find((x) => x && norm(x) === norm(w)); if (h) return h; }
+  for (const w of spec.contains) { const h = header.find((x) => x && norm(x).includes(norm(w))); if (h) return h; }
   return null;
+}
+const statusField = (header) => findHeader(header, STATUS_FIELDS);
+const categoryField = (header) => findHeader(header, CATEGORY_FIELDS);
+
+/** 使用状态取值归类：'in' 在用 / 'out' 非在用 / null 不详（空或认不出） */
+function statusClass(v) {
+  const t = norm(v);
+  if (!t) return null;
+  if (STATUS_NOT_IN_USE.some((k) => t.includes(norm(k)))) return 'out';
+  if (STATUS_IN_USE.some((k) => t.startsWith(norm(k)))) return 'in';
+  return null;
+}
+/** 自查项要求「在用」口径（「不在用 / 非在用 / 未在用」是反义，不按在用筛选） */
+const wantsInUse = (text) => /(?<![不非未])在用/.test(norm(text));
+/** 自查项点名的特种设备类别（可多类） */
+const itemSpecialKinds = (text) => { const t = norm(text); return SPECIAL_KINDS.filter((k) => k.item.some((w) => t.includes(norm(w)))); };
+/** 类别取值是否属于给定类别之一：true / false / null（空，不详）。sourceKey 决定是否认简写（见 SPECIAL_KINDS.short） */
+function categoryMatch(v, kinds, sourceKey) {
+  const t = norm(v);
+  if (!t) return null;
+  const shortOk = ['special', 'inspection'].includes(sourceKey);
+  return kinds.some((k) => {
+    if (k.short && /常压|非压力/.test(t)) return false;
+    return k.value.some((w) => t.includes(norm(w))) || (shortOk && (k.short || []).some((w) => t === norm(w)));
+  });
 }
 
 const SOURCE_CN = new Map(SOURCES.map((s) => [s.key, s.name]));
@@ -253,5 +376,7 @@ function checkFillValue(v) {
 
 module.exports = {
   JUDGMENT_RULES, OBJECTIVE_RULES, SOURCES, SOURCE_CN, STATUS_CN, BANNED_FILL,
-  norm, judgmentRules, objectiveRules, itemSources, sheetSource, classify, checkFillValue,
+  STATUS_IN_USE, STATUS_NOT_IN_USE, SPECIAL_KINDS,
+  norm, judgmentRules, objectiveRules, itemSources, sheetSource, pickTable, classify, checkFillValue,
+  statusField, categoryField, statusClass, wantsInUse, itemSpecialKinds, categoryMatch,
 };

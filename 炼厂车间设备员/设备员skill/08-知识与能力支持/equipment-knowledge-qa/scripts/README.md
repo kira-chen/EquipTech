@@ -46,7 +46,7 @@ node "<技能目录>/scripts/qa.js" \
 
 3. **本厂规定类无资料 → 明确答不了**。`guidance.canAnswer: false`、`generalPrincipleAllowed: false`、`answerBasis: 'none'`，`mustSay` 里带「未提供厂内资料，本技能无法回答本厂是怎么规定的」与「未用通用原理代替本厂规定作答」。**不许用通用原理搪塞**。
 
-4. **分不出类别不默认放行**。三组规则都没命中 → `undetermined`（规则 U1），不按原理概念类默认给通用解释，产出里单列一节请用户补充问题意图。
+4. **分不出类别不默认放行**。三组规则都没命中 → `undetermined`（规则 U1），不按原理概念类默认给通用解释，产出里单列一节请用户补充问题意图。句末「X是什么」（如「往复压缩机液击是什么」）按术语定义归 G9；「是什么」前面是原因、要求、标准、做法、流程、型号等泛指词或介质、逻辑、等级、报警值等本厂设备属性，或问句里有「这/那/哪」指代时不归 G9，仍可能是 U1。
 
 5. **引用只能来自 `--docs` 范围**。`documents` 列表即允许引用的文件清单；PDF 不读，warning 提示前置步骤。
 
@@ -60,7 +60,7 @@ node "<技能目录>/scripts/qa.js" \
 |---|---|---|---|
 | `NUMERIC_RULES` | 数值标准类 | N1~N13 | 最高，命中即停 |
 | `PLANT_RULES` | 本厂规定类 | P1~P6 | 次之 |
-| `PRINCIPLE_RULES` | 原理概念类 | G1~G8 | 最后 |
+| `PRINCIPLE_RULES` | 原理概念类 | G1~G9 | 最后 |
 | `WHERE_RULES` | 数值类指路 | W0~W7 | 仅 numeric 时用 |
 
 对外导出 `classify(question)`、`whereToLook(question)`、`splitQuery(question)`、`NOTICE`（三类 + 未判定的固定表述）、`PRINCIPLE_MAX_CHARS`、`checkPrincipleText(text)`。改规则只改这个文件，`qa.js` 不重复写判定逻辑。
@@ -93,6 +93,7 @@ node scripts/selftest.js
 - **rules.js 直接单测（H 组 15 条）**：四类判定、规则号、指路不含数字、切词去疑问词、固定表述与 SKILL.md 一致
 - **样例可再生（I 组 9 条）**：seed 变化时文件构成与分类结论不变、非法 seed 报错
 - **中石化口径改造（J 组）**：PDF 前置步骤 warning 与 md 提示且不中断、引用范围声明、声明行含「仅供参考，不替代操作规程与检修规程」、指路 `example` 含《炼化企业设备维护检修规程》且无数值、`checkPrincipleText` 正反例、产出 ANALYSIS 段与 sample-output 示范五/六/七原理段无数字无单位且 ≤300 字、md 无 emoji
+- **缺陷修复（K 组 21 条，2026-11-03）**：句末「X是什么」归 G9 术语定义，「要求/流程/原因/现象/型号…是什么」与「这/那」指代的反例不归 G9、原有规则号不变；≤4 字中文片段也做 3 字、2 字切分且原片段排最前，「我们厂备用泵怎么规定的」能命中备用件规定原文
 
 ## docx2text.js —— 辅助工具
 

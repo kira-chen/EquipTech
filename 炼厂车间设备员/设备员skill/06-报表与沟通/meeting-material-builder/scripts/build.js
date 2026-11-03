@@ -74,17 +74,22 @@ function loadAny(p) {
 
 /** 从上游 JSON 抽取要点（只取已有字段，不推算） */
 function extractFromJson(name, j) {
-  const out = { source: name, type: null, metrics: [], issues: [], items: [] };
+  const out = { source: name, type: null, metrics: [], issues: [], items: [], done: [] };
   const push = (label, value, unit) => { if (value !== null && value !== undefined) out.metrics.push({ label, value, unit: unit || null, source: name }); };
 
   // 判定顺序按「特征字段独占性」从强到弱：
-  // hazard.json 也带 metrics.closeRate，若放在 orders 之后会被 orders 分支抢走，故先判 majorHazards。
+  // hazard.json 与 orders.json 都有 counts / metrics / overdue，且旧版样例的 hazard.json 带 metrics.closeRate，
+  // 若放在 orders 之后会被 orders 分支抢走，故先判 majorHazards。
   if (j.majorHazards !== undefined) {                                    // hazard.json
     out.type = '隐患跟踪';
     push('隐患总数', j.counts && j.counts.total); push('重大隐患', j.counts && j.counts.major);
     push('超期未整改', j.counts && j.counts.overdue);
-    if (j.metrics) push('闭环率', j.metrics.closeRate, '%');
-    for (const h of (j.majorHazards || []).slice(0, 5)) out.issues.push({ text: `重大隐患：${h.desc || h.description || h.no || ''}`, source: name });
+    // hazard-closure-tracker 输出 metrics.closureRate；兼容早期样例/手工 JSON 的 closeRate
+    if (j.metrics) push('闭环率', j.metrics.closureRate !== undefined ? j.metrics.closureRate : j.metrics.closeRate, '%');
+    // 只有 bucket=closed（已整改且已验收）算闭环，进「主要工作」；已整改未验收（unverified）等仍是问题项
+    const majors = j.majorHazards || [];
+    for (const h of majors.filter((x) => x.bucket !== 'closed').slice(0, 5)) out.issues.push({ text: `重大隐患：${h.desc || h.description || h.no || ''}`, source: name });
+    for (const h of majors.filter((x) => x.bucket === 'closed')) out.done.push({ text: `重大隐患已整改并验收闭环：${h.desc || h.description || ''}${h.no ? `（${h.no}）` : ''}`, source: name });
   } else if (j.counts && j.byEquipment && j.abnormal !== undefined) {     // status.json
     out.type = '巡检汇总';
     push('涉及设备', j.counts.equipment); push('异常设备', j.counts.abnormal);
@@ -96,8 +101,9 @@ function extractFromJson(name, j) {
     push('超期', j.counts.overdue); push('停滞', j.counts.stalled);
     if (j.metrics) push('完成率', j.metrics.closeRate, '%');
     if (j.metrics) push('平均闭环时长', j.metrics.avgCycleDays, '天');
+    // work-order-tracker：vendor = 承修单位/工作中心，owner = 责任人（个人）。责任方写单位，不点人名；无 vendor 时才退回 owner
     for (const o of (j.overdue || []).slice(0, 10)) {
-      out.issues.push({ text: `${o.no || o.orderNo || ''} ${o.tag || ''} 超期 ${o.overdueDays ?? '—'} 天，责任方 ${o.owner || o.vendor || '未填写'}`, tag: o.tag, source: name });
+      out.issues.push({ text: `${o.no || o.orderNo || ''} ${o.tag || ''} 超期 ${o.overdueDays ?? '—'} 天，责任方 ${o.vendor || o.owner || '未填写'}`, tag: o.tag, source: name });
     }
   } else if (j.counts && j.counts.byLevel && j.defects) {                 // defects.json
     out.type = '缺陷登记';
@@ -181,6 +187,7 @@ function main() {
   const topics = a.topics ? a.topics.split(/[,，]/).map((x) => x.trim()).filter(Boolean) : null;
   const allMetrics = extracted.flatMap((e) => e.metrics);
   const allIssues = extracted.flatMap((e) => e.issues);
+  const doneItems = extracted.flatMap((e) => e.done || []);
 
   const keyPoints = [], noData = [];
   if (topics) {
@@ -218,7 +225,7 @@ function main() {
   if (perMin !== null && perMin < 0.5 && itemCount > 0) warnings.push(`内容量偏少（${itemCount} 项 / ${duration} 分钟），可适当补充`);
 
   const counts = {
-    sources: sources.length, metrics: allMetrics.length, issues: allIssues.length,
+    sources: sources.length, metrics: allMetrics.length, issues: allIssues.length, done: doneItems.length,
     topics: topics ? topics.length : null, noData: noData.length,
     needDecision: needDecision.length, pending: pending.length,
   };
@@ -238,7 +245,7 @@ function main() {
     { title: a.meeting, bullets: [`${a.workshop ? a.workshop + '　' : ''}听众：${audienceCn}`, `时长：${duration} 分钟`, `数据来源：${sources.join('、')}`], notes: '封面' },
     { title: '一、开场（一句话结论）', bullets: ['（由模型撰写一句话结论，须与关键指标一致，不得拔高或淡化）'], notes: '分析段占位' },
     { title: '二、关键指标', bullets: allMetrics.map((m) => `${m.label}：${C.fmt(m.value)}${m.unit || ''}（${m.source}）`), notes: '数字原样引自来源，未做新增修改美化' },
-    { title: '三、主要工作', bullets: ['（由汇报人补充，本技能不代拟）'], notes: '占位' },
+    { title: '三、主要工作', bullets: [...doneItems.map((d) => `${issueText(d)}（${d.source}）`), '（由汇报人补充，本技能不代拟）'], notes: doneItems.length ? '已闭环事项引自上游数据，其余由汇报人补充' : '占位' },
     { title: '四、存在问题', bullets: allIssues.slice(0, issueLimit).map((it) => `${issueText(it)}（${it.source}）`), notes: '只陈述事实与影响，不做责任归因' },
     { title: '五、需协调决策事项', bullets: needDecision.length ? needDecision.map((d) => `${d.text}——请求决策的具体内容与可选方案由汇报人补充`) : ['（由汇报人填写）'], notes: pending.length ? `上次遗留：${pending.join('；')}` : '' },
     { title: '六、下步打算', bullets: ['（由汇报人填写，本技能不代拟）'], notes: '占位' },
@@ -250,7 +257,7 @@ function main() {
   const outline = {
     meta: { meeting: a.meeting, audience: a.audience, audienceName, audienceCn, audienceSpec: spec.desc, detail: spec.detail, hideTags: !!a['hide-tags'], duration,
       weights, weightsSource, workshop: a.workshop || null, sources, generatedAt: C.localDateTime() },
-    counts, keyPoints, metrics: allMetrics, issues: allIssues,
+    counts, keyPoints, metrics: allMetrics, issues: allIssues, doneItems,
     needDecision, pending, noData, timeAllocation, slides, warnings,
   };
   fs.writeFileSync(path.join(outDir, 'outline.json'), JSON.stringify(outline, null, 2), 'utf8');
@@ -274,6 +281,12 @@ function main() {
   else L.push(C.mdTable(['指标', '数值', '来源'], allMetrics.map((m) => [m.label, `${C.fmt(m.value)}${m.unit || ''}`, m.source])));
   L.push('## 三、主要工作');
   L.push('');
+  if (doneItems.length) {
+    L.push('以下为上游数据中本期已闭环的事项，可作为工作成果引用：');
+    L.push('');
+    for (const d of doneItems) L.push(`- ${issueText(d)}　_（${d.source}）_`);
+    L.push('');
+  }
   L.push('<!-- WORK_START -->');
   L.push('（由汇报人补充本期主要完成的工作。本技能不代拟，避免编造未发生的工作内容。）');
   L.push('<!-- WORK_END -->');

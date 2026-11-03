@@ -32,7 +32,7 @@ metadata:
    node "<技能目录绝对路径>/scripts/find.js" --docs "<资料目录或文件路径>" --tag "<位号>" --query "<查询内容>" --out "<工作目录>/资料检索"
    ```
    可选：`--ledger "<设备台账xlsx>"`、`--doc-type <图纸|说明书|规程|技术协议|检验报告>`、`--context <返回上下文字数>`、`--all-matches`、`--max-files <N>`（默认 300，超过直接报错不静默截断）。
-   读取末行 JSON 摘要（同时写入 `<out>/summary.json`）：`ok` 必须为 `true`，`ok:false` 时把 `error` 告知用户并终止；`warnings` 非空时逐条告知用户（PDF 未转换只做定位 / 转换文本须核对原件 / .doc 需另存 / 位号在资料中未出现 / 命中为空 / 目录登记但无实体文件等）。脚本用法详见 `scripts/README.md`。
+   读取末行 JSON 摘要（同时写入 `<out>/summary.json`）：`ok` 必须为 `true`，`ok:false` 时把 `error` 告知用户并终止；`warnings` 非空时逐条告知用户（PDF 未转换只做定位 / 转换文本须核对原件 / .doc 需另存 / 位号在资料中未出现 / 台账设备名称或型号不唯一、未作关联线索 / 命中为空 / 目录登记但无实体文件等）。脚本用法详见 `scripts/README.md`。
    - 未转换的 PDF、图片、CAD、.doc/.xls：脚本 warning 并进 `unreadable`，**只能返回文件定位，不得声称读到了内容**。
    - 命中为空：明确回答"所提供资料中未找到相关内容"，**不得用通用知识或其他设备的资料代替**。
 3. **读取 matches.json** —— 从 `<输出目录>/matches.json` 获取：`documents`（相关文件：文件名、类型、与设备的关联依据、`convertedFrom` 转换来源）、`passages`（命中段落：原文、所在文件、位置、上下文、是否来自转换文本）、`conflicts`（多处原文取值不一致）、`unreadable`（未解析的文件及原因）、`catalogOnly`（目录登记但无实体文件）、`counts`。

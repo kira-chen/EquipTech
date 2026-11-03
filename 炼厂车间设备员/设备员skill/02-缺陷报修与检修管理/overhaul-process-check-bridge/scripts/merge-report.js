@@ -2,8 +2,8 @@
 'use strict';
 /**
  * 结果转达脚本（仅 Node.js 内置模块）：把 overhaul-safety-check 的 result.json 原样转达为车间自查合并报告。
- * 用法：node scripts/merge-report.js --result <源技能 result.json> [--notes <车间侧提示 json>] [--object <方案名称>]
- *       [--repair-type <大检修|日常维修|抢修|专项>] [--out <dir>]
+ * 用法：node scripts/merge-report.js --result <源技能 result.json> [--plan <源技能输入 plan.json>] [--notes <车间侧提示 json>]
+ *       [--object <方案名称>] [--repair-type <大检修|日常维修|抢修|专项>] [--out <dir>]
  * 产出：<out>/overhaul-check-bridge.md、bridge.json、summary.json；末行 JSON 摘要
  *
  * 硬约束（references/bridge-rules.md）：
@@ -12,13 +12,15 @@
  *   - 源技能 disclaimer 原文保留；本技能声明行追加在其后
  *   - 车间侧提示单独成节「车间侧补充提示（非规则判定）」，状态只认 已核实 / 未核实 / 不适用，其它一律按「未核实」并 warning
  *   - --repair-type 只写入报告抬头（检修分级口径：装置大检修 / 日常维修 / 抢修 / 专项），不进入判定；旧值 大修→大检修、中修/小修→日常维修 并 warning
+ *   - 源技能 result.json 不含 plan_no、job_types：方案编号与作业类型标签从 --plan（交给源技能 check.js 的 plan.json）读取，
+ *     只进抬头与字段表，不进入判定；不传 --plan 时为 null / 空数组并 warning，不猜测
  */
 const fs = require('fs');
 const path = require('path');
 const C = require('./lib/common');
 
 const warnings = [];
-const VALUE_OPTS = ['result', 'notes', 'object', 'repair-type', 'out'];
+const VALUE_OPTS = ['result', 'plan', 'notes', 'object', 'repair-type', 'out'];
 const FLAG_OPTS = ['help'];
 
 const SOURCE = 'overhaul-safety-check';
@@ -54,6 +56,14 @@ function main() {
   try { src = JSON.parse(fs.readFileSync(a.result, 'utf8')); } catch (e) { throw new Error(`源技能结果文件解析失败: ${e.message}`); }
   if (!src || typeof src !== 'object' || !Array.isArray(src.findings)) throw new Error('源技能结果格式错误：缺少 findings 数组，请确认传入的是 result.json 而不是 summary.json');
   if (!src.disclaimer) warnings.push('源技能结果无 disclaimer 字段，合并报告只能保留本技能声明行');
+
+  // 源技能输入的 plan.json：check.js 的 result.json 不含 plan_no / job_types，这两项从这里取（只进抬头与字段表，不进入判定）
+  let plan = null;
+  if (a.plan) {
+    if (!fs.existsSync(a.plan)) throw new Error(`检修方案数据 plan.json 不存在: ${a.plan}`);
+    try { plan = JSON.parse(fs.readFileSync(a.plan, 'utf8')); } catch (e) { throw new Error(`检修方案数据 plan.json 解析失败: ${e.message}`); }
+    if (!plan || typeof plan !== 'object' || Array.isArray(plan)) throw new Error('检修方案数据 plan.json 格式错误：应为对象（即交给源技能 check.js --input 的文件）');
+  }
 
   // 检修分级（只进抬头，不进判定）
   let repairType = null, repairTypeRaw = null;
@@ -102,9 +112,37 @@ function main() {
     }
   }
 
-  const objectName = a.object || src.project || src.plan_no || '（未提供）';
-  // 涉及的作业类型（从 findings.jobs 与规则号无法可靠取得，只取源 result 顶层若有 job_types 汇总；否则留空）
-  const jobTypes = Array.isArray(src.job_types) ? src.job_types.map((x) => C.str(x)).filter(Boolean) : [];
+  // 方案编号与涉及的作业类型：优先取 plan.json（源技能真实 result.json 不含这两项）；
+  // 未传 --plan 时兼容源结果顶层自带的 plan_no / job_types（旧格式）；都没有则留空并 warning，不从 findings 反推
+  let planNo = null, planNoSource = null, jobTypes = [], jobTypesSource = null;
+  if (plan) {
+    planNo = C.str(plan.plan_no) || null;
+    if (planNo) planNoSource = 'plan.json';
+    else warnings.push('plan.json 的 plan_no（方案编号）为空，报告不写方案编号；方案有文件号的请补进 plan.json');
+    for (const j of (Array.isArray(plan.jobs) ? plan.jobs : [])) {
+      let t = j ? j.job_types : null;
+      if (t === null || t === undefined) continue;
+      if (!Array.isArray(t)) t = [t];
+      for (const x of t) { const v = C.str(x); if (v && !jobTypes.includes(v)) jobTypes.push(v); }
+    }
+    jobTypesSource = 'plan.json';
+    for (const k of ['unit', 'project']) {
+      const pv = C.str(plan[k]), sv = C.str(src[k]);
+      if (pv && sv && pv !== sv) warnings.push(`plan.json 的 ${k}「${pv}」与 result.json 的 ${k}「${sv}」不一致，请确认 --plan 是生成该 result.json 的同一份方案`);
+    }
+    if (Array.isArray(plan.jobs) && src.jobs_count !== undefined && src.jobs_count !== null && plan.jobs.length !== Number(src.jobs_count)) {
+      warnings.push(`plan.json 作业项数 ${plan.jobs.length} 与 result.json 的 jobs_count ${src.jobs_count} 不一致，请确认 --plan 是生成该 result.json 的同一份方案`);
+    }
+  }
+  if (!planNo && C.str(src.plan_no)) { planNo = C.str(src.plan_no); planNoSource = 'result.json'; }
+  if (!plan && Array.isArray(src.job_types)) {
+    jobTypes = src.job_types.map((x) => C.str(x)).filter(Boolean);
+    jobTypesSource = 'result.json';
+  }
+  if (!plan && (!planNo || !jobTypesSource)) {
+    warnings.push('未提供 --plan：源技能 result.json 不含 plan_no（方案编号）与 job_types（作业类型），报告中这两项留空；传入交给 check.js 的 plan.json（--plan）即可补上');
+  }
+  const objectName = a.object || src.project || planNo || '（未提供）';
   const jobTypesCn = jobTypes.map((t) => (JOB_TYPE_CN[t] ? `${t}（${JOB_TYPE_CN[t]}）` : t));
 
   const nonConform = findings.filter((f) => f.severity === 'must_fix' || f.severity === 'should_improve');
@@ -115,13 +153,14 @@ function main() {
   C.ensureDir(outDir);
   const result = {
     meta: {
-      source: SOURCE, resultFile: a.result, objectName, repairType, repairTypeRaw,
+      source: SOURCE, resultFile: a.result, planFile: a.plan || null, objectName, repairType, repairTypeRaw,
       generatedAt: C.localDateTime(), declaration: DECLARATION, sourceDisclaimer: src.disclaimer || null,
     },
     sourceSummary: src.summary || null,
     sourceMeta: {
-      plan_no: src.plan_no ?? null, unit: src.unit ?? null, project: src.project ?? null, contractor: src.contractor ?? null,
+      plan_no: planNo, unit: src.unit ?? null, project: src.project ?? null, contractor: src.contractor ?? null,
       duration_days: src.duration_days ?? null, jobs_count: src.jobs_count ?? null, jobTypes, jobTypesCn,
+      planNoSource, jobTypesSource,
     },
     counts, findings, workshopNotes, skipped: src.skipped || [], extractionNotes: src.extraction_notes || [], warnings,
   };
@@ -142,8 +181,10 @@ function main() {
   const metaRows = Object.entries(result.sourceMeta)
     .filter(([k, v]) => META_CN[k] && v !== null && v !== undefined && v !== '')
     .map(([k, v]) => [META_CN[k], esc(v)]);
-  if (jobTypesCn.length) metaRows.push(['作业类型标签（源技能原值，括号内为作业许可八大类加注）', esc(jobTypesCn.join('、'))]);
+  if (jobTypesCn.length) metaRows.push([`作业类型标签（${jobTypesSource === 'plan.json' ? 'plan.json 各作业 job_types 原值' : '源技能原值'}，括号内为作业许可八大类加注）`, esc(jobTypesCn.join('、'))]);
   if (metaRows.length) { L.push(''); L.push(C.mdTable(['源技能字段', '值'], metaRows)); }
+  const fromPlan = [planNoSource === 'plan.json' ? '方案编号' : null, jobTypesSource === 'plan.json' && jobTypes.length ? '作业类型标签' : null].filter(Boolean);
+  if (fromPlan.length) L.push(`> ${fromPlan.join('、')}取自 plan.json（源技能 result.json 不含这${fromPlan.length > 1 ? '两' : '一'}项），只作抬头信息，不进入判定。\n`);
   if (counts.undetermined) L.push('【注意】未判定项既不代表措施已有，也不代表缺失，需补齐方案信息（作业类型标注、工期等）后重新' + ACTION + '。');
   L.push('');
 

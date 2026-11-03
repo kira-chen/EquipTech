@@ -428,6 +428,128 @@ eq(sj.counts.needJudgment, r.j.counts.needJudgment, 'L10 summary 与 filled.json
 ok(/自查表预填说明/.test(r.md.split('\n')[0]), 'L11 md 标题正确');
 eq(r.j.meta.asOf, ASOF, 'L12 自查时点写入 meta');
 
+/* ==================== P. 数据表归类与选表（2026-11-03 缺陷修复回归） ====================
+ * P1~：表名归类全等优先、更长更具体优先（原缺陷：「特种设备台账」双向包含命中「设备台账」被归成设备台账类）
+ */
+eq(S.sheetSource('设备台账'), 'equipment', 'P1 「设备台账」全等归设备台账类');
+eq(S.sheetSource('特种设备台账'), 'special', 'P2 「特种设备台账」全等归特种设备类，不被「设备台账」抢走');
+eq(S.sheetSource('常减压车间特种设备台账2026'), 'special', 'P3 表名同时包含「设备台账」「特种设备台账」时取更长更具体的');
+eq(S.sheetSource('压力容器台账'), 'special', 'P4 「压力容器台账」归特种设备类');
+eq(S.sheetSource('设备台账2026'), 'equipment', 'P5 带后缀的设备台账仍归设备台账类');
+eq(S.sheetSource('安全阀台账'), 'safetyValve', 'P6 「安全阀台账」全等归安全阀类');
+const FORM_SRC = mkx('form-src.xlsx', {
+  '自查表': [['序号', '自查内容', '现状', '备注'],
+    ['1', '是否建立设备台账', '', ''],
+    ['2', '压力容器是否超期未检', '', '']],
+});
+// 特种设备台账排在设备台账前面（MCP 导出原名）
+const DATA_SRC = mkx('data-src.xlsx', {
+  '特种设备台账': [['位号', '设备类别', '下次检验日期'], ['V-2301', '压力容器', '2026-08-10'], ['V-2302', '压力容器', '2027-03-15'], ['V-2303', '压力容器', '2027-05-01']],
+  '设备台账': [['位号', '设备名称', '使用状态'], ['P-1101A', '进料泵', '在用'], ['V-2301', '缓冲罐', '在用']],
+});
+r = run([...BASE, '--form', FORM_SRC, '--data', DATA_SRC, '--period', ASOF], 'srcsheet');
+const itemOf = (rr, re) => rr.j.items.find((x) => re.test(x.text)) || {};
+eq(itemOf(r, /是否建立设备台账/).value, '有，2 条记录', 'P7 「是否建立设备台账」取设备台账（2 条），不取特种设备台账（3 条）');
+ok(/data-src\.xlsx\/设备台账$/.test(String(itemOf(r, /是否建立设备台账/).table)), 'P8 「是否建立设备台账」数据表定位为设备台账');
+eq(itemOf(r, /压力容器是否超期/).status, 'prefilled', 'P9 「特种设备台账」原名喂入时压力容器类自查项可取数，不落 noData');
+ok(/已过期 1 台\/项，未到期 2 台\/项/.test(String(itemOf(r, /压力容器是否超期/).value)), 'P10 压力容器到期取自特种设备台账');
+ok(r.j.dataTables.some((x) => x.sheet === '特种设备台账' && x.source === '特种设备台账'), 'P11 dataTables 中特种设备台账归类为特种设备台账');
+// CSV 目录（MCP 导出形态，文件名即表名）
+const CSV_DIR = path.join(work, 'csv-src');
+fs.mkdirSync(CSV_DIR, { recursive: true });
+fs.writeFileSync(path.join(CSV_DIR, '设备台账.csv'), '位号,设备名称,使用状态\nP-1101A,进料泵,在用\nV-2301,缓冲罐,在用\n', 'utf8');
+fs.writeFileSync(path.join(CSV_DIR, '特种设备台账.csv'), '位号,设备类别,下次检验日期\nV-2301,压力容器,2026-08-10\nV-2302,压力容器,2027-03-15\nV-2303,压力容器,2027-05-01\n', 'utf8');
+r = run([...BASE, '--form', FORM_SRC, '--data', CSV_DIR, '--period', ASOF], 'srccsv');
+eq(itemOf(r, /是否建立设备台账/).value, '有，2 条记录', 'P12 CSV 目录：「是否建立设备台账」取设备台账.csv');
+eq(itemOf(r, /压力容器是否超期/).status, 'prefilled', 'P13 CSV 目录：压力容器类自查项取自特种设备台账.csv');
+
+/* Q. 同类多张表按自查项指定首选表（原缺陷：只取 cands[0]，「隐患是否全部整改」读到缺陷台账） */
+const FORM_HZ = mkx('form-hz.xlsx', {
+  '自查表': [['序号', '自查内容', '现状', '备注'],
+    ['1', '隐患是否全部整改', '', ''],
+    ['2', '缺陷登记数量（项）', '', '']],
+});
+const HZ_DEFECT = ['缺陷台账', [['通知单号', '位号', '描述', '状态'], ['3001', 'P-1101A', '机封泄漏', 'NOCO'], ['3002', 'E-1201', '法兰渗漏', ''], ['3003', 'C-1501', '气阀异响', 'OSNO']]];
+const HZ_HAZARD = ['隐患台账', [['隐患编号', '隐患描述', '整改状态'], ['YH-01', '护栏锈蚀', '已整改'], ['YH-02', '机封泄漏未消缺', '']]];
+r = run([...BASE, '--form', FORM_HZ, '--data', mkx('data-hz1.xlsx', { [HZ_DEFECT[0]]: HZ_DEFECT[1], [HZ_HAZARD[0]]: HZ_HAZARD[1] }), '--period', ASOF], 'hz1');
+ok(/隐患台账$/.test(String(itemOf(r, /隐患是否全部整改/).table)), 'Q1 缺陷台账排在前面时，「隐患是否全部整改」仍取隐患台账');
+eq(itemOf(r, /隐患是否全部整改/).value, '共 2 条，列「整改状态」已填 1 条、空缺 1 条', 'Q2 隐患整改按隐患台账「整改状态」计数');
+ok(/缺陷台账$/.test(String(itemOf(r, /缺陷登记数量/).table)), 'Q3 「缺陷登记数量」取缺陷台账');
+eq(itemOf(r, /缺陷登记数量/).value, '3', 'Q4 缺陷登记数量 = 缺陷台账行数');
+r = run([...BASE, '--form', FORM_HZ, '--data', mkx('data-hz2.xlsx', { [HZ_HAZARD[0]]: HZ_HAZARD[1], [HZ_DEFECT[0]]: HZ_DEFECT[1] }), '--period', ASOF], 'hz2');
+ok(/隐患台账$/.test(String(itemOf(r, /隐患是否全部整改/).table)), 'Q5 隐患台账排在前面时，「隐患是否全部整改」取隐患台账');
+ok(/缺陷台账$/.test(String(itemOf(r, /缺陷登记数量/).table)), 'Q6 隐患台账排在前面时，「缺陷登记数量」仍取缺陷台账，不按表序');
+ok(/可用数据表 2 张/.test(String(itemOf(r, /缺陷登记数量/).sourceNote)) && /按自查项「缺陷」选用/.test(String(itemOf(r, /缺陷登记数量/).sourceNote)), 'Q7 多表可用时来源说明写明选表依据');
+
+/* R. 按使用状态、设备类别过滤（原缺陷：在用台数按全部行数计；压力容器到期把压力管道、起重机械也算进去） */
+const FORM_FLT = mkx('form-flt.xlsx', {
+  '自查表': [['序号', '自查内容', '现状', '备注'],
+    ['1', '在用设备台数（台）', '', ''],
+    ['2', '压力容器是否在检验有效期内、有无超期', '', ''],
+    ['3', '压力容器上次检验日期', '', ''],
+    ['4', '是否建立设备台账', '', '']],
+});
+const DATA_FLT = mkx('data-flt.xlsx', {
+  '设备台账': [['位号', '设备名称', '使用状态', '完好状态'],
+    ['P-1101A', '进料泵', '在用', '完好'], ['P-1101B', '进料泵备机', '备用', '完好'], ['V-2301', '缓冲罐', '在用', '完好'],
+    ['C-1501', '压缩机', '停用', '待修'], ['F-1601', '加热炉', '报废', ''], ['E-1401', '换热器', '', '完好']],
+  '特种设备检验台账': [['位号', '设备类别', '上次检验日期', '下次检验日期'],
+    ['V-2301', '压力容器', '2023-08-10', '2026-08-10'], ['V-2302', '压力容器', '2024-03-15', '2027-03-15'], ['T-1201', '压力容器', '2025-01-08', '2028-01-08'],
+    ['GC-1101', '压力管道', '2026-06-01', '2026-06-01'], ['QZ-01', '起重机械', '2026-05-01', '2026-05-01'], ['V-2309', '', '2026-07-01', '2026-07-01']],
+});
+r = run([...BASE, '--form', FORM_FLT, '--data', DATA_FLT, '--period', ASOF], 'flt');
+const inUse = itemOf(r, /在用设备台数/);
+ok(/^3/.test(String(inUse.value)), `R1 在用设备台数按使用状态计：在用 2 + 备用 1 = 3，不按台账 6 行计（实际 ${inUse.value}）`);
+ok(/使用状态不详 1 台/.test(String(inUse.value)), 'R2 使用状态为空的 1 台单列「使用状态不详」，不推断为在用');
+ok(/停用/.test(String(inUse.sourceNote)) && /报废/.test(String(inUse.sourceNote)), 'R3 来源说明列出被排除的停用、报废');
+ok(/第7行/.test(String(inUse.sourceNote)), 'R4 来源说明列出使用状态不详的行号');
+eq(inUse.extra && inUse.extra.inUse, 3, 'R5 extra.inUse = 3');
+eq(inUse.extra && inUse.extra.statusUnknown, 1, 'R6 extra.statusUnknown = 1');
+const pvDue = itemOf(r, /压力容器是否在检验有效期内/);
+ok(/已过期 1 台\/项，未到期 2 台\/项/.test(String(pvDue.value)), `R7 压力容器到期只统计设备类别为压力容器的 3 条（实际 ${pvDue.value}）`);
+ok(/设备类别不详 1 台\/项/.test(String(pvDue.value)), 'R8 设备类别为空的条目单列「设备类别不详」，不推断为压力容器');
+ok(/压力管道/.test(String(pvDue.sourceNote)) && /起重机械/.test(String(pvDue.sourceNote)), 'R9 来源说明列出被排除的压力管道、起重机械');
+eq(pvDue.extra && pvDue.extra.overdue, 1, 'R10 extra.overdue = 1（压力管道、起重机械的过期不计入）');
+eq(itemOf(r, /压力容器上次检验日期/).value, '2025-01-08', 'R11 压力容器上次检验日期只取压力容器（不取压力管道 2026-06-01）');
+eq(itemOf(r, /是否建立设备台账/).value, '有，6 条记录', 'R12 有无类不按使用状态过滤（台账有没有与设备在不在用无关）');
+ok(r.j.warnings.some((w) => /使用状态不详/.test(w)), 'R13 使用状态不详有 warning');
+ok(r.j.warnings.some((w) => /设备类别不详/.test(w)), 'R14 设备类别不详有 warning');
+// 台账无使用状态列 / 无设备类别列：仍按全部记录取数，但在说明与 warning 中写明未筛选
+r = run([...BASE, '--form', FORM_FLT, '--data', DATA, '--period', ASOF], 'fltnocol');
+ok(/未按使用状态筛选/.test(String(itemOf(r, /在用设备台数/).sourceNote)), 'R15 无使用状态列时来源说明写明「未按使用状态筛选」');
+ok(r.j.warnings.some((w) => /未按使用状态筛选/.test(w)), 'R16 无使用状态列有 warning');
+ok(/未按设备类别筛选/.test(String(itemOf(r, /压力容器是否在检验有效期内/).sourceNote)), 'R17 无设备类别列时来源说明写明「未按设备类别筛选」');
+ok(r.j.warnings.some((w) => /未按设备类别筛选/.test(w)), 'R18 无设备类别列有 warning');
+// 使用状态全部为空 → noData，不按在用计
+r = run([...BASE, '--form', FORM_FLT, '--data', mkx('data-fltblank.xlsx', {
+  '设备台账': [['位号', '使用状态'], ['P-1101A', ''], ['V-2301', '']],
+}), '--period', ASOF], 'fltblank');
+eq(itemOf(r, /在用设备台数/).status, 'noData', 'R19 使用状态全部为空 → noData，不按在用计');
+ok(/使用状态/.test(String(itemOf(r, /在用设备台数/).missing)), 'R20 noData 说明缺的是使用状态');
+// 只有压力管道、没有压力容器 → noData，不拿压力管道充数
+r = run([...BASE, '--form', FORM_FLT, '--data', mkx('data-fltpipe.xlsx', {
+  '特种设备检验台账': [['位号', '设备类别', '上次检验日期', '下次检验日期'], ['GC-1101', '压力管道', '2026-06-01', '2026-06-01']],
+}), '--period', ASOF], 'fltpipe');
+eq(itemOf(r, /压力容器是否在检验有效期内/).status, 'noData', 'R21 台账中没有压力容器 → noData，不拿压力管道充数');
+ok(/压力容器/.test(String(itemOf(r, /压力容器是否在检验有效期内/).missing)), 'R22 noData 说明没有压力容器记录');
+
+// ==================== S. 审查补修：简写表名、反义「不在用」、常压容器与工艺管道
+eq(S.sheetSource('设备'), 'equipment', 'S1 简写表名「设备」仍归设备台账类，不整张漏掉');
+eq(S.wantsInUse('在用设备台数'), true, 'S2 「在用设备台数」按在用筛选');
+eq(S.wantsInUse('非在用特种设备数量'), false, 'S3 「非在用」是反义，不按在用筛选');
+eq(S.wantsInUse('不在用设备是否办理停用'), false, 'S4 「不在用」是反义，不按在用筛选');
+const PV = S.itemSpecialKinds('在用压力容器数量'), PP = S.itemSpecialKinds('压力管道是否定期检验');
+eq(S.categoryMatch('常压容器', PV, 'equipment'), false, 'S5 「常压容器」不算压力容器');
+eq(S.categoryMatch('工艺管道', PP, 'equipment'), false, 'S6 通用台账里的「工艺管道」不算压力管道');
+eq(S.categoryMatch('容器', PV, 'equipment'), false, 'S7 通用设备台账里的简写「容器」不算压力容器');
+eq(S.categoryMatch('容器', PV, 'special'), true, 'S8 特种设备台账里的简写「容器」算压力容器');
+eq(S.categoryMatch('固定式压力容器', PV, 'equipment'), true, 'S9 「固定式压力容器」算压力容器');
+const FORM_PV = mkx('form-pv.xlsx', { '自查表': [['序号', '自查内容', '现状', '备注'], ['1', '在用压力容器数量', '', '']] });
+r = run([...BASE, '--form', FORM_PV, '--data', mkx('data-pv.xlsx', {
+  '特种设备台账': [['位号', '设备类别', '使用状态'], ['V-1', '压力容器', '在用'], ['V-2', '常压容器', '在用'], ['L-1', '工艺管道', '在用']],
+}), '--period', ASOF], 'pv-count');
+eq(itemOf(r, /在用压力容器数量/).value, '1', 'S10 在用压力容器只计真正的压力容器 1 台，常压容器与工艺管道不计');
+
 /* ==================== 输出 ==================== */
 console.log(`\n${'='.repeat(56)}`);
 console.log(`self-audit-form-filler 自测：${pass} 通过，${fail} 失败`);

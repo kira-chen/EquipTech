@@ -28,8 +28,9 @@ function readDocFile(p, warnings) {
       warnings.push(`资料「${base}」为 docx，但 docx-lite 不可用，已跳过`);
       return out;
     }
+    // docx 是 zip 包：docxToText 先解压取 word/document.xml 再交 extractBlocks（只用正文 blocks，页眉页脚不入条款）
     let blocks;
-    try { blocks = D.extractBlocks(fs.readFileSync(p)); } catch (e) {
+    try { blocks = D.docxToText(fs.readFileSync(p)).blocks; } catch (e) {
       warnings.push(`资料「${base}」无法解析（${e.message}），已跳过`);
       return out;
     }

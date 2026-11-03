@@ -782,12 +782,29 @@ const ACCEPTANCE = {
  * 在厂内规程正文里找含该类数值关键词、且含数字的段落；找到返回 {quote, line}，找不到返回 null。
  * **只做原文摘录，不做任何换算、取整或归纳。**
  */
+/**
+ * stripClauseNo(text) → 去掉行首条款编号后的正文（只用于判断「有没有数值」和比数，引用原文仍用整行）
+ * 识别：「1.1 」「2.1联轴器」「3、」「第4.2条」「（3）」，以及表格行首单元格「| 1.1 |」。
+ * 行首是「数值 + 单位」（如「180 N·m」「0.30 mm」「0.30 毫米」「3 个月」「2.5 级」）时不当条款号：
+ * 条款号后须紧跟中文或括号书名号，且不能是中文单位（「级别」「年度」「天车」「周期」等普通词除外）。
+ */
+const CN_UNIT = '(?:毫米|厘米|微米|丝|级(?!别)|个(?!别)|天(?!车|然)|周(?!期|边|围)|月(?!度)|年(?!度)|小时|分钟|秒|次(?!序)|倍|兆帕|千帕|千克|公斤|吨|毫升|升)';
+const CLAUSE_NO = new RegExp(`^(?:第\\s*\\d+(?:\\.\\d+)*\\s*[条章节款]\\s*|[（(]\\d+[)）]\\s*|\\d+(?:\\.\\d+){1,4}[、．.]?\\s*(?!${CN_UNIT})(?=[一-鿿（(《【「|])|\\d+(?:[、．.]\\s*|\\s+)(?!${CN_UNIT})(?=[一-鿿（(《【「|]))`);
+function stripClauseNo(text) {
+  const s = String(text == null ? '' : text);
+  const lead = s.replace(/^[\s|]*/, '');
+  const rest = lead.replace(CLAUSE_NO, '');
+  if (rest === lead) return s;
+  return rest.replace(/^[\s|]*/, '');
+}
+const hasValue = (text) => /\d/.test(stripClauseNo(text));
+
 function matchSpec(specLines, valueKind) {
   const kind = VALUE_KINDS.find((k) => k.key === valueKind);
   if (!kind || !specLines || !specLines.length) return null;
   for (const L of specLines) {
     if (!kind.re.test(L.text)) continue;
-    if (!/\d/.test(L.text)) continue; // 无数字的说明性文字不作为数值出处
+    if (!hasValue(L.text)) continue; // 无数字（条款号不算）的说明性文字不作为数值出处
     return { quote: L.text.trim(), line: L.line };
   }
   return null;
@@ -797,24 +814,61 @@ function matchSpec(specLines, valueKind) {
 const GENERAL_HINT = /一般|通常|惯例|按经验|参照通用|行业习惯/;
 
 /**
+ * paramNames(text, kind) → [{name, kw}]
+ * 一行里该类数值关键词所在的参数名称：取关键词所在分句（按 ，；。：分）第一个数字之前的文字，
+ * 去掉通用口径词与「不大于 / 按 / 控制在」等比较词。如「1.1 口环间隙 0.30~0.45 mm」→ 口环间隙。
+ */
+const TRAIL_CMP = /(?:不大于|不小于|不超过|不得超过|不得大于|不得小于|不高于|不低于|不应大于|不应小于|小于|大于|低于|高于|应为|应在|控制在|允许值|允许|为|按|约|在|≤|≥|<|>|=|±|\s)+$/;
+function paramNames(text, kind) {
+  const body = stripClauseNo(text);
+  const re = new RegExp(kind.re.source, kind.re.flags.includes('g') ? kind.re.flags : kind.re.flags + 'g');
+  const out = [];
+  let m;
+  while ((m = re.exec(body))) {
+    const segStart = Math.max(...['，', ',', '；', ';', '。', '：', ':', '|'].map((c) => body.lastIndexOf(c, m.index))) + 1;
+    const segEndRaw = body.slice(m.index).search(/[，,；;。：:|]/);
+    const seg = body.slice(segStart, segEndRaw < 0 ? body.length : m.index + segEndRaw);
+    const beforeNum = seg.split(/\d/)[0];
+    const name = beforeNum.replace(new RegExp(GENERAL_HINT.source + '|情况下|时', 'g'), '').replace(TRAIL_CMP, '').trim();
+    out.push({ name, kw: m[0] });
+    if (m[0] === '') re.lastIndex++;
+  }
+  return out;
+}
+/** 两个参数名称是否指同一参数：互相包含；或同一关键词且关键词之外有共同的二字中文词（如「叶轮口环配合间隙」与「口环间隙」共有「口环」） */
+function sameParam(x, y) {
+  if (!x.name || !y.name || x.name.includes(y.name) || y.name.includes(x.name)) return true;
+  if (x.kw !== y.kw) return false;
+  const bigrams = (s) => { const t = s.split(x.kw).join(' '); const b = new Set(); for (let i = 0; i + 1 < t.length; i++) if (/^[一-鿿]{2}$/.test(t.slice(i, i + 2))) b.add(t.slice(i, i + 2)); return b; };
+  const bx = bigrams(x.name);
+  for (const g of bigrams(y.name)) if (bx.has(g)) return true;
+  return false;
+}
+
+/**
  * detectConflicts(specLines, valueKind)
- * 同一数值类型在规程中出现多个互不相同的数值段落时，列为冲突点供用户确认；
+ * 同一数值类型、同一参数在规程中出现多个互不相同的数值段落时，列为冲突点供用户确认；
  * 并把「厂内规程 vs 通用口径」的表述差异标出。**一律以厂内规程为准。**
+ * 比数前去掉行首条款编号（「1.1」「1.2」不是数值）；不同参数（如口环间隙与轴承游隙）各自取值，不互相比。
+ * 名称无法区分时按同一参数比（宁可多报交技术人员确认，不漏报）。
  */
 function detectConflicts(specLines, valueKind) {
   const kind = VALUE_KINDS.find((k) => k.key === valueKind);
   if (!kind || !specLines || !specLines.length) return [];
-  const hits = specLines.filter((L) => kind.re.test(L.text) && /\d/.test(L.text));
+  const hits = specLines.filter((L) => kind.re.test(L.text) && hasValue(L.text))
+    .map((L) => ({ L, names: paramNames(L.text, kind), nums: (stripClauseNo(L.text).match(/\d+(?:\.\d+)?/g) || []).join(',') }));
   if (hits.length < 2) return [];
-  const nums = (s) => (s.match(/\d+(?:\.\d+)?/g) || []).join(',');
-  const first = nums(hits[0].text);
+  const related = (h1, h2) => (!h1.names.length || !h2.names.length) || h1.names.some((x) => h2.names.some((y) => sameParam(x, y)));
   const out = [];
   for (let i = 1; i < hits.length; i++) {
-    if (nums(hits[i].text) === first) continue;
+    const j = hits.slice(0, i).findIndex((h) => related(h, hits[i]));   // 与之同参数的最早一条
+    if (j < 0) continue;
+    if (hits[i].nums === hits[j].nums) continue;
+    const A = hits[j].L, B = hits[i].L;
     out.push({
       valueKind, valueKindCn: kind.cn,
-      a: { quote: hits[0].text.trim(), line: hits[0].line, general: GENERAL_HINT.test(hits[0].text) },
-      b: { quote: hits[i].text.trim(), line: hits[i].line, general: GENERAL_HINT.test(hits[i].text) },
+      a: { quote: A.text.trim(), line: A.line, general: GENERAL_HINT.test(A.text) },
+      b: { quote: B.text.trim(), line: B.line, general: GENERAL_HINT.test(B.text) },
     });
   }
   return out;
@@ -980,5 +1034,5 @@ module.exports = {
   tri, isDismantle, classifyLevel, LEVEL_CN,
   PHASE_CN, PHASE_ORDER,
   GENERIC_STEPS, TYPE_STEPS, TOOLS, SPARES, QC_POINTS, ACCEPTANCE,
-  matchSpec, detectConflicts, GENERAL_HINT, buildPlan,
+  matchSpec, detectConflicts, stripClauseNo, GENERAL_HINT, buildPlan,
 };

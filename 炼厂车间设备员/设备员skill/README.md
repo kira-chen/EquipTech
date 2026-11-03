@@ -4,7 +4,7 @@
 
 **口径与改造文件**：`../文档/规范/中石化口径对照.md`（术语、系统列名、分级、层级、指标、制度引用的唯一依据）、`../文档/过程记录/核验报告-2026-10-26.md`（问题清单）、`../文档/过程记录/改造任务书-2026-10-26.md`（改造执行说明与断点续做规则）。目录结构为「设备员skill / 二级分类 / 技能英文名 / SKILL.md」。
 
-> **当前状态（2026-10-27）：50 / 50 个技能全部完成中石化口径改造（第二轮），合计 9407 条 selftest 断言全绿，每个技能目录含上架信息.md 与样例问题.md。**
+> **当前状态（2026-11-03）：50 / 50 个技能全部完成中石化口径改造（第二轮）及 MCP 核验缺陷修复，合计 9732 条 selftest 断言全绿，每个技能目录含上架信息.md 与样例问题.md。**
 >
 > 每个技能含：SKILL.md + Node 主脚本 + make-sample + selftest + references + examples 对照表 + 模板。
 > 全部遵守 `../文档/规范/技能实现规范.md` 的九条硬约束，仅用 Node.js 内置模块，无 npm 依赖。
@@ -38,7 +38,7 @@
 
 ## 实现进度
 
-全部 50 个技能按 `../文档/规范/技能实现规范.md` 建设，逐一通过三步验证（样例再生 / 自测全绿 / 真实参数跑通），合计 **9407 条断言**。
+全部 50 个技能按 `../文档/规范/技能实现规范.md` 建设，逐一通过三步验证（样例再生 / 自测全绿 / 真实参数跑通），合计 **9732 条断言**。
 
 | 技能 | 分类 | 断言 |
 |---|---|---|
@@ -55,9 +55,9 @@
 | `equipment-handover-check` | 02 | ✅ 199 条 |
 | `maintenance-demand-rollup` | 02 | ✅ 195 条 |
 | `maintenance-record-archive` | 02 | ✅ 132 条 |
-| `overhaul-process-check-bridge` | 02 | ✅ 138 条 |
+| `overhaul-process-check-bridge` | 02 | ✅ 177 条 |
 | `permit-precheck-bridge` | 02 | ✅ 130 条 |
-| `repair-plan-assistant` | 02 | ✅ 285 条 |
+| `repair-plan-assistant` | 02 | ✅ 307 条 |
 | `repeat-failure-detector` | 02 | ✅ 218 条 |
 | `turnaround-workshop-tracker` | 02 | ✅ 323 条 |
 | `work-order-generator` | 02 | ✅ 203 条 |
@@ -70,7 +70,7 @@
 | `moc-change-assistant` | 04 | ✅ 293 条 |
 | `nameplate-ocr-intake` | 04 | ✅ 191 条 |
 | `special-equipment-inspection-due` | 04 | ✅ 155 条 |
-| `technical-document-finder` | 04 | ✅ 144 条 |
+| `technical-document-finder` | 04 | ✅ 177 条 |
 | `valve-instrument-calibration-ledger` | 04 | ✅ 138 条 |
 | `spare-parts-consumption-analysis` | 05 | ✅ 112 条 |
 | `spare-parts-demand` | 05 | ✅ 181 条 |
@@ -78,20 +78,20 @@
 | `equipment-daily-report` | 06 | ✅ 158 条 |
 | `equipment-event-notice` | 06 | ✅ 172 条 |
 | `equipment-weekly-monthly-report` | 06 | ✅ 270 条 |
-| `inspection-evidence-package` | 06 | ✅ 139 条 |
-| `meeting-material-builder` | 06 | ✅ 118 条 |
-| `self-audit-form-filler` | 06 | ✅ 212 条 |
-| `shift-handover-record` | 06 | ✅ 124 条 |
+| `inspection-evidence-package` | 06 | ✅ 168 条 |
+| `meeting-material-builder` | 06 | ✅ 132 条 |
+| `self-audit-form-filler` | 06 | ✅ 264 条 |
+| `shift-handover-record` | 06 | ✅ 157 条 |
 | `failure-case-retrieval` | 07 | ✅ 166 条 |
 | `failure-investigation-assistant` | 07 | ✅ 306 条 |
 | `hazard-closure-tracker` | 07 | ✅ 151 条 |
-| `regulation-compliance-check` | 07 | ✅ 180 条 |
+| `regulation-compliance-check` | 07 | ✅ 200 条 |
 | `safety-environmental-device-check` | 07 | ✅ 190 条 |
 | `equipment-energy-analysis` | 08 | ✅ 215 条 |
-| `equipment-knowledge-qa` | 08 | ✅ 217 条 |
+| `equipment-knowledge-qa` | 08 | ✅ 243 条 |
 | `operator-anomaly-guide` | 08 | ✅ 126 条 |
-| `training-material-generator` | 08 | ✅ 215 条 |
-| `worklog-todo-manager` | 08 | ✅ 173 条 |
+| `training-material-generator` | 08 | ✅ 225 条 |
+| `worklog-todo-manager` | 08 | ✅ 220 条 |
 
 ### 验证方式
 
@@ -138,10 +138,16 @@ defect-intake-grading     → defects.json  →  work-order-generator
 work-order-generator      → workorders.json → work-order-tracker
 work-order-tracker        → orders.json   →  equipment-daily-report
 equipment-daily-report    → daily.json    →  equipment-weekly-monthly-report
-hazard-closure-tracker    → hazard.json   ┐
-special-equipment-...-due → inspection.json ├→ worklog-todo-manager（待办总出口）
-valve-instrument-...      → calibration.json ┘
+work-order-tracker        → orders.json      ┐
+hazard-closure-tracker    → hazard.json      │
+special-equipment-...-due → inspection.json  │
+valve-instrument-...      → calibration.json ├→ worklog-todo-manager（待办总出口）
+lubrication-manager       → lube.json        │
+defect-intake-grading     → defects.json     │
+shift-handover-record     → handover.json    ┘
 ```
+
+`inspection-task-dispatch` 的 tasks.json 是按班次下发的巡检任务单，当班执行，不进设备员个人待办。
 
 ## 贯穿 50 个技能的六条硬约束
 

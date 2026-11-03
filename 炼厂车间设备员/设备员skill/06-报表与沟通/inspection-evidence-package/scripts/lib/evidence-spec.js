@@ -5,7 +5,8 @@
  *
  * 核心原则（改动本文件前先读 references/evidence-rules.md）：
  *  1. 找不到对应材料 → missing，标注「未找到对应材料」。**不得用相近材料充数，不得给出「可用 XX 替代」的建议。**
- *  2. 材料存在但时间范围不覆盖检查期 → partialCoverage，如实写覆盖区间，**不得按完整覆盖处理**。
+ *  2. 材料存在但时间范围不覆盖检查期 → partialCoverage，如实写覆盖区间，**不得按完整覆盖处理**；
+ *     材料全都没有日期 → unknownPeriod（期限未知），单列，不算齐全也不算覆盖不全。
  *  3. 匹配靠关键词命中，命中不到就是找不到；**不做语义近似兜底**。
  */
 
@@ -114,7 +115,7 @@ function featureWords(text) {
  *   'full'       完整覆盖
  *   'partial'    有交集但不完整（含只覆盖一端）
  *   'none'       无交集
- *   'unknown'    材料没有可解析的时间信息（**不得按完整覆盖处理**）
+ *   'unknown'    材料没有可解析的时间信息（**不得按完整覆盖处理**；检查项的材料全为 unknown 时归「期限未知」）
  *   'noPeriod'   未指定检查期，不做覆盖判定
  */
 function coverage(period, mFrom, mTo) {
@@ -130,6 +131,7 @@ function coverage(period, mFrom, mTo) {
 const STATUS_CN = {
   ready: '资料齐全',
   partial: '覆盖不全',
+  unknownPeriod: '期限未知',
   missing: '未找到对应材料',
 };
 

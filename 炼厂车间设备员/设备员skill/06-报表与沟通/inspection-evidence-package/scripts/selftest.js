@@ -136,13 +136,13 @@ eq(r.s.counts.partialCoverage, 1, 'E8 时间无交集的材料判为覆盖不全
 ok(/无交集/.test(r.j.partialCoverage[0].coverageNote), 'E9 无交集情形如实说明');
 eq(r.s.counts.ready, 0, 'E10 无交集不计入资料齐全');
 
-// 材料时间不详
+// 材料时间不详（2026-11-03 #10 口径调整：材料全无日期 → 期限未知单列，仍不按完整覆盖）
 const MAT_NOTIME = mkx('mat-notime.xlsx', {
   '资料清单': [['文件名', '资料类型'], ['巡检登记本.xlsx', '记录']],
 });
 r = run([...BASE, '--notice', CHK, '--materials', MAT_NOTIME, '--date-range', PERIOD], 'notime');
-eq(r.s.counts.partialCoverage, 1, 'E11 时间不详的材料判为覆盖不全，不按完整覆盖');
-ok(/无法确定时间范围/.test(r.j.partialCoverage[0].coverageNote), 'E12 时间不详如实说明');
+ok(r.s.counts.unknownPeriod === 1 && r.s.counts.partialCoverage === 0 && r.s.counts.ready === 0, 'E11 时间不详的材料判为期限未知，不按完整覆盖、不计齐全');
+ok(/无法确定时间范围/.test(((r.j.unknownPeriod || [])[0] || {}).coverageNote), 'E12 时间不详如实说明');
 
 // 日期无法解析 → warning + 按时间不详处理，不猜
 const MAT_BADDATE = mkx('mat-baddate.xlsx', {
@@ -150,7 +150,7 @@ const MAT_BADDATE = mkx('mat-baddate.xlsx', {
 });
 r = run([...BASE, '--notice', CHK, '--materials', MAT_BADDATE, '--date-range', PERIOD], 'baddate');
 ok(r.j.warnings.some((w) => w.includes('无法解析')), 'E13 日期无法解析有 warning');
-eq(r.s.counts.partialCoverage, 1, 'E14 日期无法解析不按完整覆盖');
+ok(r.s.counts.unknownPeriod === 1 && r.s.counts.ready === 0, 'E14 日期无法解析不按完整覆盖（归期限未知）');
 ok(r.j.materials.every((m) => m.periodFrom === null && m.periodTo === null), 'E15 无法解析的日期为 null，不填默认值');
 
 /* ==================== F. 未指定检查期 ==================== */
@@ -190,7 +190,7 @@ ok(/不建议用其他材料替代缺失资料，不建议补编记录/.test(r.m
 /* ==================== I. 未对应材料不强行对应 ==================== */
 ok(r.j.unmatched.length >= 1, 'I1 未对应材料单列');
 ok(r.j.unmatched.every((x) => x.note.includes('未按名称猜测强行对应')), 'I2 未对应材料注明不强行对应');
-ok(/## 五、未对应材料/.test(r.md), 'I3 未对应材料单列一节');
+ok(/## 六、未对应材料/.test(r.md), 'I3 未对应材料单列一节');
 ok(r.j.warnings.some((w) => w.includes('未对应到任何检查项')), 'I4 未对应材料有 warning');
 
 /* ==================== J. 输入解析：md / 目录 / 合计行 / 空行 ==================== */
@@ -303,8 +303,8 @@ ok(/不支持的格式/.test(x.s.error), 'K17 不支持的通知格式报错');
 /* ==================== L. 产出结构完整性 ==================== */
 r = run([...BASE, '--notice', CHK, '--materials', MAT, '--date-range', PERIOD, '--scope', '全车间'], 'struct');
 ok(/## 一、检查基本信息/.test(r.md) && /## 二、逐检查项资料对照/.test(r.md) && /## 三、资料缺口清单/.test(r.md)
-  && /## 四、覆盖不全项/.test(r.md) && /## 五、未对应材料/.test(r.md) && /## 六、归集包目录建议/.test(r.md)
-  && /## 七、准备工作提示/.test(r.md), 'L1 七节结构齐全');
+  && /## 四、覆盖不全项/.test(r.md) && /## 五、期限未知项/.test(r.md) && /## 六、未对应材料/.test(r.md) && /## 七、归集包目录建议/.test(r.md)
+  && /## 八、准备工作提示/.test(r.md), 'L1 八节结构齐全');
 ok(/<!-- ANALYSIS_START -->/.test(r.md) && /<!-- ANALYSIS_END -->/.test(r.md), 'L2 分析段占位符存在');
 ok(r.j.items.every((x) => 'no' in x && 'text' in x && 'evidence' in x && 'coverageNote' in x && 'statusCn' in x), 'L3 items 字段齐全');
 ok(Array.isArray(r.j.ready) && Array.isArray(r.j.missing) && Array.isArray(r.j.partialCoverage) && Array.isArray(r.j.unmatched), 'L4 四类清单均为数组');
@@ -315,6 +315,78 @@ const sj = JSON.parse(fs.readFileSync(path.join(r.out, 'summary.json'), 'utf8'))
 eq(sj.ok, true, 'L8 summary.json 内容正确');
 eq(sj.counts.missing, r.j.counts.missing, 'L9 summary 与 evidence.json 计数一致');
 ok(/迎检资料清单/.test(r.md.split('\n')[0]), 'L10 md 标题正确');
+
+/* ==================== M. 缺陷回归（2026-11-03 全量核验 #9、#10） ==================== */
+// #9 文件名里的位号段（E-1201、V-1101、P-2101A）不得被日期正则读成年份
+const CHK_THK = mkx('chk-thk.xlsx', { '检查表': [['序号', '检查项'], ['1', '压力容器定期检验是否在有效期内'], ['2', '巡检记录是否完整']] });
+const MAT_TAG = mkx('mat-tag.xlsx', {
+  '资料清单': [['文件名', '资料类型'],
+    ['E-1201-2026年测厚报告.pdf', '报告'],
+    ['V-1101-2026-08检验报告.pdf', '报告'],
+    ['P-2101A巡检记录2026-07~2026-09.xlsx', '记录']],
+});
+r = run([...BASE, '--notice', CHK_THK, '--materials', MAT_TAG, '--date-range', '2025-01-01~2026-09-30'], 'tag');
+const mt1 = r.j.materials.find((m) => /E-1201/.test(m.name));
+eq(mt1.periodFrom, '2026-01-01', 'M1 「E-1201-2026年测厚报告」起始按 2026 年，不读成 1201 年');
+eq(mt1.periodTo, '2026-12-31', 'M2 「E-1201-2026年测厚报告」截止 2026-12-31');
+eq(mt1.periodBasis, '文件名年份', 'M3 位号段不构成「文件名区间」');
+const mt2 = r.j.materials.find((m) => /V-1101/.test(m.name));
+eq(mt2.periodFrom, '2026-08-01', 'M4 「V-1101-2026-08」按月份 2026-08 推断，不读成 1101~2026');
+eq(mt2.periodTo, '2026-08-31', 'M5 「V-1101-2026-08」截止 2026-08-31');
+const mt3 = r.j.materials.find((m) => /P-2101A/.test(m.name));
+ok(mt3.periodFrom === '2026-07-01' && mt3.periodTo === '2026-09-30', 'M6 位号在前、真实区间在后仍按区间推断');
+eq(r.j.items.find((x) => /压力容器/.test(x.text)).status, 'partial', 'M7 检查期 2025-01~2026-09 下测厚报告只覆盖 2026 年 → 覆盖不全，不误判完整覆盖');
+
+// #10 文件名与清单都没有日期（如 MCP 导出）→ 期限未知，单列，不算覆盖不全也不算齐全
+const MCPDIR = path.join(work, 'mcpdir');
+fs.mkdirSync(MCPDIR, { recursive: true });
+fs.writeFileSync(path.join(MCPDIR, '设备台账.csv'), 'x');
+fs.writeFileSync(path.join(MCPDIR, '巡检记录.csv'), 'x');
+r = run([...BASE, '--notice', CHK2, '--materials', MCPDIR, '--date-range', PERIOD], 'mcpdir');
+eq(r.s.ok, true, 'M8 无日期材料目录可运行');
+eq(r.s.counts.unknownPeriod, 2, 'M9 无日期材料的检查项计入「期限未知」');
+eq(r.s.counts.partialCoverage, 0, 'M10 无日期不判「覆盖不全」');
+eq(r.s.counts.ready, 0, 'M11 无日期不按完整覆盖计入齐全');
+ok(Array.isArray(r.j.unknownPeriod) && r.j.unknownPeriod.length === 2, 'M12 evidence.json 单列 unknownPeriod 数组');
+ok(r.j.items.every((x) => x.status === 'unknownPeriod' && x.statusCn === '期限未知'), 'M13 状态为 unknownPeriod / 期限未知');
+const up = r.j.unknownPeriod || [];
+ok(up.length > 0 && up.every((x) => /起始日期/.test(x.note) && /截止日期/.test(x.note)), 'M14 期限未知项说明缺哪个字段（起始/截止日期）');
+ok(up.length > 0 && up.every((x) => /未判定/.test(x.coverageNote)), 'M15 覆盖说明写明未判定是否覆盖检查期');
+ok(/## 五、期限未知项/.test(r.md), 'M16 md 单列「期限未知项」一节');
+ok(/\| 期限未知 \| 2 \|/.test(r.md.slice(r.md.indexOf('## 一、'), r.md.indexOf('## 二、'))), 'M17 基本信息表列出期限未知项数');
+ok(/^> \*\*【注意】.*期限未知/m.test(r.md), 'M18 无缺口但有期限未知时 md 开头有醒目提示');
+ok(r.j.warnings.some((w) => /期限未知/.test(w)), 'M19 期限未知有 warning');
+eq(r.j.counts.items, r.j.ready.length + r.j.missing.length + r.j.partialCoverage.length + up.length, 'M20 四类状态之和等于检查项总数');
+const r0 = run([...BASE, '--notice', CHK2, '--materials', MCPDIR], 'mcpdir-noperiod');
+eq(r0.s.counts.unknownPeriod, 0, 'M21 未指定检查期时不产生期限未知项');
+// 同一检查项既有日期不覆盖的材料、又有无日期材料 → 按已知日期判覆盖不全，不归期限未知
+const MAT_MIX = mkx('mat-mix.xlsx', {
+  '资料清单': [['文件名', '起始日期', '截止日期'],
+    ['巡检记录2026年7月.xlsx', '', ''],
+    ['巡检登记本.xlsx', '', '']],
+});
+r = run([...BASE, '--notice', CHK2, '--materials', MAT_MIX, '--date-range', PERIOD], 'mix');
+eq(r.j.items.find((x) => /巡检/.test(x.text)).status, 'partial', 'M22 有日期不全 + 无日期混合 → 覆盖不全');
+ok(/1 份材料无法确定时间范围/.test(r.j.items.find((x) => /巡检/.test(x.text)).coverageNote), 'M23 混合时仍点出无日期材料');
+// 系统代码 + 年份（EAM-2026-09、SAP-2026.01-2026.06、QC-2026上半年）不是位号，年份不能被抹掉
+const MAT_SYS = mkx('mat-sys.xlsx', {
+  '资料清单': [['文件名', '资料类型'],
+    ['EAM-2026-09巡检导出.xlsx', '记录'],
+    ['SAP-2026.01-2026.06工单.xlsx', '记录'],
+    ['QC-2026上半年测厚报告.pdf', '报告'],
+    ['P-2026检修记录.xlsx', '记录']],
+});
+r = run([...BASE, '--notice', CHK_THK, '--materials', MAT_SYS, '--date-range', PERIOD], 'sys');
+const ms = (re) => r.j.materials.find((m) => re.test(m.name)) || {};
+ok(ms(/^EAM/).periodFrom === '2026-09-01' && ms(/^EAM/).periodTo === '2026-09-30', 'M24 「EAM-2026-09」按 2026-09 推断，系统代码不当位号');
+ok(ms(/^SAP/).periodFrom === '2026-01-01' && ms(/^SAP/).periodTo === '2026-06-30', 'M25 「SAP-2026.01-2026.06」按区间推断');
+ok(ms(/^QC/).periodFrom === '2026-01-01' && ms(/^QC/).periodTo === '2026-06-30', 'M26 「QC-2026上半年」按上半年推断');
+ok(!ms(/^P-2026/).periodFrom, 'M27 「P-2026检修记录」的 2026 是位号，不当年份');
+// 既有缺口又有期限未知时，提示行分别指向缺口节与期限未知节
+const CHK3 = mkx('chk3.xlsx', { '检查表': [['序号', '检查项'], ['1', '设备台账是否建立健全'], ['2', '应急演练记录是否齐全']] });
+r = run([...BASE, '--notice', CHK3, '--materials', MCPDIR, '--date-range', PERIOD], 'gap-unknown');
+ok(r.s.counts.missing >= 1 && r.s.counts.unknownPeriod >= 1, 'M28 场景同时有缺口与期限未知');
+ok(/缺口明细见第三节，期限未知明细见第五节/.test(r.md), 'M29 提示行写明期限未知明细在第五节，不只指向第三节');
 
 /* ==================== 输出 ==================== */
 console.log(`\n${'='.repeat(56)}`);

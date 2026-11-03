@@ -62,14 +62,47 @@ function classifyType(v) {
 
 const DONE_WORDS = ['已完成', '完成', '已闭环', '闭环', '已处理', '处理完毕', '已消除', '已恢复', '已回装', '已投用'];
 const OPEN_WORDS = ['未完成', '未处理', '未闭环', '进行中', '处理中', '跟进中', '待处理', '待跟进', '在修', '未结束'];
-/** 完成状态归一：done / open / null（无法判定，绝不按最宽松或最严格默认） */
-function classifyDone(v) {
-  const s = C.str(v).replace(/\s/g, '');
-  if (s === '') return null;
-  // 先判「未」字前缀类，避免「未完成」被「完成」命中
-  if (OPEN_WORDS.some((w) => s.includes(w))) return 'open';
-  if (DONE_WORDS.some((w) => s.includes(w))) return 'done';
-  return null;
+// 「技术完成 / 完工待验 / 待验收」按口径对照归待验收，不是闭环；须在 DONE_WORDS（含「完成」）之前判
+const ACCEPT_WORDS = ['技术完成', '完工待验', '待验收', '已完工'];
+// SAP 六态（common.js normSapStatus）→ 完成状态；已取消（DLFL/LKD）不默认销账，单列未判定由交接双方确认
+const SAP_DONE = { '待审核': 'open', '已派工': 'open', '施工中': 'open', '待验收': 'open', '已闭环': 'done', '已取消': null };
+// 多码组合（如「REL CNF」「TECO NMAT」）取最靠后的状态
+const SAP_RANK = ['待审核', '已派工', '施工中', '待验收', '已闭环', '已取消'];
+/**
+ * 完成状态归一：{ done: 'done' | 'open' | null, sap: SAP 六态 | null }。
+ * done 为 null 表示无法判定，绝不按最宽松或最严格默认。
+ * 口径（中石化口径对照第四节）：CLSD / NOCO 已闭环；TECO / CNF / 技术完成 待验收，不算闭环；
+ * CRTD / OSNO / REL / NOPR / PCNF 未完成；DLFL / LKD 已取消，判未判定由交接双方确认。
+ */
+function classifyStatus(v) {
+  const s = C.str(v).replace(/\s+/g, ' ').trim();
+  if (s === '') return { done: null, sap: null };
+  // 1. SAP 系统状态码（可多码组合，码以外的英文标记如 NMAT/PRC 忽略）
+  if (/^[A-Za-z]+([\s,，;；/]+[A-Za-z]+)*$/.test(s)) {
+    const ks = s.split(/[\s,，;；/]+/).map((t) => C.normSapStatus(t)).filter(Boolean);
+    if (ks.length) {
+      const k = ks.reduce((x, y) => (SAP_RANK.indexOf(y) > SAP_RANK.indexOf(x) ? y : x));
+      return { done: SAP_DONE[k], sap: k };
+    }
+    return { done: null, sap: null };
+  }
+  const z = s.replace(/\s/g, '');
+  // 2. 先判「未」字前缀类，避免「未完成」被「完成」命中
+  if (OPEN_WORDS.some((w) => z.includes(w))) return { done: 'open', sap: null };
+  if (ACCEPT_WORDS.some((w) => z.includes(w))) return { done: 'open', sap: '待验收' };
+  if (DONE_WORDS.some((w) => z.includes(w))) return { done: 'done', sap: null };
+  // 3. 「已删除 / 删除」是 EAM 导出 DLFL 的中文写法，common.js 的已取消词表未收，这里按已取消处理
+  if (/删除/.test(z)) return { done: null, sap: '已取消' };
+  // 4. 其余中文状态词（已下达、已派工、施工中、已关闭、已验收、已消缺、已取消 …）按 SAP 六态归一
+  const k = C.normSapStatus(z);
+  if (k) return { done: SAP_DONE[k], sap: k };
+  return { done: null, sap: null };
+}
+
+/** 北京时间墙钟「YYYY-MM-DD HH:mm」→ 毫秒时间戳（按 +08:00 解析，不受主机时区影响）；无法解析返回 NaN */
+function bjMs(s) {
+  const m = C.str(s).match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/);
+  return m ? Date.parse(`${m[1]}T${m[2]}:00+08:00`) : NaN;
 }
 
 // ---------------------------------------------------------------- 结转匹配
@@ -129,14 +162,15 @@ function readCurrent(inputs) {
       const type = classifyType(r['事项类型']);
       if (type === null && C.str(r['事项类型'])) warnings.push(`${sheetName} 第${r._row}行 事项类型「${C.str(r['事项类型'])}」无法归类，已列入未归类事项`);
       if (type === null && !C.str(r['事项类型'])) warnings.push(`${sheetName} 第${r._row}行 事项类型为空，已列入未归类事项`);
-      const done = classifyDone(r['状态']);
-      if (done === null && C.str(r['状态'])) warnings.push(`${sheetName} 第${r._row}行 状态「${C.str(r['状态'])}」无法判定为已完成/未完成，已列入状态未判定事项`);
+      const { done, sap } = classifyStatus(r['状态']);
+      if (done === null && sap === '已取消') warnings.push(`${sheetName} 第${r._row}行 状态「${C.str(r['状态'])}」为已取消/删除标记，未按已完成销账，已列入状态未判定事项，需交接双方确认是否仍需跟进`);
+      else if (done === null && C.str(r['状态'])) warnings.push(`${sheetName} 第${r._row}行 状态「${C.str(r['状态'])}」无法判定为已完成/未完成，已列入状态未判定事项`);
       if (done === null && !C.str(r['状态'])) warnings.push(`${sheetName} 第${r._row}行 状态为空，已列入状态未判定事项`);
       items.push({
         tag: tag || TBD, rawTag: tag, name: C.str(r['设备名称']),
         type, rawType: C.str(r['事项类型']),
         content, handling: C.str(r['处理情况']),
-        done, rawStatus: C.str(r['状态']),
+        done, sap, rawStatus: C.str(r['状态']),
         owner: C.str(r['责任人']), due,
         time: t, sheet: sheetName, row: r._row,
       });
@@ -301,7 +335,8 @@ function main() {
   // 完成状态无法判定：单列
   const statusUndetermined = items.filter((x) => x.done === null).map((x) => ({
     tag: x.tag, name: x.name || null, content: x.content, rawStatus: x.rawStatus || null,
-    reason: x.rawStatus ? `状态「${x.rawStatus}」无法判定为已完成/未完成` : '状态为空',
+    reason: x.sap === '已取消' ? `状态「${x.rawStatus}」为已取消/删除标记，需交接双方确认是否仍需跟进`
+      : x.rawStatus ? `状态「${x.rawStatus}」无法判定为已完成/未完成` : '状态为空',
     sheet: x.sheet, row: x.row,
   }));
 
@@ -316,7 +351,8 @@ function main() {
     }
     pending.push({
       tag: x.tag, name: x.name || null, content: x.content,
-      state: x.done === 'open' ? '未完成' : (x.rawStatus || TBD),
+      // SAP 状态码 / 待验收类状态写明归一后的状态，如「未完成（待验收）」，便于接手人识别 TECO 仍需验收
+      state: x.done === 'open' ? (x.sap ? `未完成（${x.sap}）` : '未完成') : (x.rawStatus || TBD),
       stateDetermined: x.done !== null,
       handling: x.handling || null,
       owner: x.owner || TBD, ownerMissing: !x.owner,
@@ -410,7 +446,8 @@ function main() {
   }
   for (const t of pending) {
     if (t.carried || !t.due) continue;
-    if (Date.parse(t.due.replace(' ', 'T') + ':00') < tms) {
+    // 要求完成时间是北京时间墙钟（YYYY-MM-DD HH:mm），统一按 +08:00 解析，与主机时区无关
+    if (bjMs(t.due) < tms) {
       focusItems.push({ tag: t.tag, content: t.content, reason: `要求完成时间 ${t.due} 已超过交接时点`, owner: t.owner });
     }
   }

@@ -9,10 +9,10 @@
 | 3 | `work-order-tracker` | 工单跟踪催办 | 状态分布、超期与停滞识别、催办清单、完成率 | 低 | 一 | ✅ 184 条断言 |
 | 4 | `repeat-failure-detector` | 重复故障识别 | 识别同设备与同型号重复故障，提示做根因分析 | 中 | 三 | ✅ 218 条断言 |
 | 5 | `maintenance-demand-rollup` | 检修需求汇总 | 汇总本车间检修需求，生成可上报设备部的清单 | 低 | 一 | ✅ 195 条断言 |
-| 6 | `repair-plan-assistant` | 检修方案辅助 | 按设备类型匹配作业步骤、工机具、质量控制点 | 中 | 二 | ✅ 285 条断言 |
+| 6 | `repair-plan-assistant` | 检修方案辅助 | 按设备类型匹配作业步骤、工机具、质量控制点 | 中 | 二 | ✅ 307 条断言 |
 | 7 | `equipment-handover-check` | 设备交出确认 | 按介质与作业类型生成交出条件清单与交出单 | 中 | 二 | ✅ 199 条断言 |
 | 8 | `permit-precheck-bridge` | 作业票预检入口 | 车间侧入口，调用已有 `work-permit-precheck` | 低 | 一 | ✅ 130 条断言 |
-| 9 | `overhaul-process-check-bridge` | 方案核查入口 | 车间侧入口，调用已有 `overhaul-safety-check` | 低 | 一 | ✅ 138 条断言 |
+| 9 | `overhaul-process-check-bridge` | 方案核查入口 | 车间侧入口，调用已有 `overhaul-safety-check` | 低 | 一 | ✅ 177 条断言 |
 | 10 | `completion-acceptance` | 完工验收 | 生成验收项清单、记录结果、输出验收报告 | 中 | 二 | ✅ 199 条断言 |
 | 11 | `maintenance-record-archive` | 检修记录归档 | 核对应归档资料完整性，更新台账检修履历 | 低 | 一 | ✅ 132 条断言 |
 | 12 | `turnaround-workshop-tracker` | 大修车间跟踪 | 大修期间项目进度、资源到位、开工条件一张表 | 中 | 二 | ✅ 323 条断言 |
@@ -25,4 +25,4 @@
 
 ## 实现状态
 
-本类 **12 / 12** 个技能已完整实现（Node 脚本 + selftest + references + examples），合计 **2352** 条断言全绿。
+本类 **12 / 12** 个技能已完整实现（Node 脚本 + selftest + references + examples），合计 **2413** 条断言全绿。

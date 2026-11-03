@@ -88,7 +88,7 @@ sheet 名匹配「资料清单」「材料清单」「制度清单」「台账�
 |---|---|---|
 | 资料名称 | 是 | 为空的行跳过并 warning |
 | 存放位置 | 否 | 缺失时用资料名称代替 |
-| 资料类型 | 否 | 参与对照（与资料名称一并作为材料名称） |
+| 资料类型 | 否 | **先读本列归类**：填了具体类别说法（检修记录、作业许可、检验报告、制度……）就按本列归类，`materials[].categoryFrom` 记「资料类型」；与资料名称认出的类别合并。只填「台账」「记录」这类泛称时落不到具体类别，按资料名称归类，名称也认不出就进「未对应材料」，不推断 |
 | 完整性说明 | 否 | **判定「材料不完整」的唯一来源**，见下 |
 | 备注 | 否 | |
 
@@ -139,7 +139,7 @@ sheet 名匹配「资料清单」「材料清单」「制度清单」「台账�
 
 | 文件 | 内容 |
 |---|---|
-| `compliance.json` | items、hasEvidence、noEvidence、partialEvidence、needInterpretation、unmatched、materials、counts、meta（含 statement / statementFill / internalNotice） |
+| `compliance.json` | items、hasEvidence、noEvidence、partialEvidence、needInterpretation、unmatched、materials（每份带 `categories` 归类结果与 `categoryFrom` 来源列）、counts、meta（含 statement / statementFill / internalNotice） |
 | `compliance.md` | 五节报告；开头带四档口径提示与企业制度说明；末尾固定声明行（两句）；醒目提示用「【注意】」，不用 emoji |
 | `对照表.xlsx` | 五个工作表：条款对照、未见材料与材料不完整、需进一步确认、未对应材料、状态口径与声明 |
 | `summary.json` | 末行摘要落盘 |

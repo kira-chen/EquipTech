@@ -1,13 +1,13 @@
 # examples 回归测试数据
 
 > 本目录仅开发包含有，发布包不含。由 `node scripts/make-sample.js --out examples` 再生（seed 改方案编号尾号、工期与人名，计数结论不变）。
-> 本技能是**入口与衔接层**：`*.json` 是**虚构的**源技能 `result.json` 与车间侧 `notes.json`，只用于回归 `merge-report.js`；真实方案的规则判定仍要跑 `overhaul-safety-check`。`sample-overhaul-plan.docx` 是依赖技能 examples 中泵检修方案样例的副本，供端到端演示。
+> 本技能是**入口与衔接层**：`sample-overhaul-plan.json` 是**虚构的**检修方案数据（源技能 check.js 的输入），`sample-overhaul-result.json` 是 make-sample 调用依赖技能 `check.js` 对它跑出的**真实输出**（规则号与规则库同源，不手写），`*notes*.json` 是车间侧提示，用于回归 `merge-report.js`。`sample-overhaul-plan.docx` 是依赖技能 examples 中泵检修方案样例的副本（与 plan.json 不是同一份方案），供 docx2text 一步演示。
 
 ## 示例问题 ↔ 附件对照表
 
 | # | 示例问题 | 附件 | 运行参数 | 预期结果 |
 |---|---|---|---|---|
-| 1 | 这份日常维修方案的安全措施够不够，帮我核一下 | `sample-overhaul-plan.docx`（走源技能）→ 得到 result.json；回归时直接用 `sample-overhaul-result.json` + `sample-workshop-notes.json` | `merge-report.js --result sample-overhaul-result.json --notes sample-workshop-notes.json --repair-type 日常维修` | 缺失 3 / 建议完善 2 / 未判定 1 / 已有 4；findings 与源文件全等（含 advice、jobs）；标签「动火」原值 + 加注「用火作业」；抬头显示检修分级；车间侧四项 已核实 / 未核实 / 不适用 / 已核实 |
+| 1 | 这份日常维修方案的安全措施够不够，帮我核一下 | `sample-overhaul-plan.docx`（走源技能）→ 得到 result.json；回归时直接用 `sample-overhaul-result.json` + `sample-workshop-notes.json` | `merge-report.js --result sample-overhaul-result.json --plan sample-overhaul-plan.json --notes sample-workshop-notes.json --repair-type 日常维修` | 缺失 3 / 建议完善 5 / 未判定 9 / 已有 36；findings 与源文件全等（含 advice、jobs）；方案编号与作业类型取自 plan.json，标签「动火」原值 + 加注「用火作业」；抬头显示检修分级；车间侧四项 已核实 / 未核实 / 不适用 / 已核实 |
 | 2 | 这是大修方案，按老叫法报的 | `sample-overhaul-result.json` | `--repair-type 大修` | 映射为「大检修」并 warning；判定计数不变 |
 | 3 | 源技能摘要写缺失 5 项，明细只有 3 条，以哪个为准 | `sample-overhaul-result-summary-mismatch.json` | `--result` 该文件 | warning「summary.must_fix=5 与 findings 重新计数 3 不一致」；报告按 3 计，源值 5 留在 `bridge.json.sourceSummary` |
 | 4 | 班长说交出"应该够了"，我填进去了 | `sample-overhaul-result.json` + `sample-workshop-notes-bad.json` | `--notes sample-workshop-notes-bad.json` | 「应该够了」按「未核实」处理并 warning；自定义项「脚手架方案」追加并标「车间自查」 |
@@ -18,7 +18,7 @@
 
 1. **依赖缺失必须终止**：方案安全措施涉及安全红线，没有规则引擎支撑时宁可不给结论。
 2. **结果不得改写**：`bridge.json.findings` 与源 `findings` JSON 全等（含 `name / advice / jobs`）；规则编号、级别、原文、顺序一致；源技能声明行原文在前，本技能声明行在后。
-3. **标签原词可追溯**：源技能"动火"不改写，八大类"用火作业"只作加注。
+3. **标签原词可追溯**：源技能"动火"不改写，八大类"用火作业"只作加注。方案编号与作业类型取自 `--plan` 的 plan.json（源技能 result.json 不含这两项），不传时留空并 warning。
 4. **检修分级只进抬头**：旧值映射 warning，非法值报错，不传不默认，任何分级都不改判定。
 5. **分节呈现**：车间侧提示单独成节「车间侧补充提示（非规则判定）」，不传 notes 时全部「未核实」。
 6. **作业票为准**：整改建议末尾固定提示各专项措施以开工时逐票办理的作业票为准。

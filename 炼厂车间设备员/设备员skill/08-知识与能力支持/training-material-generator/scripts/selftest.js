@@ -302,6 +302,33 @@ ok(!r.j.keyPoints.some((k) => k.category === '厂内规定' && /^>/.test(k.point
 // citeOf 格式
 eq(D.citeOf({ file: 'a.md', loc: '第5行', clause: '4.1' }), 'a.md 第4.1条（第5行）', 'L11 出处写法含文件、条款号与位置');
 eq(D.citeOf({ file: 'a.md', loc: '第5行', clause: null }), 'a.md（第5行）', 'L12 无条款号时仍带文件与位置');
+// docx 资料：docx 是 zip 包，须先解压取 word/document.xml 再解析（缺陷复现：旧版把压缩包字节直接交给 extractBlocks，报「s.replace is not a function」后跳过）
+const X = require('./lib/docx-lite');
+const DOCX = path.join(work, '静设备管理规定.docx');
+fs.writeFileSync(DOCX, X.buildDocx([
+  X.pXml('静设备管理规定（测试）'),
+  X.pXml('4.1 离心泵轴承箱温度不得超过 75 ℃。'),
+  X.pXml('4.2 联轴器径向对中偏差不大于 0.08 mm。'),
+  X.pXml('4.3 巡检发现异常应先上报。'),
+  X.tblXml([['项目', '规定值'], ['地脚螺栓紧固力矩', '120 N·m']]),
+].join('')));
+const dw = [];
+const dItems = D.readDocFile(DOCX, dw);
+eq(dw.length, 0, 'L13 docx 资料读取无 warning（不再报 s.replace is not a function）');
+ok(dItems.some((x) => x.text === '4.1 离心泵轴承箱温度不得超过 75 ℃。' && x.loc === '第2段'), 'L14 docx 段落按「第N段」带位置');
+ok(dItems.some((x) => x.text === '地脚螺栓紧固力矩 120 N·m' && x.loc === '表1第2行'), 'L15 docx 表格行按「表N第M行」带位置');
+r = run(['--scope', '离心泵', '--audience', '在岗', '--docs', DOCX], 'docx');
+eq(r.s.ok, true, 'L16 docx 资料生成成功');
+ok(!r.j.warnings.some((w) => /无法解析/.test(w)), 'L17 docx 资料不再被跳过');
+ok(r.j.meta.docFiles.some((d) => d.file === '静设备管理规定.docx' && d.lines > 0), 'L18 meta.docFiles 中 docx 行数大于 0');
+eq(r.s.counts.clausesNumeric, 3, 'L19 docx 中识别 3 条数值条款（含表格行）');
+ok(r.j.questions.filter((q) => q.kind === '数值类').length > 0
+  && r.j.questions.filter((q) => q.kind === '数值类').every((q) => /静设备管理规定\.docx/.test(q.cite) && /第\d+段|表\d+第\d+行/.test(q.cite)), 'L20 docx 数值题出处带文件名与段落/表格位置');
+// 损坏的 docx（非 zip）→ warning 跳过，不中断
+const BADDOCX = mkMd('坏文件.docx', '这不是 zip');
+const bw = [];
+eq(D.readDocFile(BADDOCX, bw).length, 0, 'L21 损坏 docx 返回空');
+ok(bw.some((w) => /坏文件\.docx.*无法解析/.test(w)), 'L22 损坏 docx 给出无法解析 warning');
 
 /* ============ M. 声明行与产出完整性 ============ */
 r = run(['--scope', '离心泵', '--audience', '新员工', '--docs', SPEC, '--duration', '6'], 'final');

@@ -8,9 +8,9 @@
 
 | 文件 | 来源技能 | 识别特征 | 抽取内容 |
 |---|---|---|---|
-| `hazard.json` | hazard-closure-tracker | `majorHazards` | 隐患总数、重大隐患、超期、闭环率；重大隐患进问题项 |
+| `hazard.json` | hazard-closure-tracker | `majorHazards` | 隐患总数、重大隐患、超期（`counts.total/major/overdue`）、闭环率（`metrics.closureRate`，兼容旧字段 `closeRate`）；未闭环的重大隐患进问题项，已闭环（bucket=closed，已整改且已验收）的进「主要工作」 |
 | `status.json` | inspection-data-digest | `byEquipment` + `abnormal` | 设备数、异常、未判定、漏检；异常项进问题项 |
-| `orders.json` | work-order-tracker | `byStatus` 或 `metrics.closeRate` | 工单总数、未闭环、超期、停滞、完成率；超期工单进问题项 |
+| `orders.json` | work-order-tracker | `byStatus` 或 `metrics.closeRate` | 工单总数、未闭环、超期、停滞、完成率；超期工单进问题项，责任方取 `vendor`（承修单位/工作中心），无 `vendor` 时才用 `owner` |
 | `defects.json` | defect-intake-grading | `counts.byLevel` + `defects` | 新增缺陷、各等级分布 |
 | `periodic.json` | equipment-weekly-monthly-report | `metrics` + `failures` + `dataGaps` | 指标键映射为中文标签与单位（见下表）；`dataGaps.recompute` 需复算指标与 `highlights` 进问题项；`basedOn` 数据覆盖进要点 |
 | `daily.json` | equipment-daily-report | `counts` + `status` + `orders` | counts 映射为中文；`special.list` 中状态为异常的特护设备进问题项 |

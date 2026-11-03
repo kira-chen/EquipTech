@@ -271,16 +271,114 @@ function fetchValue(item, cls, tables, asOf) {
     ? `未提供「${cls.sources.map((k) => S.SOURCE_CN.get(k)).join('、')}」类数据表`
     : '自查项中未出现可识别的台账名称，无法确定数据源' };
 
-  const t = cands[0];
+  // 同类多张表时按自查项指定首选表（如问隐患取隐患台账、问缺陷取缺陷台账），不按表序盲取第一张
+  const pick = S.pickTable(item.text, cands);
+  const t = pick.table;
   const where = `${t.file}/${t.sheet}`;
   if (!t.records.length) {
     return { value: null, reason: 'empty', missing: `数据表「${where}」中没有任何数据行`, table: where };
   }
+  // 有无类问的是台账在不在，不按使用状态、设备类别过滤；其余取数方式按自查项口径过滤行
+  const flt = cls.kind === 'exist' ? { rows: t.records, notes: [], suffix: [], extra: null, missing: null }
+    : filterRows(item.text, cls.kind, t, where);
+  if (flt.missing) return { value: null, reason: 'filtered', missing: flt.missing, table: where };
+  const got = takeValue(cls.kind, { ...t, records: flt.rows }, where, asOf, flt);
+  if (got && got.value !== null) {
+    const tail = [...flt.notes, ...(pick.basis ? [pick.basis] : [])];
+    if (tail.length) got.sourceNote += `；${tail.join('；')}`;
+    if (flt.extra) got.extra = { ...(got.extra || {}), ...flt.extra };
+  }
+  return got;
+}
 
-  switch (cls.kind) {
+/** warning 去重后追加（同一张表被多个自查项取数时只提示一次） */
+function warnOnce(w) { if (!warnings.includes(w)) warnings.push(w); }
+
+/** 按条目汇总取值：{'停用':1,'报废':1} → 「停用 1 台、报废 1 台」 */
+function tally(rows, field, unit) {
+  const m = new Map();
+  for (const r of rows) { const k = C.str(r[field]); m.set(k, (m.get(k) || 0) + 1); }
+  return [...m].map(([k, n]) => `${k} ${n} ${unit}`).join('、');
+}
+/** 不详行的行号清单：「第7行(空)、第9行(检修)」 */
+function rowList(rows, field) {
+  const s = rows.slice(0, 8).map((r) => `第${r._row}行(${C.str(r[field]) || '空'})`).join('、');
+  return rows.length > 8 ? `${s} 等` : s;
+}
+
+/**
+ * 按自查项口径过滤数据行。返回 { rows, notes, suffix, extra, missing }：
+ *  - 自查项含「在用」：只留使用状态为在用（含运行、备用）的行；停用、报废等排除；空或认不出的行计「使用状态不详」，不计入
+ *  - 自查项点名特种设备类别（压力容器等）：只留该类别的行；其他类别排除；类别为空的行计「设备类别不详」，不计入
+ *  - 台账没有对应列：不过滤，在来源说明与 warning 中写明「未按 XX 筛选」，由责任人核实
+ *  - 过滤后无可用行：missing 写明原因（不按 0 台、不按符合处理）；数量类在没有「不详」行时如实报 0
+ * suffix 是追加到预填内容里的「不详」说明，notes 是追加到来源说明里的口径说明。
+ */
+function filterRows(text, kind, t, where) {
+  let rows = t.records;
+  const notes = [], suffix = [], extra = {};
+  const unit = kind === 'count' ? '台' : '台/项';
+  const emptyOk = kind === 'count';
+
+  if (S.wantsInUse(text)) {
+    const f = S.statusField(t.header);
+    if (!f) {
+      notes.push(`台账无使用状态列，未按使用状态筛选，按全部 ${rows.length} 条记录取数，在用与否须责任人核实`);
+      warnOnce(`台账「${where}」无使用状态列，「在用」类自查项未按使用状态筛选，按全部记录取数，须责任人核实`);
+    } else {
+      const inRows = [], outRows = [], unk = [];
+      for (const r of rows) { const c = S.statusClass(r[f]); (c === 'in' ? inRows : c === 'out' ? outRows : unk).push(r); }
+      if (!inRows.length && (unk.length || !emptyOk)) {
+        return { missing: unk.length
+          ? `数据表「${where}」列「${f}」${inRows.length + outRows.length ? '' : '全部'}为空或无法识别（${unk.length} 条），无法确定在用设备，未按在用处理`
+          : `数据表「${where}」列「${f}」中没有使用状态为在用的记录` };
+      }
+      notes.push(`按列「${f}」为在用（含运行、备用）筛选，计入 ${inRows.length} 条${outRows.length ? `，排除 ${tally(outRows, f, unit)}` : ''}${unk.length ? `；使用状态不详 ${unk.length} ${unit}未计入：${rowList(unk, f)}` : ''}`);
+      if (unk.length) {
+        suffix.push(`使用状态不详 ${unk.length} ${unit}`);
+        warnOnce(`台账「${where}」列「${f}」有 ${unk.length} 条为空或无法识别（${rowList(unk, f)}），已计入「使用状态不详」，未按在用处理`);
+      }
+      Object.assign(extra, { inUse: inRows.length, notInUse: outRows.length, statusUnknown: unk.length });
+      rows = inRows;
+    }
+  }
+
+  const kinds = S.itemSpecialKinds(text);
+  if (kinds.length && ['special', 'inspection', 'equipment'].includes(t.sourceKey)) {
+    const names = kinds.map((k) => k.name).join('、');
+    const f = S.categoryField(t.header);
+    const tableName = S.norm(S.sheetSource(t.sheet) ? t.sheet : `${t.file}${t.sheet}`);
+    if (!f) {
+      // 表名本身就是该类设备的台账（如「压力容器台账」）时无需再筛
+      if (!kinds.some((k) => k.item.concat(k.value).some((w) => tableName.includes(S.norm(w))))) {
+        notes.push(`台账无设备类别列，未按设备类别筛选，按全部 ${rows.length} 条记录取数，是否均为${names}须责任人核实`);
+        warnOnce(`台账「${where}」无设备类别列，「${names}」类自查项未按设备类别筛选，按全部记录取数，须责任人核实`);
+      }
+    } else {
+      const hit = [], other = [], unk = [];
+      for (const r of rows) { const m = S.categoryMatch(r[f], kinds, t.sourceKey); (m === true ? hit : m === false ? other : unk).push(r); }
+      if (!hit.length && (unk.length || !emptyOk)) {
+        return { missing: `数据表「${where}」列「${f}」中没有设备类别为「${names}」的记录${other.length ? `（另有 ${tally(other, f, '条')}）` : ''}${unk.length ? `，${unk.length} 条设备类别不详` : ''}，未拿其他类别充数` };
+      }
+      notes.push(`按列「${f}」为${names}筛选，计入 ${hit.length} 条${other.length ? `，排除 ${tally(other, f, unit)}` : ''}${unk.length ? `；设备类别不详 ${unk.length} ${unit}未计入：${rowList(unk, f)}` : ''}`);
+      if (unk.length) {
+        suffix.push(`设备类别不详 ${unk.length} ${unit}`);
+        warnOnce(`台账「${where}」列「${f}」有 ${unk.length} 条为空（${rowList(unk, f)}），已计入「设备类别不详」，未按${names}处理`);
+      }
+      Object.assign(extra, { categoryMatched: hit.length, categoryExcluded: other.length, categoryUnknown: unk.length });
+      rows = hit;
+    }
+  }
+  return { rows, notes, suffix, extra: Object.keys(extra).length ? extra : null, missing: null };
+}
+
+/** 按取数方式从（已过滤的）数据表取值。flt.suffix 为「不详」说明，追加在预填内容末尾 */
+function takeValue(kind, t, where, asOf, flt) {
+  const sfx = flt.suffix.length ? `（另有${flt.suffix.join('、')}未计入）` : '';
+  switch (kind) {
     case 'exist': {
       return {
-        value: `有，${t.records.length} 条记录`,
+        value: `有，${t.records.length} 条记录${sfx}`,
         sourceNote: `数据来源：${where}（共 ${t.records.length} 条记录）`,
         evidence: `${where} 第${t.records[0]._row}~${t.records[t.records.length - 1]._row}行`,
         table: where,
@@ -288,7 +386,7 @@ function fetchValue(item, cls, tables, asOf) {
     }
     case 'count': {
       return {
-        value: `${t.records.length}`,
+        value: `${t.records.length}${sfx}`,
         sourceNote: `数据来源：${where}，按记录行计数`,
         evidence: `${where} 共 ${t.records.length} 行`,
         table: where,
@@ -300,7 +398,7 @@ function fetchValue(item, cls, tables, asOf) {
       const vals = [...new Set(t.records.map((r) => C.str(r[f])).filter(Boolean))];
       if (!vals.length) return { value: null, reason: 'noField', missing: `数据表「${where}」列「${f}」全为空`, table: where };
       const shown = vals.slice(0, 5).join('、') + (vals.length > 5 ? ` 等 ${vals.length} 项` : '');
-      return { value: shown, sourceNote: `数据来源：${where} 列「${f}」`, evidence: `${where} 列「${f}」`, table: where };
+      return { value: shown + sfx, sourceNote: `数据来源：${where} 列「${f}」`, evidence: `${where} 列「${f}」`, table: where };
     }
     case 'date': {
       const f = findField(t.header, LAST_FIELDS);
@@ -336,7 +434,7 @@ function fetchValue(item, cls, tables, asOf) {
       const bits = [`截至 ${asOf}：已过期 ${overdue} 台/项，未到期 ${valid} 台/项`];
       if (unknown) bits.push(`到期日不详 ${unknown} 台/项`);
       return {
-        value: bits.join('，'),
+        value: bits.join('，') + sfx,
         sourceNote: `数据来源：${where} 列「${f}」，与自查时点 ${asOf} 比较得出${overdueRows.length ? `；已过期条目：${overdueRows.slice(0, 5).join('、')}${overdueRows.length > 5 ? ' 等' : ''}` : ''}`,
         evidence: `${where} 列「${f}」`, table: where,
         extra: { overdue, valid, unknown },
@@ -350,7 +448,7 @@ function fetchValue(item, cls, tables, asOf) {
       const filled = t.records.filter((r) => C.str(r[f])).length;
       const blank = t.records.length - filled;
       return {
-        value: `共 ${t.records.length} 条，列「${f}」已填 ${filled} 条、空缺 ${blank} 条`,
+        value: `共 ${t.records.length} 条，列「${f}」已填 ${filled} 条、空缺 ${blank} 条${sfx}`,
         sourceNote: `数据来源：${where}，按列「${f}」填报情况计数；**齐全与否由责任人判断，此处只报条目计数**`,
         evidence: `${where} 列「${f}」`, table: where,
         extra: { total: t.records.length, filled, blank },

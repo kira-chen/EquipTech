@@ -17,9 +17,11 @@ examples/
 │   ├── P-1101A水压试验报告.pdf.txt           模拟平台 pdf 技能转换产物 → 可检索，标注须核对原件
 │   ├── P-1101A旧版说明书.doc                 伪 .doc，旧版格式 → 只定位，提示另存为 .docx
 │   ├── P-1101A铭牌照片.png                   伪图片，无文字层
-│   └── 资料目录清单.xlsx                      含合计行 + 一条无实体文件的登记（性能曲线）
+│   ├── 资料目录清单.xlsx                      含合计行 + 一条无实体文件的登记（性能曲线）
+│   └── 资料目录补充.csv                       CSV 格式目录清单：登记 P-1101B 说明书（无实体文件）
 ├── sample-doc-catalog.xlsx               资料目录清单（单独一份，便于单看）
-└── sample-equipment-ledger.xlsx          设备台账（SAP PM 技术对象清单列名：功能位置/设备/设备描述/型号编号/制造商），供 --ledger
+└── sample-equipment-ledger.xlsx          设备台账（SAP PM 技术对象清单列名：功能位置/设备/设备描述/型号编号/制造商），供 --ledger；
+                                          P-1101A / P-1101B 同名「常压塔顶回流泵」、同型号（A/B 泵）
 ```
 
 ## 示例问题 ↔ 附件对照表
@@ -33,7 +35,8 @@ examples/
 | 5 | 这台泵的汽蚀余量是多少 | `--docs examples/sample-docs --tag P-1101A --query "汽蚀余量 NPSH"` | 命中 0 段，md 写「所提供资料中未找到」+「未用通用知识补充」 |
 | 6 | P-9999 的说明书在哪 | `--docs examples/sample-docs --tag P-9999 --query "说明书"` | 关联文件 0 份；E-1201 的说明书进「无法关联」单列，**不被拿来代答** |
 | 7 | 只看这台泵的规程 | `--docs examples/sample-docs --tag P-1101A --doc-type 规程` | 只返回检修规程；说明书等注明「被 --doc-type 过滤」 |
-| 8 | 用 SAP 台账帮忙关联 | `--docs examples/sample-docs --tag P-1101A --ledger examples/sample-equipment-ledger.xlsx --query "对中"` | `meta.ledgerInfo` 从「设备描述」「型号编号」带出设备名称与型号，`matchedBy` 为位号；用 `--tag <SAP设备编号>` 也能命中并标「设备编号」 |
+| 8 | 用 SAP 台账帮忙关联 | `--docs examples/sample-docs --tag P-1101A --ledger examples/sample-equipment-ledger.xlsx --query "对中"` | `meta.ledgerInfo` 从「设备描述」「型号编号」带出设备名称与型号，`matchedBy` 为位号；名称、型号与 P-1101B 相同，记入 `droppedClues` 并出 warning，不作关联线索；用 `--tag <P-1101A 的 SAP 设备编号>` 也能命中并标「设备编号」，关联依据仍是「文件名含位号：P-1101A」，8 份相关文件不变，md 抬头写「编号（台账位号 P-1101A）」 |
+| 9 | P-1101B 有哪些资料（A/B 泵同名） | `--docs examples/sample-docs --tag P-1101B --ledger examples/sample-equipment-ledger.xlsx` | 相关文件 0 份，**P-1101A 的说明书、技术协议、检修规程、试验报告一份都不带出**（修复前按同名「常压塔顶回流泵」带出 4 份）；`资料目录补充.csv` 登记的 P-1101B 说明书进 catalogOnly |
 
 ## 关键验证点
 
@@ -46,6 +49,8 @@ examples/
 7. **目录登记无实体文件单列**：`P-1101A性能曲线.pdf` 在清单里但目录下没有，进 `catalogOnly`；已提供转换文本的水压试验报告不再计入。
 8. **合计行跳过**：资料目录清单末行「合计」被跳过并出 warning。
 9. **SAP 台账列名**：案例 8。「功能位置」为位号、「设备」为设备编号单列、「设备描述」为设备名称、「型号编号」为规格型号，工作表名「技术对象清单」可识别。
+10. **A/B 泵不串台**：案例 9。台账名称、型号在台账中不唯一时不作关联线索；用设备编号查时改用台账位号关联。
+11. **CSV 目录清单**：`资料目录补充.csv` 按 CSV 读取（不再当 xlsx 打开失败），`counts.catalogFiles` 为 2。
 
 ## 再生样例
 

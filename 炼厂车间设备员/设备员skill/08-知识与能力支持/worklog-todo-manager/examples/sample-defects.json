@@ -1,69 +1,108 @@
 {
   "meta": {
     "workshop": "常减压车间",
-    "generatedAt": "2026-10-26 22:50:22",
-    "mode": "batch"
+    "generatedAt": "2026-11-03 21:23:32",
+    "mode": "batch",
+    "prefix": "QX",
+    "gradingScheme": "abc",
+    "gradingSchemeName": "A/B/C 三级（中石化炼化厂缺陷台账口径）",
+    "dueDays": {
+      "A": 1,
+      "B": 3,
+      "C": 7
+    }
   },
   "counts": {
     "total": 2,
     "byLevel": {
-      "B（较重）": 1,
-      "未定级": 1
+      "A 级（重大）": 0,
+      "B 级（严重）": 1,
+      "C 级（一般）": 0,
+      "未判定": 1
     },
     "undetermined": 1,
-    "possibleDuplicate": 0
+    "possibleDuplicate": 0,
+    "notificationDrafts": 1
   },
   "defects": [
     {
-      "no": "QX-26090015",
+      "no": "QX-20260920-001",
       "tag": "P-1101B",
       "name": "常压塔顶回流泵B",
       "part": "机封",
+      "funcLoc": "P-1101B",
+      "equipNo": "",
       "phenomenon": "leak",
       "phenomenonCn": "泄漏",
       "desc": "机封滴漏约5滴/分",
       "medium": "常压渣油",
+      "mediumHazard": "flammable",
       "affectsRun": false,
-      "foundAt": "2026-09-15 08:20",
+      "foundAt": "2026-09-19 08:20",
       "by": "张班",
       "level": "B",
-      "levelCn": "B（较重）",
+      "levelCn": "B 级（严重）",
       "basis": "泄漏且介质易燃",
-      "dueDays": 7,
+      "ruleId": "R03",
+      "scheme": "abc",
+      "dueDays": 3,
       "dueDate": "2026-09-22",
       "discipline": "动设备",
+      "notification": {
+        "type": "M2",
+        "typeCn": "M2 故障报告",
+        "sapPriority": 2,
+        "faultCode": "泄漏",
+        "shortText": "P-1101B 机封 泄漏",
+        "requiredStart": "2026-09-19",
+        "requiredEnd": "2026-09-22"
+      },
       "srcRow": 2
     },
     {
-      "no": "QX-26090016",
+      "no": "QX-20260920-002",
       "tag": "M-1501",
       "name": "加热炉鼓风机电机",
       "part": "",
+      "funcLoc": "M-1501",
+      "equipNo": "",
       "phenomenon": "other",
       "phenomenonCn": "其他",
       "desc": "运行有异响，具体部位待查",
       "medium": "",
+      "mediumHazard": null,
       "affectsRun": null,
       "foundAt": "2026-09-19 10:20",
       "by": "张班",
       "level": "undetermined",
-      "levelCn": "未定级",
-      "basis": "是否影响运行未填写，无法定级",
+      "levelCn": "未判定",
+      "basis": "定级所需字段缺失：是否影响运行；补充后可定级",
+      "ruleId": "U1",
+      "scheme": "abc",
       "dueDays": null,
       "dueDate": null,
       "discipline": "电气",
+      "notification": {
+        "type": null,
+        "typeCn": null,
+        "sapPriority": null,
+        "faultCode": "其他",
+        "shortText": "M-1501 异响",
+        "requiredStart": "2026-09-19",
+        "requiredEnd": null
+      },
       "srcRow": 3
     }
   ],
   "undetermined": [
     {
-      "no": "QX-26090016",
+      "no": "QX-20260920-002",
       "tag": "M-1501",
       "desc": "运行有异响，具体部位待查",
       "missing": [
         "是否影响运行"
       ],
-      "note": "无法定级"
+      "note": "定级所需字段缺失：是否影响运行；补充后可定级"
     }
   ],
   "possibleDuplicate": [],

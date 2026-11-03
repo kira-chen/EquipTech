@@ -8,7 +8,7 @@
 |---|---|---|---|---|
 | 1 | 车间例会 15 分钟，把巡检和工单情况讲一下 | `sample-status.json` + `sample-orders.json` | `--meeting 车间设备例会 --duration 15 --audience 车间` | 六节稿件，保留位号；主要工作 4.5 分钟 |
 | 2 | 同样的数据，给公司领导汇报 8 分钟 | 同上 | `--duration 8 --audience 公司 --audience-spec "公司设备管理部门（机动部）"` | 问题节去位号保设备名；需决策 2.4 分钟；听众显示「公司（公司设备管理部门（机动部））」 |
-| 3 | 把隐患情况也带上 | 上 + `sample-hazard.json` | 加入该 JSON | 重大隐患进问题项；隐患指标进关键指标 |
+| 3 | 把隐患情况也带上 | 上 + `sample-hazard.json` | 加入该 JSON | 重大隐患 2 条进问题项；隐患总数 12、重大隐患 2、超期未整改 3、闭环率 25%（读 `metrics.closureRate`）进关键指标 |
 | 4 | 议题里有「能耗管理」，但我没有能耗数据 | 主样例 | 加 `--topics "工单,能耗管理"` | 能耗管理列入「无数据支撑的议题」，写「需补充」，**不编造** |
 | 5 | 这个 JSON 是别的系统导出的，能用吗 | `sample-unknown.json` | 与主样例一起传 | warning 提示无法识别并忽略，不中断 |
 | 6 | 把周报的指标组织成分厂设备月会的材料，别重算 | `sample-periodic.json` + `sample-hazard.json` | `--meeting 分厂设备月会 --duration 10 --audience 分厂 --audience-spec 炼油一部设备科` | 指标键映射为中文（设备完好率 90%、静密封点泄漏率 0.42‰……）；「检修计划完成率 需按厂内口径复算」进问题项；重大隐患进问题项 |

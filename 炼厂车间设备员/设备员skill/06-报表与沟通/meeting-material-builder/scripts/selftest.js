@@ -128,14 +128,58 @@ function raw(args) {
 eq(raw(['--input', BAD, '--meeting', 'X', '--duration', '10', '--audience', '车间']).s.ok, false, 'G4 全部无法识别时报错');
 
 // ============ H. 隐患与周报 JSON ============
+// 按 hazard-closure-tracker 真实 hazard.json 结构裁剪：闭环率字段为 metrics.closureRate（不是 closeRate），
+// 顶层同时带 overdue / dueSoon / closed 等数组与 items。
+const hz = (no, desc, level, bucket, bucketCn) => ({ no, desc, level, levelCn: level === 'major' ? '重大隐患' : '一般隐患', status: bucket === 'closed' ? 'done' : 'doing', bucket, bucketCn, owner: '张工', deadline: '2026-09-09', sheet: '隐患台账', row: 2 });
+const HZ1 = hz('YH-001', '栏杆锈蚀', 'major', 'overdue', '超期未整改');
+const HZ2 = hz('YH-005', '保温层破损', 'general', 'dueSoon', '临期');
 const HAZ = mkj('hazard.json', {
-  counts: { total: 12, major: 2, overdue: 3 }, metrics: { closeRate: 25 },
-  majorHazards: [{ no: 'YH-001', desc: '栏杆锈蚀' }],
+  meta: { workshop: '常减压车间', date: '2026-09-21', from: null, rulesSource: '默认口径（references/hazard-rules.md）' },
+  counts: { total: 12, overdue: 2, dueSoon: 1, inProgress: 1, closed: 3, unverified: 2, undetermined: 3, major: 3, conflicts: 0, fiveFixedIncomplete: 6, duplicateNo: 0 },
+  metrics: { closureRate: 25, avgClosureDays: 36.7, byLevel: { major: { total: 3, closed: 1, overdue: 1 } }, byUnit: { 常减压车间: 9 }, bySource: { 日常巡检: 4 } },
+  overdue: [HZ1], dueSoon: [HZ2], inProgress: [], closed: [], unverified: [],
+  majorHazards: [HZ1], undetermined: [], conflicts: [], fiveFixedIncomplete: [], trend: null, items: [HZ1, HZ2], warnings: [],
 });
 r = run(['--input', HAZ, '--meeting', 'X', '--duration', '10', '--audience', '车间'], 'haz');
 eq(r.s.ok, true, 'H1 隐患 JSON 可识别');
 ok(r.j.metrics.some((x) => x.label === '重大隐患'), 'H2 抽取重大隐患指标');
 ok(r.j.issues.some((x) => x.text.includes('重大隐患')), 'H3 重大隐患进问题项');
+// 缺陷复现：上游真实字段是 metrics.closureRate，旧版只读 closeRate，闭环率始终缺失
+ok(r.j.metrics.some((x) => x.label === '闭环率' && x.value === 25 && x.unit === '%'), 'H4 读取上游真实字段 metrics.closureRate 得闭环率 25%');
+ok(/\| 闭环率 \| 25% \| hazard\.json \|/.test(r.md), 'H5 汇报稿关键指标表含隐患闭环率');
+eq(r.j.keyPoints.find((k) => k.topic === '隐患跟踪') !== undefined, true, 'H6 真实结构归为隐患跟踪，不被工单分支抢走');
+ok(r.j.metrics.some((x) => x.label === '隐患总数' && x.value === 12) && r.j.metrics.some((x) => x.label === '超期未整改' && x.value === 2), 'H7 隐患总数与超期数原样引自 counts');
+// 兼容旧字段 closeRate（早期样例或手工整理的 JSON）
+const HAZ_OLD = mkj('hazard-old.json', { counts: { total: 12, major: 2, overdue: 3 }, metrics: { closeRate: 30 }, majorHazards: [{ no: 'YH-001', desc: '栏杆锈蚀' }] });
+r = run(['--input', HAZ_OLD, '--meeting', 'X', '--duration', '10', '--audience', '车间'], 'haz-old');
+ok(r.j.metrics.some((x) => x.label === '闭环率' && x.value === 30), 'H8 兼容旧字段 metrics.closeRate');
+// closureRate 为 null（如无隐患）不补 0
+const HAZ_NULL = mkj('hazard-null.json', { counts: { total: 0, major: 0, overdue: 0 }, metrics: { closureRate: null, avgClosureDays: null }, majorHazards: [], items: [] });
+r = run(['--input', `${HAZ_NULL},${STATUS}`, '--meeting', 'X', '--duration', '10', '--audience', '车间'], 'haz-null');
+ok(!r.j.metrics.some((x) => x.label === '闭环率' && x.value === 0), 'H9 closureRate 为 null 时不按 0 出数');
+// 已闭环（bucket=closed，已整改且已验收）的重大隐患不进「存在问题」，改列「主要工作」；已整改未验收仍是问题
+const HZC = hz('YH-002', '报警器失效', 'major', 'closed', '已闭环');
+const HZU = hz('YH-003', '护栏缺失', 'major', 'unverified', '已整改未验收');
+const HAZ_MIX = mkj('hazard-mix.json', { counts: { total: 3, major: 3, overdue: 1 }, metrics: { closureRate: 33.3 }, overdue: [HZ1], closed: [HZC], unverified: [HZU], majorHazards: [HZ1, HZC, HZU], items: [HZ1, HZC, HZU] });
+r = run(['--input', HAZ_MIX, '--meeting', 'X', '--duration', '10', '--audience', '车间'], 'haz-mix');
+ok(!r.j.issues.some((x) => x.text.includes('报警器失效')), 'H12 已闭环重大隐患不进存在问题');
+ok(r.j.issues.some((x) => x.text.includes('栏杆锈蚀')) && r.j.issues.some((x) => x.text.includes('护栏缺失')), 'H13 超期、已整改未验收的重大隐患仍进存在问题');
+ok(r.j.doneItems.length === 1 && /报警器失效（YH-002）/.test(r.j.doneItems[0].text) && r.j.counts.done === 1, 'H14 已闭环重大隐患记入 doneItems');
+const workSec = r.md.split('## 三、主要工作')[1].split('## 四、')[0];
+ok(/报警器失效/.test(workSec) && /<!-- WORK_START -->/.test(workSec), 'H15 汇报稿「主要工作」列出已闭环事项，并保留汇报人补充占位');
+ok(!/报警器失效/.test(r.md.split('## 四、存在问题')[1].split('## 五、')[0]), 'H16 汇报稿「存在问题」不含已闭环事项');
+ok(r.j.slides.find((s) => s.title === '三、主要工作').bullets.some((b) => /报警器失效/.test(b)), 'H17 slides 主要工作页含已闭环事项');
+// work-order-tracker 真实 orders.json：vendor=承修单位/工作中心，owner=责任人（个人）。责任方应写单位，不点人名
+const ORD_REAL = mkj('orders-real.json', {
+  meta: { workshop: '常减压车间', date: '2026-09-21' },
+  counts: { total: 14, known: 13, unknownStatus: 1, open: 9, overdue: 1, stalled: 0, dueSoon: 0, closedInRange: 3, closedAll: 3, cancelled: 1 },
+  byStatus: [{ status: '已派工', count: 4 }],
+  overdue: [{ no: 'WO-26090102', tag: 'K-1201', name: '循环氢压缩机', status: '已派工', vendor: '外委-华东检修', owner: '项目经理李', party: '外委-华东检修 / 项目经理李', fault: '二级出口温度偏高', dueAt: '2026-09-15', overdueDays: 6 }],
+  metrics: { closeRate: 25, avgCycleDays: 5.5, cycleSample: 2 },
+});
+r = run(['--input', ORD_REAL, '--meeting', 'X', '--duration', '10', '--audience', '车间'], 'orders-real');
+ok(r.j.issues.some((x) => /WO-26090102 K-1201 超期 6 天，责任方 外委-华东检修/.test(x.text)), 'H10 超期工单责任方取上游 vendor（承修单位）');
+ok(!r.j.issues.some((x) => /项目经理李/.test(x.text)), 'H11 不把上游 owner（责任人个人）写成责任方');
 
 // ============ I. 内容量与时长匹配 ============
 r = run([...BASE, '--duration', '3', '--audience', '车间'], 'short');

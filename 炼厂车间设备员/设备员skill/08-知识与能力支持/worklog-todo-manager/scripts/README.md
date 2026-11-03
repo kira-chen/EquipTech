@@ -31,8 +31,8 @@ node "<技能目录>/scripts/todo.js" \
 | hazard-closure-tracker | `hazard.json` | `overdue[]`、`dueSoon[]`、`unverified[]` |
 | special-equipment-inspection-due | `inspection.json` | `overdue[]`、`dueSoon[]` |
 | valve-instrument-calibration-ledger | `calibration.json` | `overdue[]`、`dueSoon[]`、`unresolvedFail[]` |
-| lubrication-manager | `lube.json` | `overdue[]`、`dueSoon[]` |
-| defect-intake-grading | `defects.json` | `defects[]`（按 `dueDate`；等级 A/B/C，旧 I~IV 映射并 warning） |
+| lubrication-manager | `lube.json` | `overdue[]`、`dueSoon[]`（责任人取 `owner`） |
+| defect-intake-grading | `defects.json` | `defects[]`（按 `dueDate`；等级 A/B/C，旧 I~IV 映射并 warning；`notification` 通知单草稿对象写入说明，兼容旧 `notificationNo`） |
 | shift-handover-record | `handover.json` | `pending[]`（交接未完成事项；约定 `meta.skill === 'shift-handover-record'` 且含 `pending` 数组；旧版无 `meta.skill` 按结构推断并 warning） |
 
 按特征字段自动识别，无需用户指明。待办表支持 SAP/EM 导出列名（工作事项 / 要求完成日期 / 紧急程度 / 功能位置 / 工单号 / 通知单号 / 处理状态）。**无法识别的 JSON 记 warning 并忽略，不中断其余来源的汇集**；全部来源都无法识别且无结转项时才报错。
@@ -50,6 +50,14 @@ node "<技能目录>/scripts/todo.js" \
 
 ### 优先级口径
 工单按 SAP 1 非常高 / 2 高 / 3 中 / 4 低（中文 紧急/高/中/低 同义）：1 → P1；2 且超期 → P1；其余超期与停滞 → P2；临期 → P3。缺陷 A 级（重大）→ P1、B 级（严重）→ P2、C 级（一般）/ 未定级 → P3；旧 I~IV 四级口径按 I→A、II→B、III/IV→C 映射并 warning。交接未完成事项期限已过 → P1，其余 → P2。详见 `references/todo-rules.md`。
+
+### 结转 key
+
+`key` = 类型 + 单号 + 位号：`<类型>|<单号>|<位号>`（如 `orders|WO-26090012|P-1101B`）；无单号时 `<类型>||<位号>|<事项主体指纹>`（润滑取部位，隐患/缺陷取描述，交接取事项内容，待办表/文字取事项文字）。不含子类与标题，停滞天数变化、临期转超期不改变 key，次日重跑上游再带 `--prev` 不出重复。缺陷登记号按 defect-intake-grading 运行日生成、会变，不作单号；校验不合格未整改的类型写作 `calibration:fail`；同次运行撞 key 时后一条追加 `#<子类>`。旧版 key（`类型|子类|单号或位号|标题前 24 字`）的 `todo.json` 仍可作 `--prev`，升级后第一次运行也不出重复，写出的 key 为新格式。详见 `references/input-spec.md` 第五节。
+
+### 待办表状态
+
+状态归一复用 `normSapStatus`：CLSD / NOCO / 已关闭 / 已完成 不进待办；**TECO / CNF / 技术完成（待验收）仍是待办**——技术完成不是关闭，还要设备员组织验收；DLFL / LKD / 已删除（已取消）不进待办并 warning；「未完成」等否定前缀写法一律进待办。
 
 ### 三条硬规矩（脚本层面保证）
 1. `--prev` 的未完成项**全部结转**，保留原始到期日与来源，**绝不自动延期**。
@@ -75,4 +83,4 @@ seed 改变逾期天数等数值，但不改变结论：全量输入（6 JSON + 
 node scripts/selftest.js
 ```
 
-173 条断言，覆盖：多源 JSON 合并、逾期天数计算、`--horizon`、无到期日不自设、疑似重复不自动合并、结转不丢不延期（含二次结转与同事项去重）、无法识别的 JSON、xlsx 待办表、纯文字待办、`--done` 提供与不提供、参数校验与空输入、优先级排序口径、产出结构与两行声明、交接记录 handover.json（meta.skill 约定、旧版结构推断 warning、pending 非数组不识别、与工单同位号疑似重复不合并）、SAP 工单 1~4 与缺陷 A/B/C 映射、旧 I~IV 口径 warning、SAP/EM 待办表列名（功能位置 / 工单号）、EAM 旧称不出现、无 emoji、默认输出目录为临时目录、make-sample 交接与 SAP 风格样例可再生。全绿退出 0。
+220 条断言，覆盖：结转 key 稳定（次日重跑 7 个上游：停滞天数变、临期转超期、缺陷登记号重编不出重复；同次运行 key 唯一；旧版 key 的 todo.json 升级兼容）、上游真实字段（缺陷 `notification` 对象、润滑 `owner`、交接占位「待明确」）、待办表 SAP 状态（CLSD/NOCO/DLFL 不进，TECO/技术完成/未完成/REL 仍进）、多源 JSON 合并、逾期天数计算、`--horizon`、无到期日不自设、疑似重复不自动合并、结转不丢不延期（含二次结转与同事项去重）、无法识别的 JSON、xlsx 待办表、纯文字待办、`--done` 提供与不提供、参数校验与空输入、优先级排序口径、产出结构与两行声明、交接记录 handover.json（meta.skill 约定、旧版结构推断 warning、pending 非数组不识别、与工单同位号疑似重复不合并）、SAP 工单 1~4 与缺陷 A/B/C 映射、旧 I~IV 口径 warning、SAP/EM 待办表列名（功能位置 / 工单号）、EAM 旧称不出现、无 emoji、默认输出目录为临时目录、make-sample 交接与 SAP 风格样例可再生。全绿退出 0。

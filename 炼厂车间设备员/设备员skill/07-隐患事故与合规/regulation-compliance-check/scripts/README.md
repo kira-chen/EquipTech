@@ -28,7 +28,7 @@ node "<技能目录>/scripts/compliance.js" \
 
 | 文件 | 内容 |
 |---|---|
-| `compliance.json` | items、hasEvidence、noEvidence、partialEvidence、needInterpretation、unmatched、materials、counts、meta（statement / statementFill / internalNotice / statusNotice） |
+| `compliance.json` | items、hasEvidence、noEvidence、partialEvidence、needInterpretation、unmatched、materials（每份带 `categories`、`categoryFrom`）、counts、meta（statement / statementFill / internalNotice / statusNotice） |
 | `compliance.md` | 五节报告；开头带四档口径提示与企业制度说明；末尾固定声明行两句；醒目提示用「【注意】」；分析段留占位 |
 | `对照表.xlsx` | 五个工作表：条款对照、未见材料与材料不完整、需进一步确认、未对应材料、状态口径与声明 |
 | `summary.json` | 末行摘要落盘（Windows 控制台乱码兜底） |
@@ -59,6 +59,7 @@ node "<技能目录>/scripts/compliance.js" \
    `最终符合性结论由自查责任人按厂内审核表口径填写，本技能不代填`（`meta.statementFill`）。
 8. **企业制度同一口径**：md 第一节之后写入「企业制度……与法规标准同样通过 --rules / --internal 传入，条款原文由用户提供」（`meta.internalNotice`）。
 9. **别名表**：`RULE_ALIASES` / `MAT_ALIASES` 经 `C.mergeAliases` 与共享 `SYSTEM_ALIASES` 合并，局部优先；「标准名称」别名补「制度名称」「制度」。
+10. **资料归类先读资料类型**：资料清单有「资料类型」列时先按该列归类，再按资料名称归类，两者合并；`materials[].categories` 记归类结果，`categoryFrom` 记每个类别由哪一列认出（资料类型 / 资料名称 / 资料名称+资料类型）。目录扫描没有资料类型，只看文件名。系统导出文件名走 `FILE_ALIASES`：故障记录（含处理措施）同时算检修记录与缺陷隐患记录，通知单算缺陷隐患记录，作业清单算作业许可。「台账」「记录」这类泛称不落任何类别，认不出的资料进「未对应材料」，**不按信息缺失推断**。
 7. **不提供法律意见**：脚本不输出任何法律后果、处罚、责任追究、适用性判断与风险等级。
 
 ## lib/compliance-spec.js —— 对照规则表
@@ -66,6 +67,8 @@ node "<技能目录>/scripts/compliance.js" \
 ```js
 const S = require('./lib/compliance-spec');
 S.ruleCategories('使用单位应当建立设备台账');          // → ['ledger']
+S.fileCategories('故障记录.csv');                     // → ['maintenance', 'defect']（FILE_ALIASES 补充）
+S.materialCategories('PM导出01.csv', '检修记录');   // → {keys:['maintenance'], from:{maintenance:'资料类型'}}
 S.matchRule('人员应当持证上岗', '设备台账.xlsx');       // → {matched:false}
 S.vagueness('使用单位应当加强管理，确保工作有效开展。'); // → {vague:true, reason:'...'}
 S.STATUS_CN;  // → 四档状态文字，不含「符合/不符合」
@@ -106,9 +109,9 @@ seed 改变虚构文号与措辞，但结论不变：主样例恒为
 node scripts/selftest.js
 ```
 
-170 余条断言，覆盖：规则表与笼统性判定单元测试、**「符合/不符合」禁用词全文扫描**、
+200 条断言，覆盖：规则表与笼统性判定单元测试、**「符合/不符合」禁用词全文扫描**、
 条款必须由用户提供（4 种缺失路径）、笼统条款不自行解释、未见材料的表述、材料不完整不被齐备材料掩盖、
 不提供法律意见、声明行与四档口径提示、md/目录/合计行/别名表头/空行解析、14 条参数校验、
-`--internal` 归并、正反对照、产出结构完整性、PDF 前置步骤提示、声明补充句、企业制度说明、无 emoji、别名合并。全绿退出 0。
+`--internal` 归并、正反对照、产出结构完整性、PDF 前置步骤提示、声明补充句、企业制度说明、无 emoji、别名合并、系统导出文件名别名与资料类型列归类（Q 组，含停电通知单、检修作业清单、故障率统计、泛称类型等反例）。全绿退出 0。
 
 禁用词扫描器只放行三种位置：技能自身标题、明确的禁用/免责语句、用户条款原文被逐字搬运的行。

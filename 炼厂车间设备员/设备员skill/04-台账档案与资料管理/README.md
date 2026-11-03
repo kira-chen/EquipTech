@@ -5,7 +5,7 @@
 | # | 技能目录 | 中文名 | 一句话 | 难度 | 批次 | 状态 |
 |---|---|---|---|---|---|---|
 | 1 | `equipment-ledger-query` | 台账自然语言查询 | 自然语言查设备参数、筛选与统计，替代 Excel 筛选 | 低 | 一 | ✅ 119 条断言 |
-| 2 | `technical-document-finder` | 技术资料检索问答 | 定位图纸说明书规程，基于原文回答技术问题并标出处 | 中 | 二 | ✅ 144 条断言 |
+| 2 | `technical-document-finder` | 技术资料检索问答 | 定位图纸说明书规程，基于原文回答技术问题并标出处 | 中 | 二 | ✅ 177 条断言 |
 | 3 | `moc-change-assistant` | 变更管理辅助 | 判断改动是否走 MOC、列需评估项与应更新资料 | 中 | 二 | ✅ 293 条断言 |
 | 4 | `special-equipment-inspection-due` | 特种设备定检 | 法定周期到期计算、报检准备、超期醒目提示 | 低 | 一 | ✅ 155 条断言 |
 | 5 | `valve-instrument-calibration-ledger` | 安全阀校验台账到期管理 | 安全阀/爆破片校验到期与送检清单；仪表计量类仅台账提醒 | 低 | 一 | ✅ 138 条断言 |
@@ -17,4 +17,4 @@
 
 ## 实现状态
 
-本类 **6 / 6** 个技能已完整实现（Node 脚本 + selftest + references + examples），合计 **1040** 条断言全绿。
+本类 **6 / 6** 个技能已完整实现（Node 脚本 + selftest + references + examples），合计 **1073** 条断言全绿。

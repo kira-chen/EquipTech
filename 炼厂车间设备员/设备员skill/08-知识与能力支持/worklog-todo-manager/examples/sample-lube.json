@@ -3,7 +3,7 @@
     "workshop": "常减压车间",
     "date": "2026-09-21",
     "leadDays": 7,
-    "generatedAt": "2026-10-26 22:50:22"
+    "generatedAt": "2026-11-03 21:23:32"
   },
   "counts": {
     "ledgerItems": 48,
@@ -19,6 +19,7 @@
       "part": "轴承箱",
       "oil": "L-TSA 46",
       "mode": "油浴",
+      "owner": "张工",
       "periodRaw": "3个月",
       "periodDays": 90,
       "lastDate": "2026-06-08",
@@ -37,6 +38,7 @@
       "part": "轴承箱",
       "oil": "L-TSA 46",
       "mode": "油浴",
+      "owner": "张工",
       "periodRaw": "3个月",
       "periodDays": 90,
       "lastDate": "2026-06-27",

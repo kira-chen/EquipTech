@@ -100,6 +100,23 @@ function collectFiles(root) {
   return out.sort();
 }
 
+/**
+ * 读单个 CSV 目录清单：复用共享库 readCsvDir（UTF-8/BOM/GBK 解码 + 引号转义）→ { 文件名: rows }。
+ * readCsvDir 按目录读，这里把该文件单独复制到临时目录再读：只解析这一个文件，同目录其他 CSV 读不了也不受牵连。
+ */
+function readCatalogCsv(file) {
+  const name = path.basename(file, path.extname(file));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tdf-catalog-'));
+  try {
+    fs.copyFileSync(file, path.join(tmp, path.basename(file)));
+    const book = readCsvDir(tmp);
+    if (!book[name]) throw new Error('CSV 读取失败');
+    return { [name]: book[name] };
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 /** 读出文字层，返回段落数组 [{no, text}]；读不出抛错 */
 function readPassages(file, ext) {
   if (ext === '.docx') {
@@ -194,15 +211,37 @@ function main() {
       let matchedBy = '位号';
       if (!hit) { hit = recs.find((r) => C.str(r['设备编号']) && tagKey(r['设备编号']) === tkey); if (hit) matchedBy = '设备编号'; }
       if (!hit) warnings.push(`设备台账中未查到位号「${tag}」（按位号/功能位置与设备编号均未命中），未用近似位号代替`);
-      else ledgerInfo = { tag: C.str(hit['位号']), equipNo: C.str(hit['设备编号']) || null, matchedBy, name: C.str(hit['设备名称']) || null, model: C.str(hit['规格型号']) || null };
+      else {
+        ledgerInfo = { tag: C.str(hit['位号']), equipNo: C.str(hit['设备编号']) || null, matchedBy, name: C.str(hit['设备名称']) || null, model: C.str(hit['规格型号']) || null, droppedClues: [] };
+        // 设备名称 / 规格型号在台账中不唯一（A/B 泵同名同型号最常见）→ 不作关联线索，否则会把同名设备的专属资料串进来。
+        // 「不唯一」= 台账里另有位号不同的设备，其名称（型号）与本设备相同，或包含本设备的名称（型号）。
+        const hitKey = tagKey(hit['位号']);
+        const others = recs.filter((r) => r !== hit && (!hitKey || tagKey(r['位号']) !== hitKey));
+        for (const [col, field] of [['设备名称', 'name'], ['规格型号', 'model']]) {
+          const v = ledgerInfo[field];
+          if (!v || v.length < 2) continue;
+          const shared = others.filter((r) => norm(r[col]).includes(norm(v))).map((r) => C.str(r['位号']) || C.str(r['设备编号']) || `第${r._row}行`);
+          if (!shared.length) continue;
+          ledgerInfo.droppedClues.push({ kind: col, value: v, sharedWith: shared });
+          warnings.push(`设备台账中${col}「${v}」不唯一（${shared.slice(0, 5).join('、')}${shared.length > 5 ? ` 等 ${shared.length} 台` : ''}的${col}与之相同或包含它），不作关联线索，以免把其他设备的资料关联进来`);
+        }
+      }
     }
   }
-  // 关联线索：位号本身 + 台账里的设备名称、型号（都要非空且长度 ≥ 2）
-  const tagClues = [{ value: tag, kind: '位号' }];
+  // 关联线索：位号（用设备编号命中台账时改用台账位号，同时保留编号）+ 台账里唯一的设备名称、型号（都要非空且长度 ≥ 2）
+  const tagClues = [];
+  const tagKeys = new Set();          // 位号类线索的归一值，资料目录清单「关联位号」按这些比对
+  const addTagClue = (v, kind) => { const k = tagKey(v); if (!k || tagKeys.has(k)) return; tagKeys.add(k); tagClues.push({ value: C.str(v), kind }); };
+  if (ledgerInfo && ledgerInfo.matchedBy === '设备编号') { addTagClue(ledgerInfo.tag, '位号'); addTagClue(tag, '设备编号'); }
+  else addTagClue(tag, '位号');
+  const isTagKind = (k) => k === '位号' || k === '设备编号';
+  const dropped = new Set(ledgerInfo ? ledgerInfo.droppedClues.map((x) => x.kind) : []);
   if (ledgerInfo) {
-    if (ledgerInfo.name && ledgerInfo.name.length >= 2) tagClues.push({ value: ledgerInfo.name, kind: '设备名称（台账）' });
-    if (ledgerInfo.model && ledgerInfo.model.length >= 2) tagClues.push({ value: ledgerInfo.model, kind: '规格型号（台账）' });
+    if (ledgerInfo.name && ledgerInfo.name.length >= 2 && !dropped.has('设备名称')) tagClues.push({ value: ledgerInfo.name, kind: '设备名称（台账）' });
+    if (ledgerInfo.model && ledgerInfo.model.length >= 2 && !dropped.has('规格型号')) tagClues.push({ value: ledgerInfo.model, kind: '规格型号（台账）' });
   }
+  // 报告里显示的设备：用设备编号查时带出台账位号
+  const tagLabel = ledgerInfo && ledgerInfo.matchedBy === '设备编号' && ledgerInfo.tag ? `${tag}（台账位号 ${ledgerInfo.tag}）` : tag;
 
   // ---- 分拣文件
   const files = collectFiles(a.docs);
@@ -224,9 +263,11 @@ function main() {
   // ---- 资料目录清单（xlsx/csv）：只做文件定位线索，不当作资料原文
   const catalogEntries = [];
   for (const f of catalogFiles) {
+    const isCsv = path.extname(f).toLowerCase() === '.csv';
     let book;
-    try { book = readXlsx(f); } catch (e) { warnings.push(`资料目录「${path.basename(f)}」无法读取：${e.message}`); continue; }
-    const rows = C.pickSheet(book, '资料目录', '资料清单', '目录', '清单', '档案');
+    try { book = isCsv ? readCatalogCsv(f) : readXlsx(f); } catch (e) { warnings.push(`资料目录「${path.basename(f)}」无法读取：${e.message}`); continue; }
+    // CSV 只有一张表，文件名不必含「目录/清单」字样
+    const rows = isCsv ? Object.values(book)[0] : C.pickSheet(book, '资料目录', '资料清单', '目录', '清单', '档案');
     if (!rows) { warnings.push(`「${path.basename(f)}」中未找到「资料目录」工作表，已跳过`); continue; }
     const recs = C.toRecords(rows, ['文件名'], '资料目录',
       ['资料类型', '关联位号', '版本', '存放位置', '归档日期'], warnings, CATALOG_ALIASES);
@@ -253,16 +294,17 @@ function main() {
   const relateByName = (base) => {
     const bk = tagKey(base);
     for (const c of tagClues) {
-      if (c.kind === '位号') { if (bk.includes(tagKey(c.value))) return { by: '文件名含位号', clue: c.value }; }
+      if (isTagKind(c.kind)) { if (bk.includes(tagKey(c.value))) return { by: `文件名含${c.kind}`, clue: c.value }; }
       else if (norm(base).includes(norm(c.value))) return { by: `文件名含${c.kind}`, clue: c.value };
     }
     return null;
   };
+  const linkedToTag = (e) => !!(e.linkedTag && tagKeys.has(tagKey(e.linkedTag)));
   const relateByCatalog = (base) => {
     const src = convertedSource(base);
     const e = catalogEntries.find((x) => norm(x.fileName) === norm(base) || norm(base).includes(norm(x.fileName)) || norm(x.fileName).includes(norm(base))
       || (src && (norm(x.fileName) === norm(src) || norm(src).includes(norm(x.fileName)))));
-    if (e && e.linkedTag && tagKey(e.linkedTag) === tkey) return { by: '资料目录清单标注关联位号', clue: `${e.catalog} 第${e.row}行`, entry: e };
+    if (e && linkedToTag(e)) return { by: '资料目录清单标注关联位号', clue: `${e.catalog} 第${e.row}行`, entry: e };
     return e ? { entry: e } : null;
   };
 
@@ -285,10 +327,10 @@ function main() {
     let rel = relateByName(base);
     const inContent = [];
     for (const c of tagClues) {
-      const hit = paras.find((p) => (c.kind === '位号' ? tagKey(p.text).includes(tagKey(c.value)) : norm(p.text).includes(norm(c.value))));
+      const hit = paras.find((p) => (isTagKind(c.kind) ? tagKey(p.text).includes(tagKey(c.value)) : norm(p.text).includes(norm(c.value))));
       if (hit) inContent.push({ clue: c.value, kind: c.kind, no: hit.no });
     }
-    if (!rel && inContent.length) rel = { by: `内容中出现${inContent[0].kind}`, clue: inContent[0].value, at: `第${inContent[0].no}段` };
+    if (!rel && inContent.length) rel = { by: `内容中出现${inContent[0].kind}`, clue: inContent[0].clue, at: `第${inContent[0].no}段` };
     const cat = relateByCatalog(base);
     if (!rel && cat && cat.by) rel = { by: cat.by, clue: cat.clue };
     const entry = cat && cat.entry ? cat.entry : null;
@@ -366,7 +408,7 @@ function main() {
   const catalogOnly = [];
   for (const e of catalogEntries) {
     if (presentNames.has(norm(e.fileName))) continue;
-    if (!(e.linkedTag && tagKey(e.linkedTag) === tkey) && !relateByName(e.fileName)) continue;
+    if (!linkedToTag(e) && !relateByName(e.fileName)) continue;
     if (docType && e.docType !== docType) continue;
     catalogOnly.push(e);
     warnings.push(`资料目录「${e.catalog}」第${e.row}行登记的「${e.fileName}」在所提供路径下未找到实体文件，仅返回登记信息`);
@@ -405,7 +447,7 @@ function main() {
   const passagesOut = passagesTotal > maxPassages ? passages.slice(0, maxPassages) : passages;
   if (passagesTotal > maxPassages) warnings.push(`命中 ${passagesTotal} 段，仅返回前 ${maxPassages} 段（加 --all-matches 返回全部）`);
 
-  if (!documents.length) warnings.push(`所提供资料中没有与「${tag}」关联的文件，未用其他设备的资料代替`);
+  if (!documents.length) warnings.push(`所提供资料中没有与「${tagLabel}」关联的文件，未用其他设备的资料代替`);
   if (keywords.length && !passagesTotal) warnings.push(`在关联资料中未检索到与「${query}」相关的内容，未用通用知识补充`);
   if (query && !keywords.length) warnings.push(`--query「${query}」中没有长度 ≥2 的有效检索词，仅做文件定位`);
 
@@ -445,7 +487,7 @@ function main() {
   const L = [];
   L.push('# 技术资料检索结果');
   L.push('');
-  L.push(`设备：${tag}${ledgerInfo && ledgerInfo.name ? `　${ledgerInfo.name}` : ''}　查询内容：${query || '（仅资料定位）'}`);
+  L.push(`设备：${tagLabel}${ledgerInfo && ledgerInfo.name ? `　${ledgerInfo.name}` : ''}　查询内容：${query || '（仅资料定位）'}`);
   L.push(`资料路径：${path.resolve(a.docs)}（扫描 ${counts.filesScanned} 个文件）　检索时间：${C.localDateTime()}（北京时间）`);
   if (docType) L.push(`资料类型过滤：${docType}`);
   L.push('');
@@ -457,7 +499,7 @@ function main() {
   L.push('## 一、相关资料文件');
   L.push('');
   if (!documents.length) {
-    L.push(`**所提供资料中未找到与「${tag}」关联的文件。**`);
+    L.push(`**所提供资料中未找到与「${tagLabel}」关联的文件。**`);
     L.push('');
     L.push('> 未放宽关联条件，也未用其他设备的资料代替。请确认位号是否正确，或补充提供该设备的资料目录。');
     L.push('');
@@ -536,7 +578,7 @@ function main() {
     L.push('');
   } else {
     L.push(C.mdTable(['文件名', '资料类型', '说明'],
-      unrelated.map((d) => [d.file, d.docType || '—（未判定）', d.filteredOut || `文件名与内容中均未出现「${tag}」及台账线索，未强行关联`])));
+      unrelated.map((d) => [d.file, d.docType || '—（未判定）', d.filteredOut || `文件名与内容中均未出现「${tagLabel}」及台账线索，未强行关联`])));
     L.push('');
   }
 

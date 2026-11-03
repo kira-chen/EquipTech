@@ -304,6 +304,79 @@ eq((r.j.meta.ledgerInfo || {}).matchedBy, '设备编号', 'L30 用设备编号�
 eq((r.j.meta.ledgerInfo || {}).tag, 'P-01', 'L31 命中后带出功能位置');
 ok(!/[✅⚠️❌]/.test(r.md), 'L32 md 不含 emoji');
 
+// ============ M. A/B 同名设备：台账名称/型号不唯一时不作关联线索（防串台）============
+const AB = path.join(work, 'ab');
+fs.mkdirSync(AB, { recursive: true });
+const wab = (n, t) => fs.writeFileSync(path.join(AB, n), t, 'utf8');
+wab('P-21A技术协议.txt', 'P-21A 进料泵技术协议\n型号 ZA-80-200，泵壳水压试验压力 3.75MPa。\n');
+wab('P-21A检修规程.md', '# P-21A 进料泵检修规程\n机械密封压盖螺栓紧固力矩 40N·m。\n');
+wab('P-21A_P-21B进料泵使用说明书.md', '# P-21A/P-21B 进料泵使用说明书\n型号 ZA-80-200。\n');
+wab('机泵通用检修规程.md', '# 机泵通用检修规程\n适用范围：P-21A、P-21B 及同类离心泵。\n');
+wab('设备档案卡.txt', '设备档案卡\n设备编号 10002102，投用日期 2016-01-10。\n');
+wab('原料换热器维护要点.md', '# 原料换热器维护要点\n管束清洗后做水压试验。\n');
+fs.writeFileSync(path.join(AB, '出厂合格证扫描件.png'), Buffer.from('89504e470d0a1a0a', 'hex'));
+// 资料目录清单为 CSV（带 BOM，文件名不含「目录/清单」字样）
+fs.writeFileSync(path.join(AB, '设备资料登记.csv'), '﻿文件名,资料类型,关联位号,版本,存放位置\n'
+  + '出厂合格证扫描件.png,检验报告,P-21B,A/0,档案室1-1\nP-21B性能曲线.pdf,说明书,P-21B,A/0,档案室1-2\n', 'utf8');
+const ABLED = path.join(work, 'abled.xlsx');
+writeXlsx(ABLED, { '设备台账': [['位号', '设备编号', '设备名称', '规格型号'],
+  ['P-21A', '10002101', '进料泵', 'ZA-80-200'], ['P-21B', '10002102', '进料泵', 'ZA-80-200'], ['E-31', '10003101', '原料换热器', 'BES-600']] });
+r = run(['--docs', AB, '--tag', 'P-21B', '--ledger', ABLED], 'ab-b');
+const abFiles = (r.j && r.j.documents || []).map((d) => d.file);
+eq(r.s.ok, true, 'M1 A/B 同名场景正常运行');
+ok(!abFiles.includes('P-21A技术协议.txt'), 'M2 查 P-21B 不带出 P-21A 技术协议（同名「进料泵」不作线索）');
+ok(!abFiles.includes('P-21A检修规程.md'), 'M3 查 P-21B 不带出 P-21A 检修规程');
+ok(abFiles.includes('P-21A_P-21B进料泵使用说明书.md') && abFiles.includes('机泵通用检修规程.md'), 'M4 A/B 共用说明书与通用规程仍按位号关联');
+ok((r.j.documents || []).every((d) => !/设备名称|规格型号/.test(d.relatedBy || '')), 'M5 不唯一的设备名称、规格型号都不出现在关联依据中');
+ok(r.s.warnings.some((w) => /设备名称「进料泵」/.test(w) && /不唯一/.test(w) && /P-21A/.test(w) && /不作关联线索/.test(w)), 'M6 设备名称不唯一出 warning 并写明同名位号');
+ok(r.s.warnings.some((w) => /规格型号「ZA-80-200」/.test(w) && /不唯一/.test(w)), 'M7 规格型号不唯一同样出 warning');
+const dropped = ((r.j.meta.ledgerInfo || {}).droppedClues || []);
+ok(dropped.some((x) => x.kind === '设备名称' && x.value === '进料泵' && x.sharedWith.includes('P-21A')), 'M8 ledgerInfo.droppedClues 记录被弃用的设备名称线索');
+r = run(['--docs', AB, '--tag', 'P-21A', '--ledger', ABLED], 'ab-a');
+ok(['P-21A技术协议.txt', 'P-21A检修规程.md'].every((f) => r.j.documents.some((d) => d.file === f && /位号/.test(d.relatedBy))), 'M9 查 P-21A 时专属资料仍按位号关联');
+r = run(['--docs', AB, '--tag', 'E-31', '--ledger', ABLED], 'ab-e');
+ok(r.j.documents.some((d) => d.file === '原料换热器维护要点.md' && d.relatedBy === '文件名含设备名称（台账）'), 'M10 台账中唯一的设备名称仍作关联线索');
+eq(((r.j.meta.ledgerInfo || {}).droppedClues || []).length, 0, 'M11 名称唯一时 droppedClues 为空');
+
+// ============ N. 用设备编号查：台账命中后改用位号关联，同时保留编号 ============
+r = run(['--docs', AB, '--tag', '10002102', '--ledger', ABLED], 'ab-no');
+eq((r.j.meta.ledgerInfo || {}).matchedBy, '设备编号', 'N1 按设备编号命中台账');
+const nDoc = (f) => r.j.documents.find((d) => d.file === f) || {};
+eq(nDoc('P-21A_P-21B进料泵使用说明书.md').relatedBy, '文件名含位号', 'N2 文件名含台账位号的资料关联上');
+eq(nDoc('P-21A_P-21B进料泵使用说明书.md').relatedClue, 'P-21B', 'N3 关联线索为台账位号 P-21B');
+eq(nDoc('机泵通用检修规程.md').relatedBy, '内容中出现位号', 'N4 内容含台账位号的资料关联上');
+eq(nDoc('机泵通用检修规程.md').relatedClue, 'P-21B', 'N4b 内容关联同样记下线索（relatedClue）');
+eq(nDoc('设备档案卡.txt').relatedBy, '内容中出现设备编号', 'N5 内容含设备编号的资料仍关联（保留编号线索）');
+eq(nDoc('出厂合格证扫描件.png').relatedBy, '资料目录清单标注关联位号', 'N6 目录清单关联位号按台账位号比对');
+ok(!r.j.documents.some((d) => /^P-21A(?!_P-21B)/.test(d.file)), 'N7 用编号查 P-21B 也不带出 P-21A 专属资料');
+ok(/台账位号 P-21B/.test(r.md), 'N8 md 标明设备编号对应的台账位号');
+eq(r.j.meta.tag, '10002102', 'N9 meta.tag 保留原始输入');
+
+// ============ O. 资料目录清单为 CSV ============
+r = run(['--docs', AB, '--tag', 'P-21B'], 'ab-csv');
+ok(!r.s.warnings.some((w) => /设备资料登记\.csv/.test(w) && /无法读取/.test(w)), 'O1 CSV 目录清单不再当 xlsx 打开失败');
+eq(r.j.counts.catalogFiles, 1, 'O2 CSV 计入目录清单数');
+const csvDoc = r.j.documents.find((d) => d.file === '出厂合格证扫描件.png') || {};
+eq(csvDoc.relatedBy, '资料目录清单标注关联位号', 'O3 CSV 的关联位号可作关联依据');
+eq(csvDoc.version, 'A/0', 'O4 从 CSV 取到版本');
+eq(csvDoc.location, '档案室1-1', 'O5 从 CSV 取到存放位置');
+eq(csvDoc.catalogRow, '设备资料登记.csv 第2行', 'O6 记录 CSV 文件名与行号');
+eq(csvDoc.docType, '检验报告', 'O7 资料类型取自 CSV');
+ok(r.j.catalogOnly.some((e) => e.fileName === 'P-21B性能曲线.pdf' && e.catalog === '设备资料登记.csv'), 'O8 CSV 登记但无实体文件的条目进 catalogOnly');
+const BADCSV = path.join(AB, '杂项.csv');
+fs.writeFileSync(BADCSV, '序号,备注\n1,无关内容\n', 'utf8');
+r = run(['--docs', AB, '--tag', 'P-21B'], 'ab-badcsv');
+eq(r.s.ok, true, 'O9 缺「文件名」列的 CSV 不中断检索');
+ok(r.s.warnings.some((w) => /缺少列: 文件名/.test(w)), 'O10 缺「文件名」列出 warning');
+fs.unlinkSync(BADCSV);
+// 同目录另有读不了的「.csv」（如名为 xxx.csv 的文件夹）时，不牵连正常的 CSV 目录清单
+const ODDCSV = path.join(AB, '旧资料.csv');
+fs.mkdirSync(ODDCSV);
+r = run(['--docs', AB, '--tag', 'P-21B'], 'ab-oddcsv');
+ok(!r.s.warnings.some((w) => /设备资料登记\.csv/.test(w) && /无法读取/.test(w)), 'O11 同目录有读不了的 .csv 时，正常的 CSV 目录清单照常读取');
+eq(r.j.counts.catalogFiles, 1, 'O12 CSV 目录清单仍计 1 份');
+fs.rmdirSync(ODDCSV);
+
 console.log(`\n${'='.repeat(56)}`);
 console.log(`technical-document-finder 自测：${pass} 通过，${fail} 失败`);
 if (failures.length) { console.log('\n失败项：'); failures.forEach((f) => console.log('  ✗ ' + f)); }

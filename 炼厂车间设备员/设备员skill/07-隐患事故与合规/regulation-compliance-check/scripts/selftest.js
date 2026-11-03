@@ -441,6 +441,49 @@ r = run([...BASE, '--rules', RULES_INST, '--materials', MATS_SYS], 'p-sys');
 eq(r.s.counts.materials, 1, 'P18 资料清单「文件名称/类别/说明」别名列头可读');
 eq(r.s.counts.hasEvidence, 1, 'P19 别名列头下对照结果正确（台账已见、制度未见）');
 
+/* ==================== Q. 缺陷修复（2026-11-03 全量核验 #8）：系统导出文件名别名 + 资料类型列 ==================== */
+// Q1~Q9 文件名别名：只认正面命中的说法，名称里没有的类别不推断
+ok(S.fileCategories('故障记录.csv').includes('maintenance'), 'Q1 「故障记录」（EAM 导出，含处理措施）归入检修与维护保养记录');
+ok(S.fileCategories('故障记录.csv').includes('defect'), 'Q2 「故障记录」仍归入缺陷隐患类');
+ok(S.fileCategories('通知单.csv').includes('defect'), 'Q3 「通知单」（SAP PM 维修通知单）归入缺陷隐患类');
+ok(S.fileCategories('作业清单.csv').includes('permit'), 'Q4 「作业清单」（作业票系统导出）归入作业票与作业许可');
+ok(!S.fileCategories('停电通知单.docx').includes('defect'), 'Q5 反例：「停电通知单」不归缺陷隐患类');
+ok(!S.fileCategories('检修作业清单.xlsx').includes('permit'), 'Q6 反例：「检修作业清单」不归作业许可');
+eq(S.fileCategories('班组考勤统计表.xlsx').length, 0, 'Q7 反例：无关资料仍归不进任何类别');
+ok(!S.fileCategories('设备故障率统计.xlsx').includes('maintenance'), 'Q8 反例：只带「故障」二字不算检修记录');
+ok(!S.fileCategories('通知单.csv').includes('maintenance'), 'Q9 反例：「通知单」是报修，不算检修记录');
+// Q10~Q12 资料类型列：先读资料类型，命中具体类别即记来源「资料类型」；泛称（台账/记录）不推断
+const mc = (n, t) => (typeof S.materialCategories === 'function' ? S.materialCategories(n, t) : { keys: [], from: {} });
+ok(mc('PM导出01.csv', '检修记录').keys.includes('maintenance') && mc('PM导出01.csv', '检修记录').from.maintenance === '资料类型', 'Q10 资料类型「检修记录」归入检修类，来源记「资料类型」');
+ok(mc('故障记录.csv', '记录').from.maintenance === '资料名称', 'Q11 资料类型为泛称「记录」时按资料名称归类，来源记「资料名称」');
+eq(mc('导出01.csv', '台账').keys.length, 0, 'Q12 资料名称与资料类型都只有泛称时归不进任何类别');
+// Q13~Q20 端到端：MCP 导出目录（只有文件名）与资料清单（带资料类型列）
+const RULES_MCP = mkx('rules-mcp.xlsx', {
+  '条款清单': [['条款编号', '条款原文', '应做事项'],
+    ['第七条', '应当按计划组织设备检修，并保留检修记录。', '保留检修记录'],
+    ['第八条', '应当开展隐患排查治理，建立隐患登记与治理台账。', '建立隐患台账'],
+    ['第九条', '用火、受限空间等特殊作业应当办理作业许可。', '办理作业许可']],
+});
+const MCP_DIR = path.join(work, 'mcp-export');
+fs.mkdirSync(MCP_DIR, { recursive: true });
+for (const n of ['故障记录', '通知单', '作业清单']) fs.writeFileSync(path.join(MCP_DIR, `${n}.csv`), '﻿"位号"\r\n"P-01"\r\n', 'utf8');
+r = run([...BASE, '--rules', RULES_MCP, '--materials', MCP_DIR], 'q-mcp');
+const qi = (no) => r.j.items.find((i) => i.no === no) || { evidence: [] };
+eq(qi('第七条').status, 'hasEvidence', 'Q13 MCP 导出「故障记录.csv」作为检修记录，第七条已见对应材料');
+ok(qi('第七条').evidence.some((e) => e.name === '故障记录.csv' && e.basis === 'category:maintenance'), 'Q14 第七条对应依据为检修类别');
+ok(qi('第八条').evidence.some((e) => e.name === '通知单.csv'), 'Q15 「通知单.csv」对应到隐患排查治理条款');
+ok(qi('第九条').evidence.some((e) => e.name === '作业清单.csv' && e.basis === 'category:permit'), 'Q16 「作业清单.csv」对应到作业许可条款');
+eq(r.s.counts.unmatched, 0, 'Q17 通知单、作业清单不再落入未对应材料');
+ok(r.j.materials.every((m) => Array.isArray(m.categories) && m.categoryFrom && typeof m.categoryFrom === 'object'), 'Q18 materials 逐份带归类结果与来源');
+const MATS_TYPE = mkx('mats-type.xlsx', {
+  '资料清单': [['资料名称', '资料类型', '存放位置'],
+    ['PM导出01.csv', '检修记录', 'EAM导出'],
+    ['导出02.csv', '台账', 'EAM导出']],
+});
+r = run([...BASE, '--rules', RULES_MCP, '--materials', MATS_TYPE], 'q-type');
+eq((r.j.items.find((i) => i.no === '第七条') || {}).status, 'hasEvidence', 'Q19 资料名称认不出、资料类型填「检修记录」时第七条已见对应材料');
+ok(r.j.unmatched.some((u) => u.name === '导出02.csv'), 'Q20 资料类型只填泛称「台账」时不推断，列入未对应材料');
+
 /* ==================== 输出 ==================== */
 console.log(`\n${'='.repeat(60)}`);
 console.log(`regulation-compliance-check 自测：${pass} 通过，${fail} 失败`);
