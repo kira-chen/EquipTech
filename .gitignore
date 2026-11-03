@@ -72,3 +72,6 @@ skill-pack-local/
 *.tmp
 *.bak
 ~$*
+
+# ===== Mock MCP Server（只在本地和服务器上，不入协同仓）=====
+MCPServer/
