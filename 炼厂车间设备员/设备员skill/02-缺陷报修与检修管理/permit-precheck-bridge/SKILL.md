@@ -22,7 +22,7 @@ metadata:
 - 不适用：检修方案安全措施核查（用 overhaul-process-check-bridge）；安全部门的正式审批；无票据文件仅口头描述；非特殊作业的一般维修工单。
 
 ## 前提条件
-- **依赖技能**：`work-permit-precheck` 必须已安装并可调用。先运行 `node "<技能目录>/scripts/check-dependency.js"`，`available:false` 时明确告知用户"需先安装特殊作业票预检技能"并终止，**不得用本技能自行判定票据合规性**。技能目录由平台决定（WorkBuddy / Claude Code / 豆包），任一平台都可用环境变量 `SKILL_PACK_ROOT` 或 `--skill-root` 指定依赖技能位置。
+- **依赖技能**：`work-permit-precheck` 必须已安装并可调用。先运行 `node "<技能目录>/scripts/check-dependency.js"`，`available:false` 时明确告知用户"需先安装特殊作业票预检技能"并终止，**不得用本技能自行判定票据合规性**。技能目录由平台决定（WorkBuddy / Claude Code / 豆包），两个技能并排装在同一个技能目录下时脚本会自动找到；装在别处时，任一平台都可用环境变量 `SKILL_PACK_ROOT` 或 `--skill-root` 指定依赖技能位置。
 - 输入：作业票文件。**PDF 先用平台 pdf 技能转为 txt/docx 再传入，脚本不读 PDF；扫描件需 OCR**。docx 由源技能的 `docx2text.js` 读取；图片由模型读图抽取并在源技能 `extraction_notes` 中声明。可选：对应的检修方案、设备交出单、作业人员资质材料。
 - 必填信息：作业类型（八大类之一）、作业设备位号、作业时间。作业许可系统导出的票面字段常见列名：许可证编号、作业类别、作业级别、作业地点、属地监护人、作业单位监护人、作业负责人、作业单位。
 - 环境：可执行 Node.js ≥ 18，脚本仅用内置模块。**若环境无法执行 node（无 Bash 工具或 `node --version` 失败），明确告知用户并终止，不得凭记忆给票据合规结论。**

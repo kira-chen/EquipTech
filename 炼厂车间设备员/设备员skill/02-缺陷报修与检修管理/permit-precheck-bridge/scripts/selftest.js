@@ -99,6 +99,26 @@ fs.mkdirSync(path.join(packRoot2, 'renamed-dir', 'work-permit-precheck', 'script
 fs.writeFileSync(path.join(packRoot2, 'renamed-dir', 'work-permit-precheck', 'scripts', 'precheck.js'), '// stub');
 r = runChk([], { SKILL_PACK_ROOT: packRoot2 });
 eq(r.s.available, true, '5.7 技能包子目录被改名时一级扫描仍能命中');
+// 第三方平台：本技能与依赖技能并排装在同一个技能目录下（不是三个默认平台目录，也没设 SKILL_PACK_ROOT）
+const plat = path.join(work, 'plat');
+const platSelf = path.join(plat, 'skills', 'permit-precheck-bridge', 'scripts');
+fs.mkdirSync(path.join(platSelf, 'lib'), { recursive: true });
+fs.copyFileSync(CHK, path.join(platSelf, 'check-dependency.js'));
+fs.copyFileSync(path.join(__dirname, 'lib', 'common.js'), path.join(platSelf, 'lib', 'common.js'));
+fs.mkdirSync(path.join(plat, 'skills', 'work-permit-precheck', 'scripts'), { recursive: true });
+fs.writeFileSync(path.join(plat, 'skills', 'work-permit-precheck', 'scripts', 'precheck.js'), '// stub');
+fs.mkdirSync(path.join(plat, 'home'), { recursive: true });
+const platEnv = { ...process.env, HOME: path.join(plat, 'home'), USERPROFILE: path.join(plat, 'home') };
+delete platEnv.SKILL_PACK_ROOT;
+let pr = spawnSync(process.execPath, [path.join(platSelf, 'check-dependency.js')], { encoding: 'utf8', env: platEnv });
+let ps; try { ps = JSON.parse(pr.stdout.trim().split('\n').pop()); } catch (e) { ps = {}; }
+eq(ps.available, true, '5.8 与依赖技能并排安装在同一技能目录时可命中');
+eq(ps.root && fs.realpathSync(ps.root), fs.realpathSync(path.join(plat, 'skills', 'work-permit-precheck')), '5.9 命中的是同级目录下的依赖技能');
+// 同级目录里只有本技能、没有依赖时仍判不可用
+fs.renameSync(path.join(plat, 'skills', 'work-permit-precheck'), path.join(plat, 'moved-away'));
+pr = spawnSync(process.execPath, [path.join(platSelf, 'check-dependency.js')], { encoding: 'utf8', env: platEnv });
+try { ps = JSON.parse(pr.stdout.trim().split('\n').pop()); } catch (e) { ps = {}; }
+eq(ps.available, false, '5.10 同级目录没有依赖技能时判不可用');
 
 // ============ 6. make-sample 可再生 ============
 const ex1 = path.join(work, 'ex1');

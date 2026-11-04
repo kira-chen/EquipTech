@@ -19,7 +19,7 @@
 
 ## 三、依赖不可用时的处理（硬规则）
 
-运行 `node scripts/check-dependency.js` 确认依赖可用性（支持 `--skill-root`、环境变量 `SKILL_PACK_ROOT`、WorkBuddy / Claude Code / 豆包默认技能目录、技能包一级子目录扫描）。
+运行 `node scripts/check-dependency.js` 确认依赖可用性（支持 `--skill-root`、环境变量 `SKILL_PACK_ROOT`、与本技能并排安装的同级目录、WorkBuddy / Claude Code / 豆包默认技能目录、技能包一级子目录扫描）。
 
 `available: false` 时：
 

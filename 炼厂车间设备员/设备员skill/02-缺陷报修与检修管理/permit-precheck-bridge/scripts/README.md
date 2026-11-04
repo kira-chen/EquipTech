@@ -22,10 +22,11 @@ node "<技能目录>/scripts/check-dependency.js" [--skill-root "<被依赖技�
 未指定 `--skill-root` 时按以下顺序查找 `scripts/precheck.js`：
 
 1. 环境变量 `SKILL_PACK_ROOT`（技能包根目录，三个平台通用）下的 `【炼化】特殊作业票预检/work-permit-precheck/`、`work-permit-precheck/`，以及其一级子目录中的 `work-permit-precheck/`（目录名被平台改名或转码时兜底）
-2. `~/.workbuddy/skills/work-permit-precheck/`（WorkBuddy）
-3. `~/.claude/skills/work-permit-precheck/`（Claude Code）
-4. `~/.doubao/skills/work-permit-precheck/`（豆包，以平台实际加载目录为准）
-5. 本技能所在 skill-pack 根目录下的同名位置与一级子目录扫描
+2. 与本技能同级的 `../work-permit-precheck/`，以及同级一级子目录中的 `work-permit-precheck/`（第三方平台把技能并排装在同一个技能目录下时命中）
+3. `~/.workbuddy/skills/work-permit-precheck/`（WorkBuddy）
+4. `~/.claude/skills/work-permit-precheck/`（Claude Code）
+5. `~/.doubao/skills/work-permit-precheck/`（豆包，以平台实际加载目录为准）
+6. 开发仓库 `skill-pack-local/` 下的同名位置与一级子目录扫描
 
 ### 产出（末行 JSON）
 
@@ -105,4 +106,4 @@ node scripts/make-sample.js --out examples [--seed <n>]
 node scripts/selftest.js
 ```
 
-130 条断言，覆盖：依赖存在 / 不存在两条路径、`--skill-root` 只查指定路径、`SKILL_PACK_ROOT` 与一级子目录兜底、三平台默认目录、docx2text 探测、结果落盘；make-sample 可再生；**源技能 JSON → 合并报告逐条深拷贝不改写**（findings 全等、票面原词保留、八大类加注、未判定不改写、双重声明行顺序、六节结构、无 emoji）；车间侧提示状态校验与不替用户推测；summary 不一致只 warning；未知级别与缺声明行；无未判定时不出现【注意】；参数与输入校验；文档口径（用火作业、PDF 前置、互指排除语、references 不与 overhaul bridge 重复）。全绿退出 0。
+133 条断言，覆盖：依赖存在 / 不存在两条路径、`--skill-root` 只查指定路径、`SKILL_PACK_ROOT` 与一级子目录兜底、与依赖技能并排安装的同级目录、三平台默认目录、docx2text 探测、结果落盘；make-sample 可再生；**源技能 JSON → 合并报告逐条深拷贝不改写**（findings 全等、票面原词保留、八大类加注、未判定不改写、双重声明行顺序、六节结构、无 emoji）；车间侧提示状态校验与不替用户推测；summary 不一致只 warning；未知级别与缺声明行；无未判定时不出现【注意】；参数与输入校验；文档口径（用火作业、PDF 前置、互指排除语、references 不与 overhaul bridge 重复）。全绿退出 0。

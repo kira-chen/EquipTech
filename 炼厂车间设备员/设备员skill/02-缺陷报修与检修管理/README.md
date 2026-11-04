@@ -11,18 +11,18 @@
 | 5 | `maintenance-demand-rollup` | 检修需求汇总 | 汇总本车间检修需求，生成可上报设备部的清单 | 低 | 一 | ✅ 255 条断言 |
 | 6 | `repair-plan-assistant` | 检修方案辅助 | 按设备类型匹配作业步骤、工机具、质量控制点 | 中 | 二 | ✅ 334 条断言 |
 | 7 | `equipment-handover-check` | 设备交出确认 | 按介质与作业类型生成交出条件清单与交出单 | 中 | 二 | ✅ 201 条断言 |
-| 8 | `permit-precheck-bridge` | 作业票预检入口 | 车间侧入口，调用已有 `work-permit-precheck` | 低 | 一 | ✅ 130 条断言 |
-| 9 | `overhaul-process-check-bridge` | 方案核查入口 | 车间侧入口，调用已有 `overhaul-safety-check` | 低 | 一 | ✅ 177 条断言 |
+| 8 | `permit-precheck-bridge` | 作业票预检入口 | 车间侧入口，调用已有 `work-permit-precheck` | 低 | 一 | ✅ 133 条断言 |
+| 9 | `overhaul-process-check-bridge` | 方案核查入口 | 车间侧入口，调用已有 `overhaul-safety-check` | 低 | 一 | ✅ 180 条断言 |
 | 10 | `completion-acceptance` | 完工验收 | 生成验收项清单、记录结果、输出验收报告 | 中 | 二 | ✅ 210 条断言 |
 | 11 | `maintenance-record-archive` | 检修记录归档 | 核对应归档资料完整性，更新台账检修履历 | 低 | 一 | ✅ 146 条断言 |
 | 12 | `turnaround-workshop-tracker` | 大修车间跟踪 | 大修期间项目进度、资源到位、开工条件一张表 | 中 | 二 | ✅ 323 条断言 |
 
 ## 关于两个 bridge 技能
-`permit-precheck-bridge` 与 `overhaul-process-check-bridge` **不重复实现规则引擎**，它们负责车间场景的前置信息补全与结果转达，实际判定调用 skill-pack 中已建成的 `work-permit-precheck`（GB 30871 规则引擎 130 条）与 `overhaul-safety-check`（70 条规则）。安装时必须同时安装被依赖技能，否则 bridge 须终止并告知用户。
+`permit-precheck-bridge` 与 `overhaul-process-check-bridge` **不重复实现规则引擎**，它们负责车间场景的前置信息补全与结果转达，实际判定调用【炼化】技能包中已建成的 `work-permit-precheck`（特殊作业票预检，GB 30871 规则引擎 130 条）与 `overhaul-safety-check`（检修方案安全措施核查，70 条规则）。这两个被依赖技能不在本目录的 50 个技能发布包里，源码与发布包在 `skill-pack-local/`（不入库），上架时须一并上传。两个技能并排装在同一个技能目录下时，bridge 的 `check-dependency.js` 会自动找到依赖；找不到时 bridge 终止并告知用户，不自行判定。
 
 ## 数据流
 `defect-intake-grading` → `work-order-generator` → `work-order-tracker` → `completion-acceptance` → `maintenance-record-archive`，构成缺陷闭环主链。`maintenance-demand-rollup` 从缺陷与工单取数上报；`repair-plan-assistant` 产出的方案交由 `overhaul-process-check-bridge` 核查。
 
 ## 实现状态
 
-本类 **12 / 12** 个技能已完整实现（Node 脚本 + selftest + references + examples），合计 **2588** 条断言全绿。
+本类 **12 / 12** 个技能已完整实现（Node 脚本 + selftest + references + examples），合计 **2594** 条断言全绿。

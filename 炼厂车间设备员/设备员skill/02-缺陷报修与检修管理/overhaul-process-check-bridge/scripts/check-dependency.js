@@ -9,8 +9,9 @@
  * 路径来源（按优先级）：
  *   1. --skill-root（权威指定，只查这一个路径）
  *   2. 环境变量 SKILL_PACK_ROOT（技能包根目录，WorkBuddy / 豆包 / Claude Code 任一平台都可用它指定）
- *   3. 平台默认技能目录：~/.workbuddy/skills、~/.claude/skills、~/.doubao/skills（豆包路径以平台实际为准）
- *   4. 本技能所在 skill-pack 根目录下：<skill-pack>/【炼化】检修方案安全措施核查/<dep>、<skill-pack>/<dep>，
+ *   3. 本技能所在技能目录的同级：<技能目录>/../<dep>（第三方平台把各技能并排装在同一目录时命中），以及同级一级子目录中的 <dep>
+ *   4. 平台默认技能目录：~/.workbuddy/skills、~/.claude/skills、~/.doubao/skills（豆包路径以平台实际为准）
+ *   5. 开发仓库 skill-pack-local 根目录下：<skill-pack>/【炼化】检修方案安全措施核查/<dep>、<skill-pack>/<dep>，
  *      以及 skill-pack 下任一一级子目录中的 <dep>（目录名带全角括号【】被改名/转码时仍能命中）
  */
 const fs = require('fs');
@@ -38,6 +39,10 @@ function candidates(explicit) {
     list.push(path.join(packRoot, DEP_NAME));
     list.push(...scanOneLevel(packRoot));
   }
+  // 第三方平台通常把各技能并排装在同一个技能目录下：本技能在 <技能目录>/<本技能>/scripts，依赖在 <技能目录>/<dep>
+  const siblingRoot = path.resolve(__dirname, '..', '..');
+  list.push(path.join(siblingRoot, DEP_NAME));
+  list.push(...scanOneLevel(siblingRoot));
   const home = process.env.HOME || process.env.USERPROFILE || '';
   if (home) {
     list.push(path.join(home, '.workbuddy', 'skills', DEP_NAME));

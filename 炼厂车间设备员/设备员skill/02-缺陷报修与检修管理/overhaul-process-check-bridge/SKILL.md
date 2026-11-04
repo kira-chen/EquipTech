@@ -22,7 +22,7 @@ metadata:
 - 不适用：作业票预检（用 permit-precheck-bridge）；方案编制或技术内容审查（用 repair-plan-assistant）；正式审批；非危化企业施工组织设计。
 
 ## 前提条件
-- **依赖技能**：`overhaul-safety-check` 必须已安装并可调用。先运行 `node "<技能目录>/scripts/check-dependency.js"`，`available:false` 时明确告知用户"需先安装检修方案安全措施核查技能"并终止，**不得用本技能自行判定方案安全措施是否齐全**。技能目录由平台决定（WorkBuddy / Claude Code / 豆包），任一平台都可用环境变量 `SKILL_PACK_ROOT` 或 `--skill-root` 指定依赖技能位置。
+- **依赖技能**：`overhaul-safety-check` 必须已安装并可调用。先运行 `node "<技能目录>/scripts/check-dependency.js"`，`available:false` 时明确告知用户"需先安装检修方案安全措施核查技能"并终止，**不得用本技能自行判定方案安全措施是否齐全**。技能目录由平台决定（WorkBuddy / Claude Code / 豆包），两个技能并排装在同一个技能目录下时脚本会自动找到；装在别处时，任一平台都可用环境变量 `SKILL_PACK_ROOT` 或 `--skill-root` 指定依赖技能位置。
 - 输入：检修方案文件。**PDF 先用平台 pdf 技能转为 txt/docx 再传入，脚本不读 PDF；扫描件需 OCR**。docx 由源技能的 `docx2text.js` 读取；文字描述按源技能抽取手册映射。可选：设备交出单、作业票、风险分析（JSA）记录、承包商资质材料。
 - 必填信息：检修项目名称、设备位号、检修内容、涉及的作业类型（用火、受限空间、高处、吊装、临时用电、盲板抽堵等；源技能标签写"动火"，转达时照搬并加注八大类名称）、检修分级。
 - 环境：可执行 Node.js ≥ 18，脚本仅用内置模块。**若环境无法执行 node（无 Bash 工具或 `node --version` 失败），明确告知用户并终止，不得凭记忆给方案安全措施结论。**
