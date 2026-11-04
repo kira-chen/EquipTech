@@ -87,7 +87,7 @@ node scripts/build.js \
 ## make-sample.js
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>]
+node scripts/make-sample.js [--seed <n>]
 ```
 
 生成 6 份样例：巡检汇总、工单跟踪（按 work-order-tracker 的 orders.json 结构裁剪）、隐患跟踪（按 hazard-closure-tracker 的 hazard.json 结构裁剪，闭环率字段 `metrics.closureRate`）、周报 `periodic.json`（指标键英文、1 项需复算、1 条重点事项）四个上游 JSON，外加无法识别的 JSON 与 Markdown 报表各一。

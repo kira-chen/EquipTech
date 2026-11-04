@@ -75,4 +75,4 @@ metadata:
 | `scripts/selftest.js` | 自测：覆盖等级缺失、状态矛盾、重大隐患等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `assets/templates/hazard-template.md` | 报告模板（{{占位符}}） | 用户要求调整版式时 |
 | `references/sample-output.md` | 风格示范产出（数字均为虚构） | 拿不准报告风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/07-隐患事故与合规/hazard-closure-tracker/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

@@ -95,7 +95,7 @@ node "<技能目录>/scripts/merge-report.js" --result "<源技能 result.json>"
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>]
+node scripts/make-sample.js [--seed <n>]
 ```
 
 生成虚构的源技能 `result.json`（3 必须整改 / 2 建议完善 / 1 未判定 / 4 通过）、summary 不一致变体、type 不在八大类变体、车间侧 notes.json 正常与非法变体；找得到依赖技能时另复制一份用火票 docx 样例。seed 只改票号尾号、时间与人名，计数结论不变。

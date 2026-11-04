@@ -51,7 +51,7 @@ node "<技能目录>/scripts/hazard.js" \
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
+node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 ```
 
 生成 5 份样例：主台账（含整改资金/应急措施列，覆盖全部边界）、脏数据变体（状态矛盾 + 编号重复 + 合计行 + 别名列头 + A/B 级层级写法）、全闭环变体（无告警提示）、系统导出列名变体（EM/HSE 风格列名 + 政府/集团督查、HSE 审核、第三方诊断来源 + 「厂级」写法）、厂内口径文件（整改时限 + 等级映射）。

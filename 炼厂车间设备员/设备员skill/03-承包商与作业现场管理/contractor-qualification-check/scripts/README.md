@@ -62,7 +62,7 @@ node "<技能目录>/scripts/qualify.js" \
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
+node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 ```
 
 生成 6 份样例：主样例（问题承包商，施工类）、全部合规变体、压力容器焊接变体、SAP/承包商管理平台导出风格变体（供应商编码、三级安全教育日期、下次复审日期列名，维保类）、厂内准入要求清单、历史准入记录。默认 `--date 2026-10-26`，样例日期相对该日生成，预期计数以在该日附近运行为准（临期项留有 20 天以上余量）。

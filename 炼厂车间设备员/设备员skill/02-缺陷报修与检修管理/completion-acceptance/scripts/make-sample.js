@@ -17,7 +17,10 @@ const C = require('./lib/common');
 const lite = require('./lib/docx-lite');
 
 const a = C.parseArgs(process.argv.slice(2), ['out', 'seed'], []);
-const out = a.out || path.join(__dirname, '..', 'examples');
+// 默认输出到演示样例目录：仓库内在 炼厂车间设备员/演示case/<分类>/<技能>/，开发包内在技能目录 examples/
+const skillsRoot = path.resolve(__dirname, '../../..');
+const caseDir = path.basename(skillsRoot) === '设备员skill' ? path.join(skillsRoot, '..', '演示case', path.relative(skillsRoot, path.resolve(__dirname, '..'))) : path.join(__dirname, '..', 'examples');
+const out = a.out || caseDir;
 const seed = a.seed ? Number(a.seed) : 1;
 let s = seed * 7919 + 13;
 const rnd = () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);

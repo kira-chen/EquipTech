@@ -58,7 +58,7 @@ node "<技能目录>/scripts/performance.js" \
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--to <YYYY-MM-DD>] [--template-out assets/templates]
+node scripts/make-sample.js [--seed <n>] [--to <YYYY-MM-DD>] [--template-out assets/templates]
 ```
 
 生成 7 份样例：主检查记录（覆盖全部边界）、脏数据变体（别名列头 + 标题行 + 合计行 + 类型无法识别 + 承包商为空 + 另一组简称混用）、系统导出变体（承包商管理平台 / SAP 供应商编码 + 作业许可系统列名：同一编码两种名称写法按编码合并、「严重违规」→ 严重违章、质量「不符合」→ 未判定）、无违章变体、厂内评分口径文件、承包商名单、工单台账。`--template-out` 另写厂内评分口径表模板 `rules-template.xlsx`。

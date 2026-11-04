@@ -25,4 +25,4 @@
 
 ## 实现状态
 
-本类 **12 / 12** 个技能已完整实现（Node 脚本 + selftest + references + examples），合计 **2594** 条断言全绿。
+本类 **12 / 12** 个技能已完整实现（Node 脚本 + selftest + references + 演示case 样例），合计 **2594** 条断言全绿。

@@ -61,7 +61,7 @@ node "<技能目录>/scripts/turnaround.js" \
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
+node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 ```
 
 生成 5 份样例：主样例（21 项，覆盖七态、三查四定 6 项与各类边界）、仅项目清单变体、全部已完工 / 中交 / 开工变体、指挥部导出风格变体、SAP PM 工单导出风格变体。seed 只改变承修单位、人名与班组，不改变结论。

@@ -391,27 +391,29 @@ ok(r.j.warnings.some((w) => w.includes('缺少列: 位号')), 'K11 「设备编�
   ok(os2.length === 2 && os2[0].existingNotifNo === '10046716' && os2[1].existingNotifNo === null, 'M8 defects.json 的 sourceNo（通知单号）带出，缺陷编号不当已有通知单号');
 }
 
-// ============ L. examples 样例预期计数 ============
-const EX = path.join(__dirname, '..', 'examples');
+// ============ L. 演示case 样例预期计数 ============
+// 演示样例：仓库内在 炼厂车间设备员/演示case/<分类>/<技能>/，开发包内在技能目录 examples/
+const skillsRoot = path.resolve(__dirname, '../../..');
+const EX = path.basename(skillsRoot) === '设备员skill' ? path.join(skillsRoot, '..', '演示case', path.relative(skillsRoot, path.resolve(__dirname, '..'))) : path.join(__dirname, '..', 'examples');
 if (fs.existsSync(path.join(EX, 'sample-defects-2026-09-21.xlsx'))) {
   r = run(['--input', path.join(EX, 'sample-defects-2026-09-21.xlsx'), '--ledger', path.join(EX, 'sample-equip-ledger.xlsx'), '--history', path.join(EX, 'sample-repair-history.xlsx'), ...BASE], 'ex');
-  eq(r.s.counts.total, 4, 'L1 examples 主样例 4 张草稿');
-  eq(r.s.counts.byPriority['1 非常高'], 1, 'L2 examples A 级 1→优先级 1');
-  eq(r.s.counts.byType['M2 故障报告'], 2, 'L3 examples M2 2 张');
-  eq(r.s.counts.notInLedger, 1, 'L4 examples P-2103A 不在台账');
-  eq(r.s.counts.withoutHistory, 2, 'L5 examples 2 张无历史');
-  eq(r.j.orders[0].equipment.equipNo, '10002101', 'L6 examples SAP 台账带出设备编号');
+  eq(r.s.counts.total, 4, 'L1 演示case 主样例 4 张草稿');
+  eq(r.s.counts.byPriority['1 非常高'], 1, 'L2 演示case A 级 1→优先级 1');
+  eq(r.s.counts.byType['M2 故障报告'], 2, 'L3 演示case M2 2 张');
+  eq(r.s.counts.notInLedger, 1, 'L4 演示case P-2103A 不在台账');
+  eq(r.s.counts.withoutHistory, 2, 'L5 演示case 2 张无历史');
+  eq(r.j.orders[0].equipment.equipNo, '10002101', 'L6 演示case SAP 台账带出设备编号');
   r = run(['--input', path.join(EX, 'sample-no-level.xlsx'), ...BASE], 'ex-nolevel');
-  eq(r.s.counts.undeterminedPriority, 2, 'L7 examples 无等级样例优先级全部未判定');
-  eq(r.s.counts.undeterminedType, 2, 'L8 examples 无等级样例通知单类型全部未判定');
+  eq(r.s.counts.undeterminedPriority, 2, 'L7 演示case 无等级样例优先级全部未判定');
+  eq(r.s.counts.undeterminedType, 2, 'L8 演示case 无等级样例通知单类型全部未判定');
   r = run(['--input', path.join(EX, 'sample-no-level.xlsx'), '--priority', '2', '--notif-type', 'M2', ...BASE], 'ex-override');
-  eq(r.s.counts.undeterminedPriority, 0, 'L9 examples 显式 --priority 后无未判定');
-  eq(r.s.counts.byPriority['2 高'], 2, 'L10 examples 显式优先级 2 高 全部命中');
-  eq(r.s.counts.byType['M2 故障报告'], 2, 'L11 examples 显式 --notif-type M2 全部命中');
-  ok(!/【未判定】/.test(r.md), 'L12 examples 无未判定时 md 不出现【未判定】');
+  eq(r.s.counts.undeterminedPriority, 0, 'L9 演示case 显式 --priority 后无未判定');
+  eq(r.s.counts.byPriority['2 高'], 2, 'L10 演示case 显式优先级 2 高 全部命中');
+  eq(r.s.counts.byType['M2 故障报告'], 2, 'L11 演示case 显式 --notif-type M2 全部命中');
+  ok(!/【未判定】/.test(r.md), 'L12 演示case 无未判定时 md 不出现【未判定】');
   r = run(['--input', path.join(EX, 'sample-defects-2026-09-21.xlsx'), '--ledger', path.join(EX, 'sample-equip-ledger.xlsx'), ...BASE], 'ex-ledger');
-  ok(!/GD-\d{8}-\d{3}/.test(r.md) && !/EAM|机动处|人·小时|备件方向/.test(r.md), 'L13 examples 产出无自编工单号、EAM、机动处、工时与备件方向');
-  ok(/公司设备管理部门|承修单位/.test(r.md), 'L14 examples 产出使用中石化口径的归口说法');
+  ok(!/GD-\d{8}-\d{3}/.test(r.md) && !/EAM|机动处|人·小时|备件方向/.test(r.md), 'L13 演示case 产出无自编工单号、EAM、机动处、工时与备件方向');
+  ok(/公司设备管理部门|承修单位/.test(r.md), 'L14 演示case 产出使用中石化口径的归口说法');
 }
 
 console.log(`\n${'='.repeat(56)}`);

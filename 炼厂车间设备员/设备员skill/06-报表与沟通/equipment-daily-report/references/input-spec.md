@@ -12,7 +12,7 @@
 | `leaks.json` | leak-point-tracker | 含 `counts.leaks` 与 `repaired` | 六、泄漏点（`counts.{leaks,newLeaks,open,overdue,repaired,undetermined}`、`metrics.repairRate`、`overdue[]`） |
 | `hazard.json` | hazard-closure-tracker | 含 `majorHazards` | 七、隐患（`counts.{total,overdue,dueSoon,inProgress,closed,major,unverified,undetermined}`、`metrics.closureRate`、`overdue[]`、`majorHazards[]`） |
 
-多个 JSON 用逗号分隔传入：`--input a/status.json,b/orders.json`。样例见 `examples/upstream/`。
+多个 JSON 用逗号分隔传入：`--input a/status.json,b/orders.json`。样例见演示样例的 `upstream/` 目录。
 无法识别类型的 JSON 会 warning 并忽略，不中断。
 
 ### 2. xlsx 工作表

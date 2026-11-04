@@ -76,4 +76,4 @@ metadata:
 | `scripts/selftest.js` | 自测：覆盖超范围动作拦截、类型不覆盖等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `assets/templates/guide-template.md` | 指引卡模板（{{占位符}}） | 成文时 |
 | `references/sample-output.md` | 风格示范产出（内容均为虚构） | 拿不准指引风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/08-知识与能力支持/operator-anomaly-guide/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

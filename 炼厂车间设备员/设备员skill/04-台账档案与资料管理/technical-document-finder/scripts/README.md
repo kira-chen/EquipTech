@@ -1,5 +1,7 @@
 # scripts 使用说明
 
+> 命令在技能目录 `设备员skill/04-台账档案与资料管理/technical-document-finder/` 下运行，`$CASE` 指本技能的演示目录：`CASE=../../../演示case/04-台账档案与资料管理/technical-document-finder`。
+
 ## find.js —— 主脚本
 
 ```bash
@@ -51,10 +53,10 @@ node "<技能目录>/scripts/find.js" \
 ## make-sample.js
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>]
+node scripts/make-sample.js [--seed <n>]
 ```
 
-生成一套资料样例：`sample-docs/` 下含真实 `.docx` 说明书（力矩 45N·m）、`.md` 检修规程（同一项写 50N·m，构造版本冲突）、`.txt` 技术协议、其他设备的 `.md` 说明书、伪 PDF 装配图与 PNG 铭牌照片（验证只定位不读内容）、伪 PDF 水压试验报告 + 同名 `.pdf.txt` 转换文本（验证前置转换路径）、伪 `.doc` 旧版说明书、资料目录清单 xlsx（含一条已登记但无实体文件的「性能曲线」）、资料目录补充 csv（登记 P-1101B 说明书，无实体文件）；`examples/` 下另有资料目录清单与 SAP PM 列名的设备台账 xlsx（P-1101A / P-1101B 同名同型号，验证不串台）。
+生成一套资料样例：`sample-docs/` 下含真实 `.docx` 说明书（力矩 45N·m）、`.md` 检修规程（同一项写 50N·m，构造版本冲突）、`.txt` 技术协议、其他设备的 `.md` 说明书、伪 PDF 装配图与 PNG 铭牌照片（验证只定位不读内容）、伪 PDF 水压试验报告 + 同名 `.pdf.txt` 转换文本（验证前置转换路径）、伪 `.doc` 旧版说明书、资料目录清单 xlsx（含一条已登记但无实体文件的「性能曲线」）、资料目录补充 csv（登记 P-1101B 说明书，无实体文件）；`$CASE/` 下另有资料目录清单与 SAP PM 列名的设备台账 xlsx（P-1101A / P-1101B 同名同型号，验证不串台）。
 
 `--seed` 只改厂家、型号与 SAP 设备编号等表面数值，**文件构成、版本冲突、未解析文件数不变**。
 

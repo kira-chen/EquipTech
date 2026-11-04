@@ -87,4 +87,4 @@ metadata:
 | `scripts/selftest.js` | 自测：覆盖条款笼统、无对应资料、材料不完整等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `assets/templates/compliance-template.md` | 对照表模板（{{占位符}}） | 成文时 |
 | `references/sample-output.md` | 风格示范产出（内容均为虚构） | 拿不准对照表风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/07-隐患事故与合规/regulation-compliance-check/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

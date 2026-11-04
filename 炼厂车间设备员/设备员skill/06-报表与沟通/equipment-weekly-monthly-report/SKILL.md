@@ -79,4 +79,4 @@ metadata:
 | `scripts/selftest.js` | 自测：覆盖缺失日期、在用口径、口径表复算、泄漏率、备机、停工、分级完成率、SAP 列名等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `assets/templates/periodic-template.md` | 周月报模板（{{占位符}}） | 用户要求调整版式时 |
 | `references/sample-output.md` | 风格示范产出（数字均为虚构） | 拿不准报告风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/06-报表与沟通/equipment-weekly-monthly-report/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

@@ -485,6 +485,9 @@ ok(!R.classifySymptoms('出口温度偏低').includes('temperature'), 'T5 「温
   const ROOT = path.join(__dirname, '..');
   const rd = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
   const exists = (p) => fs.existsSync(path.join(ROOT, p));
+  // 演示样例：仓库内在 炼厂车间设备员/演示case/<分类>/<技能>/，开发包内在技能目录 examples/
+  const skillsRoot = path.resolve(__dirname, '../../..');
+  const EX = path.basename(skillsRoot) === '设备员skill' ? path.join(skillsRoot, '..', '演示case', path.relative(skillsRoot, path.resolve(__dirname, '..'))) : path.join(__dirname, '..', 'examples');
   const skill = rd('SKILL.md');
   const listing = (exists('上架信息.md') ? rd('上架信息.md') : '') + (exists('样例问题.md') ? rd('样例问题.md') : '');
   const attach = [...listing.matchAll(/(sample-[\w.-]+\.xlsx)/g)].map((m) => m[1]);
@@ -505,11 +508,11 @@ ok(!R.classifySymptoms('出口温度偏低').includes('temperature'), 'T5 「温
   ok(!/EAM/.test(spec + skill) && !/机动处/.test(spec + skill), 'Q10 不含「EAM」「机动处」旧术语');
   const readme = rd('scripts/README.md');
   ok(/--dev-pct/.test(readme) && /--limits/.test(readme) && /--special/.test(readme) && /os\.tmpdir\(\)/.test(readme), 'Q11 scripts/README 参数表含 --dev-pct/--limits/--special 与默认临时目录');
-  const ex = rd('examples/README.md');
-  ok(!/[ABC] 级/.test(ex) && /sample-params-dcs\.xlsx/.test(ex) && /sample-history-sap\.xlsx/.test(ex) && /sample-params-psv\.xlsx/.test(ex), 'Q12 examples/README 不含 A/B/C 级关注度，引用 DCS/SAP/安全阀样例');
-  ok(!exists('examples/异常初判') && exists('examples/sample-params-dcs.xlsx') && exists('examples/sample-history-sap.xlsx'), 'Q13 examples 无遗留运行产物，且含系统列名样例');
+  const ex = fs.readFileSync(path.join(EX, 'README.md'), 'utf8');
+  ok(!/[ABC] 级/.test(ex) && /sample-params-dcs\.xlsx/.test(ex) && /sample-history-sap\.xlsx/.test(ex) && /sample-params-psv\.xlsx/.test(ex), 'Q12 演示case/README 不含 A/B/C 级关注度，引用 DCS/SAP/安全阀样例');
+  ok(!fs.existsSync(path.join(EX, '异常初判')) && fs.existsSync(path.join(EX, 'sample-params-dcs.xlsx')) && fs.existsSync(path.join(EX, 'sample-history-sap.xlsx')), 'Q13 演示case 无遗留运行产物，且含系统列名样例');
   ok(exists('上架信息.md') && exists('样例问题.md'), 'Q14 上架信息.md 与 样例问题.md 存在');
-  ok(attach.length >= 5 && attach.every((f) => exists(path.join('examples', f))), `Q15 上架信息/样例问题引用的附件均存在于 examples（${[...new Set(attach)].join(',')}）`);
+  ok(attach.length >= 5 && attach.every((f) => fs.existsSync(path.join(EX, f))), `Q15 上架信息/样例问题引用的附件均存在于 演示case（${[...new Set(attach)].join(',')}）`);
   ok(/\*\*技能名称\*\*/.test(listing) && /\*\*技能简介\*\*/.test(listing) && /\*\*技能描述\*\*/.test(listing) && /\*\*示例问题\*\*/.test(listing), 'Q16 上架信息格式四要素齐全');
   ok(descText.length >= 240 && descText.length <= 330, `Q17 技能描述约 250~300 字（实际 ${descText.length}）`);
   ok((listing.match(/^\d+\. /gm) || []).length >= 15, 'Q18 上架信息 5 题 + 样例问题 10 题');

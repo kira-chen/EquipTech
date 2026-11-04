@@ -73,4 +73,4 @@ metadata:
 | `scripts/README.md` | 脚本参数与产出说明 | 运行脚本前 |
 | `scripts/selftest.js` | 自测：覆盖命中为空、相似度偏低、字段缺失、SAP 列名、docx/md 案例库、权重与代码等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `references/sample-output.md` | 风格示范回答（案例内容均为虚构） | 拿不准回答风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/07-隐患事故与合规/failure-case-retrieval/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

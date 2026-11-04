@@ -53,7 +53,7 @@ node "<技能目录>/scripts/lube.js" \
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
+node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 ```
 
 生成 7 份样例：主样例（五定台账+加换油记录+油液分析，含运行小时周期）、油品单价表、仅台账变体、SAP/EM 导出风格变体、`sample-runtime.json`（模拟 runtime-hours-tracker 产出）、`sample-run-hours.xlsx`、`sample-ref-limits.xlsx`（参考限值，数值与标准号均虚构）。

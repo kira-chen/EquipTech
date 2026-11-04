@@ -73,7 +73,7 @@ R.notificationType('A', false);              // 'M2'
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
+node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 ```
 
 主样例恒为 6 条：A 级 2、B 级 1、C 级 2、未判定 1；SAP 通知单导出样例 4 条：A 1、B 1、C 1、未判定 1；配 SAP 列名台账恒 1 条疑似重复。
@@ -84,4 +84,4 @@ node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
 node scripts/selftest.js
 ```
 
-185 条断言，含规则引擎单元测试（A/B/C 默认、口语「漏」识别、温升口语与数值写法（温度偏高/升高/持续上升、偏高 8℃、高约 15℃）识别、iv 兼容、介质中危、专业归口顺序、`--due` 解析、通知单类型）、单条登记（本地时间、方案切换、通知单草稿列）、批量（未判定不进草稿）、查重（SAP 状态归一）、台账校验（SAP 列名）、产出完整性、参数校验、别名与合计行、原记录编号与系统等级带出（sourceNo / sourceNoKind / sourceLevel / sourceLevelDiffers）、examples 预期计数。
+185 条断言，含规则引擎单元测试（A/B/C 默认、口语「漏」识别、温升口语与数值写法（温度偏高/升高/持续上升、偏高 8℃、高约 15℃）识别、iv 兼容、介质中危、专业归口顺序、`--due` 解析、通知单类型）、单条登记（本地时间、方案切换、通知单草稿列）、批量（未判定不进草稿）、查重（SAP 状态归一）、台账校验（SAP 列名）、产出完整性、参数校验、别名与合计行、原记录编号与系统等级带出（sourceNo / sourceNoKind / sourceLevel / sourceLevelDiffers）、演示case 预期计数。

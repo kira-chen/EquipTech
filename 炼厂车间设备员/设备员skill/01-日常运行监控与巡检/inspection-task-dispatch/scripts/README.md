@@ -63,7 +63,7 @@ P1 特护设备（强制最高）> P2 已逾期 > P3 关键设备（A）> P4 上
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
+node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 ```
 
 生成 3 份样例：主样例（三表齐全，含特护与班次级周期）、无上次巡检记录变体、SAP PM 导出 + 智能巡检明细变体。

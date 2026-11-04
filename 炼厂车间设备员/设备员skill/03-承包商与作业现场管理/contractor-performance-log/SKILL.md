@@ -77,4 +77,4 @@ metadata:
 | `assets/templates/performance-template.md` | 评价报告模板（{{占位符}}） | 成文时 |
 | `assets/templates/rules-template.xlsx` | 厂内评分口径表模板（「评分口径」「分档标准」两张表），填好后用 `--rules` 传入 | 用户要按厂内口径算分时 |
 | `references/sample-output.md` | 风格示范产出（单位名与数字均为虚构） | 拿不准报告风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/03-承包商与作业现场管理/contractor-performance-log/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

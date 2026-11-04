@@ -76,7 +76,7 @@ node "<技能目录>/scripts/trend.js" \
 ## make-sample.js
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>]
+node scripts/make-sample.js [--seed <n>]
 ```
 
 - `sample-trend.xlsx`（长表，两级限值）恒 7 条序列：2 条已越限（1 条越高高报、1 条越高报）、2 条趋势恶化、2 条稳定、1 条只有 2 期（数据不足）、1 个无法解析的数值、1 组采集时间重复、1 个带「℃」后缀的数值。

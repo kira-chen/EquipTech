@@ -76,4 +76,4 @@ metadata:
 | `scripts/selftest.js` | 自测：覆盖周期缺失、主备不配对、备机状态、当前主用推导、班次级周期等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `assets/templates/rotation-report-template.md` | 报告模板（占位符与 rotation.json 键一致） | 用户要求调整版式时 |
 | `references/sample-output.md` | 风格示范产出（数字均为虚构，不对应任何输入） | 拿不准报告风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/01-日常运行监控与巡检/standby-rotation-reminder/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

@@ -1,5 +1,7 @@
 # scripts 使用说明
 
+> 命令在技能目录 `设备员skill/06-报表与沟通/equipment-weekly-monthly-report/` 下运行，`$CASE` 指本技能的演示目录：`CASE=../../../演示case/06-报表与沟通/equipment-weekly-monthly-report`。
+
 ## periodic.js —— 主脚本
 
 ```bash
@@ -87,12 +89,12 @@ node scripts/periodic.js --input "/data/日报,/data/月度台账.xlsx,/data/lea
 ## make-sample.js
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
+node scripts/make-sample.js [--seed <n>] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
 ```
 
 恒定的预期结论（换 seed 只变数值，不变计数与比率）：
 
-- `examples/daily/` 内 5 份 daily.json，区间 7 天 → **缺 2 天**；K-1601 特护 1 天异常
+- `$CASE/daily/` 内 5 份 daily.json，区间 7 天 → **缺 2 天**；K-1601 特护 1 天异常
 - 设备台账 20 台（含在用、重要度列），完好 18 → 完好率 **90.0%**；A/B 类 14 台、完好 12 → 主要设备完好率 **85.7%**
 - 故障记录 8 条（动设备 5 / 静设备 2 / 电气 1），故障停机 8 次，P-1101B 故障 **3 次**居首
 - 检修计划区间内 6 项、按期 3 项 → 合计 **50.0%**；大检修 0/2、日常维修 3/3、专项 0/1

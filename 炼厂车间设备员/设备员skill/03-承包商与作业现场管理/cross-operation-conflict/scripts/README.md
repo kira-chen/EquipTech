@@ -76,7 +76,7 @@ R.applyRuleOverrides([{ruleId:'R4', severity:'中'}, {ruleId:'Z1', enabled:'否'
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>] [--template-out assets/templates]
+node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>] [--template-out assets/templates]
 ```
 
 生成 6 份样例：主样例（8 项作业）、区域划分表、介质全空变体、区域标高全空变体、施工方导出风格变体、作业许可系统导出变体（双监护两列、无电源回路/消防覆盖区列、标高「3层」）。`--template-out` 另写厂内冲突口径模板 `rules-template.xlsx`。

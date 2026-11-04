@@ -99,4 +99,4 @@ metadata:
 | `scripts/selftest.js` | 自测：覆盖判断类项、O 系列逐条、打分列不写、无数据、合并单元格、`--period` 必填等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `assets/templates/fill-note-template.md` | 填写说明模板（{{占位符}}） | 用户要求调整版式时 |
 | `references/sample-output.md` | 风格示范产出（内容均为虚构） | 拿不准预填风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/06-报表与沟通/self-audit-form-filler/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

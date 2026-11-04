@@ -2,7 +2,7 @@
 # 设备员技能打包入口：自测 → 打包 → 校验 zip → 生成技能清单。产物在 dist/，不入库。
 # 用法：tools/package.sh                     打全部发布包并生成技能清单
 #       tools/package.sh --skill <英文名>     只打一个技能，可重复传
-#       tools/package.sh --with-examples      打开发包，含回归样例与自测脚本
+#       tools/package.sh --with-examples      打开发包，含自测脚本与 演示case/ 下的回归样例
 #       tools/package.sh --skip-test          跳过自测，只在刚跑过自测时使用
 set -uo pipefail
 TOOLS="$(cd "$(dirname "$0")" && pwd)"

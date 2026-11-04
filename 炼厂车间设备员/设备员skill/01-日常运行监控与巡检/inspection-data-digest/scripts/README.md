@@ -48,7 +48,7 @@ node "<技能目录>/scripts/digest.js" \
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
+node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 ```
 
 生成 5 份样例：主样例（智能巡检明细 + 点检仪数据 + 状态监测三来源，系统导出列名）、SAP PM 风格设备台账、仅巡检明细变体、系统导出风格变体（标题行/别名列头/合计行/跨日）、夜班跨 0 点变体。

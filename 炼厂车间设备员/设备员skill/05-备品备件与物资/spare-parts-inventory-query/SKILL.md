@@ -76,4 +76,4 @@ metadata:
 | `scripts/selftest.js` | 自测：覆盖同名多编码、无结果、负库存、SAP 列名、按位号查、置顶等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `assets/templates/inventory-answer-template.md` | 回答模板（{{占位符}}） | 组织回答时 |
 | `references/sample-output.md` | 风格示范回答（内容均为虚构） | 拿不准回答风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/05-备品备件与物资/spare-parts-inventory-query/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

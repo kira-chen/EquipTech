@@ -121,11 +121,14 @@ eq(ps.available, false, '5.10 同级目录没有依赖技能时判不可用');
 
 // ============ 6. make-sample 可再生 ============
 // make-sample 要调用依赖技能 overhaul-safety-check 生成真实 result.json。依赖技能不在本仓库（skill-pack-local 不入库），
-// 找不到时改用已入库的 examples/，跳过需要依赖技能的断言并在结尾说明，不让其他成员的自测和打包因此失败。
+// 找不到时改用已入库的演示样例（演示case/），跳过需要依赖技能的断言并在结尾说明，不让其他成员的自测和打包因此失败。
 const depInfo = runChk([]).s;
 const depRoot = depInfo.available ? depInfo.root : null;
 let skipped = 0;
-const ex1 = depRoot ? path.join(work, 'ex1') : path.join(ROOT, 'examples');
+// 演示样例：仓库内在 炼厂车间设备员/演示case/<分类>/<技能>/，开发包内在技能目录 examples/
+const skillsRoot = path.resolve(__dirname, '../../..');
+const EX = path.basename(skillsRoot) === '设备员skill' ? path.join(skillsRoot, '..', '演示case', path.relative(skillsRoot, path.resolve(__dirname, '..'))) : path.join(__dirname, '..', 'examples');
+const ex1 = depRoot ? path.join(work, 'ex1') : EX;
 let ms = {};
 if (depRoot) {
   let m = spawnSync(process.execPath, [MKS, '--out', ex1], { encoding: 'utf8' });
@@ -358,7 +361,7 @@ ok(fs.existsSync(path.join(ROOT, 'references', 'input-spec.md')), '14.14 referen
 
 console.log('\n' + '='.repeat(56));
 console.log('overhaul-process-check-bridge 自测：' + pass + ' 通过，' + fail + ' 失败');
-if (skipped) console.log(`另有 ${skipped} 条需要依赖技能 overhaul-safety-check 的断言已跳过（make-sample 再生与真实链路），样例改用已入库的 examples/。安装依赖技能或设置 SKILL_PACK_ROOT 后可全量运行。`);
+if (skipped) console.log(`另有 ${skipped} 条需要依赖技能 overhaul-safety-check 的断言已跳过（make-sample 再生与真实链路），样例改用已入库的演示样例。安装依赖技能或设置 SKILL_PACK_ROOT 后可全量运行。`);
 if (failures.length) { console.log('\n失败项：'); failures.forEach((f) => console.log('  ✗ ' + f)); }
 console.log('='.repeat(56));
 try { fs.rmSync(work, { recursive: true, force: true }); } catch (e) {}

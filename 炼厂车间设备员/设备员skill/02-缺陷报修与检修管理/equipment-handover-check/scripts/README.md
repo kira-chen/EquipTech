@@ -98,7 +98,7 @@ R.requiredPermits(ctx, items);     // ['用火作业','受限空间作业','盲�
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
+node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 ```
 
 生成 3 份样例：厂内列名设备台账（高危/中危/电气/介质不在库）、SAP PM 技术对象导出列名台账（功能位置/设备/设备描述/对象类型，含碳四、乙二醇、EO/EG）、交出场景对照表（5 个场景）。

@@ -94,7 +94,7 @@ D.citeOf({file:'a.md', loc:'第5行', clause:'4.1'}); // 'a.md 第4.1条（第5�
 ## make-sample.js
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>]
+node scripts/make-sample.js [--seed <n>]
 ```
 
 生成：设备清单 xlsx（6 种类型写法，塔器与容器同归塔器容器，共 5 类）、SAP PM IH08 技术对象导出样式 `sample-sap-export.xlsx`（功能位置 / 设备 8 位流水号 / 设备描述 / 对象类型 / 工厂区段 / ABC标识，首行标题，5 台）、缺类型列变体、厂内规程样例 `sample-spec.md`（含 8 条带数值的条款）、无数值资料 `sample-spec-no-number.md`、含操作步骤的资料 `sample-spec-with-procedure.md`。

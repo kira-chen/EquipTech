@@ -69,7 +69,7 @@ node "<技能目录>/scripts/track.js" \
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
+node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 ```
 
 生成 6 份样例：主检测记录（覆盖全部边界，含一条经批准的延迟修复）、LDAR 系统 / SAP 列名导出（标签号、功能位置、设备、工厂区段、组件子类型、密封类型、检测方法、是否不可达、复测日期、延迟修复批准、带单位检测值）、脏数据变体（编号重复 + 合计行 + 标题行 + 别名列头 + 状态无法识别）、全闭环变体（无告警提示）、历史漏点台账（`--ledger` 续跟踪）、密封点台账（`--seal-points` 分母，1600 行：静 1200 / 动 400）。

@@ -6,7 +6,7 @@
 
 > **当前状态（2026-11-04）：50 / 50 个技能全部完成中石化口径改造（第二轮）、MCP 核验缺陷修复及 MCP 取数接入，合计 10687 条 selftest 断言全绿，每个技能目录含上架信息.md 与样例问题.md。**
 >
-> 每个技能含：SKILL.md + Node 主脚本 + make-sample + selftest + references + examples 对照表 + 模板。
+> 每个技能含：SKILL.md + Node 主脚本 + make-sample + selftest + references + 模板；演示与回归样例（含对照表）在 `../演示case/<分类>/<技能>/`。
 > 全部遵守 `../文档/规范/技能实现规范.md` 的九条硬约束，仅用 Node.js 内置模块，无 npm 依赖。
 
 
@@ -97,7 +97,7 @@
 
 ```bash
 cd <二级目录>/<技能目录>
-node scripts/make-sample.js --out examples   # 再生样例
+node scripts/make-sample.js                  # 再生样例，默认写入 炼厂车间设备员/演示case/<分类>/<技能>/
 node scripts/selftest.js                     # 断言全绿
 node scripts/<主脚本>.js <参数>               # 真实跑一次
 ```
@@ -194,4 +194,4 @@ for d in */*/; do [ -f "$d/scripts/selftest.js" ] && (cd "$d" && node scripts/se
 
 - 2026-10-26 第一轮（已完成）：共享库升级并同步；10 处出错数 bug 修复；5 个 SKILL.md 改为 node 不可用即终止；17 个脚本默认输出目录改为系统临时目录；清理遗留产物；`tools/build.sh` 排除 `*-out/`。
 - 2026-10-26~27 第二轮（已完成）：按 `../文档/过程记录/改造任务书-2026-10-26.md` 逐技能做中石化口径改造（术语、系统列名、分级、层级、指标、制度引用、PDF 前置步骤、上架信息与样例问题）。完成标记：技能目录内同时存在 `上架信息.md` 与 `样例问题.md`。
-- 待办：抽取共享材料类别词表（inspection-evidence-package / regulation-compliance-check / self-audit-form-filler）；各类 README 更新断言数；`演示附件/` 与 make-demo；`tools/build.sh` 全量打包到 dist/。
+- 待办：抽取共享材料类别词表（inspection-evidence-package / regulation-compliance-check / self-audit-form-filler）；各类 README 更新断言数；make-demo（演示附件已统一放到 `../演示case/`）；`tools/build.sh` 全量打包到 dist/。

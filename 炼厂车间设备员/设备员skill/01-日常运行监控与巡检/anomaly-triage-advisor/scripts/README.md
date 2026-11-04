@@ -112,7 +112,7 @@ R.triage({equipType:'闸阀', symptoms:R.classifySymptoms('关不严，内漏'),
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
+node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 ```
 
 seed 变 → 参数数值、记录人变；**预期结论不变**（候选原因数、未判定项数、风险等级不随 seed 变化）。

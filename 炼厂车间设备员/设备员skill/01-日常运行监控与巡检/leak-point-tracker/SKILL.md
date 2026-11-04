@@ -81,4 +81,4 @@ metadata:
 | `scripts/selftest.js` | 自测：覆盖缺检测值、编号重复、延迟修复、不可达点、泄漏率、跨期续跟踪等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `assets/templates/leak-report-template.md` | 报告版式参考（占位符与 leaks.json 键一致，脚本不读取此文件） | 用户要求调整版式时 |
 | `references/sample-output.md` | 风格示范产出（数字均为虚构，不对应任何输入） | 拿不准报告风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/01-日常运行监控与巡检/leak-point-tracker/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

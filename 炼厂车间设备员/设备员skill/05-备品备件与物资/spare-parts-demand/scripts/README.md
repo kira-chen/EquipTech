@@ -71,7 +71,7 @@ node "<技能目录>/scripts/demand.js" \
 ## make-sample.js
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>]
+node scripts/make-sample.js [--seed <n>]
 ```
 
 生成 `sample-demand.xlsx`（检修计划 8 行 + 历史消耗）、`sample-stock.xlsx`、`sample-intransit.xlsx`、`sample-safety.xlsx`、`sample-plan-only.xlsx`，以及 SAP 变体 `sample-sap-reservation.xlsx`（PM 工单预留导出）+ `sample-sap-mb51.xlsx`（MB51 物料凭证，含 262 冲销与 101 收货行），两者用逗号一起传给 `--input`。

@@ -68,7 +68,7 @@ node "<技能目录>/scripts/energy.js" \
 ## make-sample.js
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>]
+node scripts/make-sample.js [--seed <n>]
 ```
 
 主样例恒 7 台离心泵：2 台能效偏低、1 台参数不全（数据不足）、1 台效率超 100%（异常值）、2 个可对比分组，含设计参数与单价。另生成无设计参数变体、五类型混排变体（SAP PM 列名：功能位置/设备描述/对象类型）、压缩机多变口径 + 分时电价变体（`--polytropic` 时恒 1 可算 / 2 数据不足，单价取「加权」行）。`--seed` 变则数值抖动变，但各类条数不变。

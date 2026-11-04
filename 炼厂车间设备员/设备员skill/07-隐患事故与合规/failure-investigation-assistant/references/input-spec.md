@@ -166,6 +166,6 @@ SAP PM 工单导出（IW38/IW39）可直接作为检修历史：`订单→工单
 - `analysis.cause / responsibility / loss / measures / conclusion` **恒为 null**：本技能不产出任何原因认定、事故定性与责任划分、损失核定内容。
 - `meta.window.defaulted`：三项阈值哪些用了经验默认；成文前须与用户确认。
 
-## 样例数据（examples/，仅回归测试用）
+## 样例数据（演示样例，仅回归测试用）
 
-由 `node scripts/make-sample.js --out examples` 再生，覆盖时间戳不一致、数据缺口、时间戳缺失、超窗记录、因果与追责表述、DCS 导出风格表头、SAP PM 工单导出（IW38 列名）七类情形。
+由 `node scripts/make-sample.js` 再生，覆盖时间戳不一致、数据缺口、时间戳缺失、超窗记录、因果与追责表述、DCS 导出风格表头、SAP PM 工单导出（IW38 列名）七类情形。

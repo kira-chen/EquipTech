@@ -453,23 +453,25 @@ ok(!/机动处/.test(r.md) && !/EAM/.test(r.md), '24.11 md 不出现旧称机动
 function C_round1(v) { return Math.round(v * 10) / 10; }
 
 
-// ---- 25. examples 样例预期计数（目录不存在则跳过）
-const EX = path.join(__dirname, '..', 'examples');
+// ---- 25. 演示case 样例预期计数（目录不存在则跳过）
+// 演示样例：仓库内在 炼厂车间设备员/演示case/<分类>/<技能>/，开发包内在技能目录 examples/
+const skillsRoot = path.resolve(__dirname, '../../..');
+const EX = path.basename(skillsRoot) === '设备员skill' ? path.join(skillsRoot, '..', '演示case', path.relative(skillsRoot, path.resolve(__dirname, '..'))) : path.join(__dirname, '..', 'examples');
 if (fs.existsSync(path.join(EX, 'sample-work-orders-2026-09-21.xlsx'))) {
   r = run(path.join(EX, 'sample-work-orders-2026-09-21.xlsx'), [], 'ex-main');
-  ok(r.summary.counts.total === 14 && r.summary.counts.overdue === 3 && r.summary.counts.stalled === 3 && r.summary.counts.dueSoon === 4 && r.summary.counts.unknownStatus === 1, '25.1 examples 主样例：14 张、超期 3、停滞 3、临期 4、未知 1');
-  eq(r.summary.metrics.closeRate, 25, '25.2 examples 主样例完成率 25%');
+  ok(r.summary.counts.total === 14 && r.summary.counts.overdue === 3 && r.summary.counts.stalled === 3 && r.summary.counts.dueSoon === 4 && r.summary.counts.unknownStatus === 1, '25.1 演示case 主样例：14 张、超期 3、停滞 3、临期 4、未知 1');
+  eq(r.summary.metrics.closeRate, 25, '25.2 演示case 主样例完成率 25%');
   r = run(path.join(EX, 'sample-work-orders-2026-09-21.xlsx'), ['--sla', path.join(EX, 'sample-sla.xlsx')], 'ex-sla');
-  ok(r.orders.meta.slaOfficial && r.orders.meta.slaDays['一般'] === 5 && r.orders.meta.slaDays['计划性'] === 20, '25.3 examples 厂内口径表按类别生效');
-  eq(r.orders.overdue.find((x) => x.no === 'WO-26090103').dueAt, '2026-09-14', '25.4 examples 推算条目按厂内口径（一般 5 天）提前');
+  ok(r.orders.meta.slaOfficial && r.orders.meta.slaDays['一般'] === 5 && r.orders.meta.slaDays['计划性'] === 20, '25.3 演示case 厂内口径表按类别生效');
+  eq(r.orders.overdue.find((x) => x.no === 'WO-26090103').dueAt, '2026-09-14', '25.4 演示case 推算条目按厂内口径（一般 5 天）提前');
   r = run(path.join(EX, 'sample-sap-export.xlsx'), [], 'ex-sap');
-  ok(r.summary.counts.total === 6 && r.summary.counts.overdue === 2 && r.summary.counts.stalled === 1 && r.summary.counts.closedAll === 1 && r.summary.counts.cancelled === 1 && r.summary.counts.unknownStatus === 0, '25.5 examples SAP 导出：6 张、超期 2、停滞 1、闭环 1、取消 1、未知 0');
-  ok(r.orders.overdue.some((x) => x.no === '40012302' && x.status === '待验收'), '25.6 examples SAP TECO 订单归待验收并判超期');
-  ok(r.orders.overdue.some((x) => x.no === '40012301' && x.category === '抢修'), '25.7 examples SAP PM03 订单按抢修 24h 推算超期');
+  ok(r.summary.counts.total === 6 && r.summary.counts.overdue === 2 && r.summary.counts.stalled === 1 && r.summary.counts.closedAll === 1 && r.summary.counts.cancelled === 1 && r.summary.counts.unknownStatus === 0, '25.5 演示case SAP 导出：6 张、超期 2、停滞 1、闭环 1、取消 1、未知 0');
+  ok(r.orders.overdue.some((x) => x.no === '40012302' && x.status === '待验收'), '25.6 演示case SAP TECO 订单归待验收并判超期');
+  ok(r.orders.overdue.some((x) => x.no === '40012301' && x.category === '抢修'), '25.7 演示case SAP PM03 订单按抢修 24h 推算超期');
   r = run(path.join(EX, 'sample-mes-export.xlsx'), [], 'ex-mes');
-  ok(r.summary.counts.total === 3 && r.summary.counts.overdue === 2, '25.8 examples MES 导出：3 张、超期 2');
+  ok(r.summary.counts.total === 3 && r.summary.counts.overdue === 2, '25.8 演示case MES 导出：3 张、超期 2');
   r = run(path.join(EX, 'sample-all-closed.xlsx'), [], 'ex-closed');
-  ok(r.summary.counts.open === 0 && r.summary.metrics.closeRate === 100, '25.9 examples 全闭环样例完成率 100%');
+  ok(r.summary.counts.open === 0 && r.summary.metrics.closeRate === 100, '25.9 演示case 全闭环样例完成率 100%');
 }
 
 // ---- 输出

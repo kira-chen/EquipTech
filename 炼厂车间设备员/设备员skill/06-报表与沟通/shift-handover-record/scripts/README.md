@@ -75,7 +75,7 @@ node "<技能目录>/scripts/handover.js" \
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
+node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 ```
 
 生成 4 份样例：主样例（值班记录 + 在修设备）、上次交接记录（未完成事项表，含「来源交接」列）、极简变体（工作记录，缺责任人、缺在修表）、EM/SAP 导出风格变体（标题行 + 功能位置/设备描述/订单 列名 + 合计行）。

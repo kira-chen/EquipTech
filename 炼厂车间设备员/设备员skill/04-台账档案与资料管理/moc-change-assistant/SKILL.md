@@ -78,4 +78,4 @@ metadata:
 | `assets/templates/moc-template.md` | 评估要点模板（{{占位符}}） | 成文时 |
 | `assets/templates/plant-spec-template.xlsx` | 厂内变更制度 `--spec` 预填模板（按中石化分类框架预填，级别与条款号由厂内改填） | 用户要提供厂内制度但没有现成表时 |
 | `references/sample-output.md` | 风格示范产出（内容均为虚构） | 拿不准产出风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/04-台账档案与资料管理/moc-change-assistant/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

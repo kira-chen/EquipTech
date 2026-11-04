@@ -66,7 +66,7 @@ node scripts/docx2text.js --input <检修方案.docx> [--out <txt>]
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>]
+node scripts/make-sample.js [--seed <n>]
 ```
 
 生成 6 份样例：离心泵检修方案（txt，6 个质量控制点，1 个缺口）、验收记录（xlsx，2 不合格 / 1 未判定 / 1 未匹配）、EM 检修验收记录导出（xlsx，系统列名 + 标题行 + 合计行，1 不合格）、换热器检修方案（xlsx，4 个控制点全对应）、压缩机机组检修方案（docx，docx-lite 生成，5 个控制点全对应）、无控制点方案（txt）。seed 改变实测数值与人名，不改变结论。

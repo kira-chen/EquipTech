@@ -79,4 +79,4 @@ metadata:
 | `scripts/selftest.js` | 自测：覆盖六档状态、待验收、SAP 列名、缺数据源、环比等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `assets/templates/daily-template.md` | 日报模板（占位符与 daily.json 键一致） | 用户要求调整版式时 |
 | `references/sample-output.md` | 风格示范产出（数字均为虚构） | 拿不准日报风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含），含 `upstream/` 上游 JSON 样例 | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/06-报表与沟通/equipment-daily-report/`） | 回归测试数据（仅开发包含有，发布包不含），含 `upstream/` 上游 JSON 样例 | 目录不存在则跳过 |

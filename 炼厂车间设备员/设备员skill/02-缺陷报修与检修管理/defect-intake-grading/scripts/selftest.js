@@ -336,17 +336,19 @@ r = run(['--desc', '机封滴漏', '--tag', 'P-11', '--medium', '柴油', '--aff
 const s2 = ((r.j && r.j.defects) || [])[0] || {};
 ok(s2.sourceNo === null && s2.sourceNoKind === null && s2.sourceLevel === null, 'H28 单条登记无原记录 → 三个字段为 null');
 
-// examples 样例预期计数
-const EX = path.join(__dirname, '..', 'examples');
+// 演示case 样例预期计数
+// 演示样例：仓库内在 炼厂车间设备员/演示case/<分类>/<技能>/，开发包内在技能目录 examples/
+const skillsRoot = path.resolve(__dirname, '../../..');
+const EX = path.basename(skillsRoot) === '设备员skill' ? path.join(skillsRoot, '..', '演示case', path.relative(skillsRoot, path.resolve(__dirname, '..'))) : path.join(__dirname, '..', 'examples');
 if (fs.existsSync(path.join(EX, 'sample-sap-notification-export.xlsx'))) {
   r = run(['--input', path.join(EX, 'sample-sap-notification-export.xlsx')], 'ex-sap');
-  eq(r.s.counts.total, 4, 'H12 examples SAP 样例 4 条');
-  eq(r.s.counts.undetermined, 1, 'H13 examples SAP 样例未判定 1');
-  eq(r.s.counts.byLevel['A 级（重大）'], 1, 'H14 examples SAP 样例 A 级 1（安全阀液化气内漏）');
+  eq(r.s.counts.total, 4, 'H12 演示case SAP 样例 4 条');
+  eq(r.s.counts.undetermined, 1, 'H13 演示case SAP 样例未判定 1');
+  eq(r.s.counts.byLevel['A 级（重大）'], 1, 'H14 演示case SAP 样例 A 级 1（安全阀液化气内漏）');
   r = run(['--input', path.join(EX, 'sample-defects-2026-09-21.xlsx'), '--ledger', path.join(EX, 'sample-defect-ledger.xlsx')], 'ex-main');
-  eq(r.s.counts.byLevel['A 级（重大）'], 2, 'H15 examples 主样例 A 级 2');
-  eq(r.s.counts.byLevel['C 级（一般）'], 2, 'H16 examples 主样例 C 级 2');
-  eq(r.s.counts.possibleDuplicate, 1, 'H17 examples 主样例配 SAP 台账查重 1 条');
+  eq(r.s.counts.byLevel['A 级（重大）'], 2, 'H15 演示case 主样例 A 级 2');
+  eq(r.s.counts.byLevel['C 级（一般）'], 2, 'H16 演示case 主样例 C 级 2');
+  eq(r.s.counts.possibleDuplicate, 1, 'H17 演示case 主样例配 SAP 台账查重 1 条');
 }
 
 console.log(`\n${'='.repeat(56)}`);

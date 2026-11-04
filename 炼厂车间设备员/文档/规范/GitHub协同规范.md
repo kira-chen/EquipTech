@@ -135,7 +135,7 @@ git branch -d work/<分支名>
 | 同一技能的 `SKILL.md` | description 决定技能何时被触发，合并后可能与其它技能抢触发词 | 合并时保留两边的有效内容，并核对同类技能的触发词 |
 | `上架信息.md` | 技能清单从这里解析，格式错了全量打包会报错 | 保持字段格式和 5 个示例问题，合并后跑打包 |
 | 主脚本的输出 JSON | 文本上没有冲突，下游技能也可能读不到字段 | 在提交信息里写明字段变更，并验证下游技能 |
-| `examples/` 的 xlsx、docx | 二进制文件，Git 无法合并 | 见第六节，不要手工修补文件 |
+| `演示case/` 的 xlsx、docx | 二进制文件，Git 无法合并 | 见第六节，不要手工修补文件 |
 | 目录移动和改名 | 影响所有人的本地工作和桥接技能的依赖路径 | 提前通知，等其他人的工作合并后进行，用 `git mv` |
 | `.claude/settings.json`、`.gitignore` | 影响所有成员的权限和入库范围 | 由负责人确认 |
 
@@ -148,7 +148,7 @@ git branch -d work/<分支名>
   ```bash
   git checkout --theirs <样例文件>      # 保留 main 的版本
   git checkout --ours <样例文件>        # 保留工作分支的版本
-  node <技能目录>/scripts/make-sample.js --out <技能目录>/examples
+  node <技能目录>/scripts/make-sample.js   # 默认写入 演示case/<分类>/<技能>/
   ```
 
   `make-sample.js` 重新生成的文件内容逻辑一致，但不会和旧文件字节相同，所以不能靠比对文件判断是否一致。处理后要跑该技能的自测。

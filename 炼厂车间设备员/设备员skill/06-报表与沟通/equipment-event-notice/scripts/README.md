@@ -87,7 +87,7 @@ R.DISCLAIMER;            // '本通报为情况告知，事件原因与性质以
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
+node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 ```
 
 主样例恒为 4 条事件素材：EV-01 要素齐全无禁用表述；EV-02 含五类禁用表述；EV-03 缺 3 项必需要素；EV-04（通报范围 分厂）触发上报提示与非计划停工提示并含个人追责表述。seed 只改变时间、数值与人名，预期结论不变。

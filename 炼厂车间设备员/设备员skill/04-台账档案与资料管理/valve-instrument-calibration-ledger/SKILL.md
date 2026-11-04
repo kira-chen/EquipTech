@@ -73,4 +73,4 @@ metadata:
 | `scripts/selftest.js` | 自测：覆盖默认范围、自然月推算、「故障」不归不合格、证书核对、SAP/EM 列名等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `assets/templates/calibration-template.md` | 报告模板（{{占位符}}） | 用户要求调整版式时 |
 | `references/sample-output.md` | 风格示范产出（数字均为虚构） | 拿不准报告风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/04-台账档案与资料管理/valve-instrument-calibration-ledger/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

@@ -78,4 +78,4 @@ metadata:
 | `scripts/selftest.js` | 自测：覆盖字段缺失、空结果、SAP/EM 别名列头、设备编号命中等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `references/sample-output.md` | 风格示范回答（内容均为虚构） | 拿不准回答风格时 |
 | `assets/templates/query-answer-template.md` | 回答组织模板（占位符与 result.json 键一致） | 组织回答时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/04-台账档案与资料管理/equipment-ledger-query/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

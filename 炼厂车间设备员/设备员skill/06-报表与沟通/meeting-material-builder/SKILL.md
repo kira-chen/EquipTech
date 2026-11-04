@@ -78,4 +78,4 @@ metadata:
 | `scripts/selftest.js` | 自测：覆盖无数据议题、层级三档、权重、去位号、slides、周报 JSON 映射等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `assets/templates/report-speech-template.md` | 汇报稿模板（{{占位符}}） | 成文时 |
 | `references/sample-output.md` | 风格示范产出（数字均为虚构） | 拿不准汇报稿风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/06-报表与沟通/meeting-material-builder/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

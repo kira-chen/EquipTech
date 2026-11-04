@@ -76,4 +76,4 @@ metadata:
 | `scripts/selftest.js` | 自测：覆盖位号缺失、单位混用、跨期对比、MB51 冲销、金额列优先、基期切换等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `assets/templates/consumption-template.md` | 报告模板（{{占位符}}） | 用户要求调整版式时 |
 | `references/sample-output.md` | 风格示范产出（数字均为虚构） | 拿不准报告风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/05-备品备件与物资/spare-parts-consumption-analysis/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

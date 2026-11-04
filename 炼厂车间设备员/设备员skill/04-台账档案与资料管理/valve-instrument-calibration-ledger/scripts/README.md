@@ -51,7 +51,7 @@ node "<技能目录>/scripts/calibration.js" \
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
+node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 ```
 
 生成 3 份样例：主校验台账（六类对象、五种状态，车间自维护列名）、不合格整改清单、EM / SAP PM 导出风格变体（功能位置 / 设备 / 设备描述 / 设备品种 / 型号编号 / 整定压力 / 检验周期 / 检验日期 / 检验结论 / 校验报告编号 / 检验机构 / 所属设备，含标题行、合计行、空位号行与「故障」结论）。

@@ -79,4 +79,4 @@ metadata:
 | `scripts/selftest.js` | 自测：覆盖命名无法识别、必备缺失、检修分级映射、SAP 台账别名、EM 列头等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `assets/templates/archive-template.md` | 归档清单模板（{{占位符}}） | 用户要求调整版式时 |
 | `references/sample-output.md` | 风格示范产出（内容均为虚构） | 拿不准清单风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/02-缺陷报修与检修管理/maintenance-record-archive/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

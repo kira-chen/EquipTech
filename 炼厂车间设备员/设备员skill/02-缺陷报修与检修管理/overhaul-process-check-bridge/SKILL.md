@@ -69,4 +69,4 @@ metadata:
 | `scripts/selftest.js` | 自测：依赖探测、源 JSON 逐条转达不改写、检修分级映射、车间侧状态校验等（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `assets/templates/bridge-template.md` | 合并报告模板（与 merge-report.js 产出结构一致） | 用户要求调整版式时 |
 | `references/sample-output.md` | 风格示范产出（内容均为虚构） | 拿不准报告风格时 |
-| `examples/` | 回归测试数据（虚构的检修方案 plan.json、依赖技能对它的真实 result.json 输出、车间侧 notes.json；仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/02-缺陷报修与检修管理/overhaul-process-check-bridge/`） | 回归测试数据（虚构的检修方案 plan.json、依赖技能对它的真实 result.json 输出、车间侧 notes.json；仅开发包含有，发布包不含） | 目录不存在则跳过 |

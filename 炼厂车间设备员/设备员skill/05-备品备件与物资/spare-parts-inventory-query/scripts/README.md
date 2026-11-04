@@ -65,7 +65,7 @@ SUB.diffFields(target, cand, ['spec','material']); // 参数差异
 ## make-sample.js
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>]
+node scripts/make-sample.js [--seed <n>]
 ```
 
 生成 6 份样例：主库存（恒 14 条：2 条低于安全库存、1 条库存量为空、1 条负库存、多组同名多编码）、在途采购、备件目录、缺安全库存列变体、SAP MB52 导出变体（标题行 + 物料/物料描述/非限制使用库存/库存地点/再订货点列名 + 迷惑性「数量」列 + 合计行，无位号列，两条零库存轴承）、备件设备对应表（功能位置 ↔ 物料，含 1 个库存表中没有的物料）。

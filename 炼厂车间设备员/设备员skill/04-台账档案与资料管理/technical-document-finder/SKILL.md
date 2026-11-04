@@ -74,4 +74,4 @@ metadata:
 | `scripts/README.md` | 脚本参数与产出说明 | 运行脚本前 |
 | `scripts/selftest.js` | 自测：覆盖 PDF 前置转换、.doc/.xls、--max-files、命中为空、多版本冲突、SAP 台账列名等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `references/sample-output.md` | 风格示范回答（内容均为虚构） | 拿不准回答风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/04-台账档案与资料管理/technical-document-finder/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

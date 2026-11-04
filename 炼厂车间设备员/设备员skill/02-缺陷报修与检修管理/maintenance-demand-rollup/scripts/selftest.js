@@ -588,25 +588,27 @@ ok(r.s.warnings.some((w) => /已转工单/.test(w)), 'P13 已转工单的通知�
   ok(eZ.s.ok === false && /1 条周期项下次到期日晚于申报周期末/.test(eZ.s.error || ''), 'X21 全部周期项都在周期外时报错并说明条数');
 }
 
-// ============ O. examples 预期计数（目录不存在则跳过） ============
-const EX = path.join(__dirname, '..', 'examples');
+// ============ O. 演示case 预期计数（目录不存在则跳过） ============
+// 演示样例：仓库内在 炼厂车间设备员/演示case/<分类>/<技能>/，开发包内在技能目录 examples/
+const skillsRoot = path.resolve(__dirname, '../../..');
+const EX = path.basename(skillsRoot) === '设备员skill' ? path.join(skillsRoot, '..', '演示case', path.relative(skillsRoot, path.resolve(__dirname, '..'))) : path.join(__dirname, '..', 'examples');
 if (fs.existsSync(path.join(EX, 'sample-demand-sources-2026-10.xlsx'))) {
   r = run(['--input', path.join(EX, 'sample-demand-sources-2026-10.xlsx'), ...BASE], 'ex-main');
-  ok(r.j.counts.demands === 10 && r.j.counts.noBasis === 1 && r.j.counts.possibleDuplicate === 1 && r.j.counts.needShutdown === 4 && r.j.counts.shutdownUnknown === 1 && r.j.counts.bySource['隐患整改项'] === 2, 'O1 examples 主样例：正式 10（缺陷 4+工单 4+隐患 2）、无依据 1、疑似重复 1、需停机 4、停机未填 1');
-  eq(r.j.counts.priorityUndetermined, 2, 'O2 examples 主样例优先级未判定 2（无等级工单 + B级隐患）');
-  eq(r.j.counts.skippedDone, 1, 'O3 examples 已完成工单本期不重复申报');
+  ok(r.j.counts.demands === 10 && r.j.counts.noBasis === 1 && r.j.counts.possibleDuplicate === 1 && r.j.counts.needShutdown === 4 && r.j.counts.shutdownUnknown === 1 && r.j.counts.bySource['隐患整改项'] === 2, 'O1 演示case 主样例：正式 10（缺陷 4+工单 4+隐患 2）、无依据 1、疑似重复 1、需停机 4、停机未填 1');
+  eq(r.j.counts.priorityUndetermined, 2, 'O2 演示case 主样例优先级未判定 2（无等级工单 + B级隐患）');
+  eq(r.j.counts.skippedDone, 1, 'O3 演示case 已完成工单本期不重复申报');
   r = run(['--input', path.join(EX, 'sample-demand-sources-2026-10.xlsx'), ...BASE, '--include-cyclic', '--spare', path.join(EX, 'sample-spare-stock.xlsx')], 'ex-cyc');
   // 周期项按申报周期筛到期：ZQ-002（1年，上次 2025-11-10 → 2026-11-10）晚于 2026-10-31，本期不申报
-  ok(r.j.counts.demands === 12 && r.j.counts.needShutdown === 5 && r.j.counts.bySource['周期性检修项'] === 2, 'O4 examples 含周期项：正式 12（周期项 2 条本期到期）、需停机 5');
-  eq(r.j.counts.priorityUndetermined, 4, 'O5 examples 本期到期的 2 条周期项优先级未判定（不按中默认）');
-  ok(r.j.counts.cyclicOutOfPeriod === 1 && r.j.cyclicOutOfPeriod[0].basisNo === 'ZQ-002' && r.j.cyclicOutOfPeriod[0].nextDue === '2026-11-10', 'O5b examples ZQ-002 下次到期 2026-11-10 晚于周期末，单列周期外');
-  ok(r.j.demands.find((d) => d.basisNo === 'QX-20260908-002').spareState === 'short' && r.j.demands.find((d) => d.basisNo === 'QX-20260903-001').spareState === 'ok', 'O6 examples 备件到位/不足判定');
-  eq(r.j.demands.find((d) => d.basisNo === 'GD-2609-104').spareState, 'unverified', 'O6b examples DN150-PN16 不在库存表 → 未核实（不借用 DN300-PN40 的库存）');
-  eq(r.j.demands.find((d) => d.basisNo === 'ZQ-001').spareState, 'short', 'O6c examples LT-8 库存 0 → 不足');
+  ok(r.j.counts.demands === 12 && r.j.counts.needShutdown === 5 && r.j.counts.bySource['周期性检修项'] === 2, 'O4 演示case 含周期项：正式 12（周期项 2 条本期到期）、需停机 5');
+  eq(r.j.counts.priorityUndetermined, 4, 'O5 演示case 本期到期的 2 条周期项优先级未判定（不按中默认）');
+  ok(r.j.counts.cyclicOutOfPeriod === 1 && r.j.cyclicOutOfPeriod[0].basisNo === 'ZQ-002' && r.j.cyclicOutOfPeriod[0].nextDue === '2026-11-10', 'O5b 演示case ZQ-002 下次到期 2026-11-10 晚于周期末，单列周期外');
+  ok(r.j.demands.find((d) => d.basisNo === 'QX-20260908-002').spareState === 'short' && r.j.demands.find((d) => d.basisNo === 'QX-20260903-001').spareState === 'ok', 'O6 演示case 备件到位/不足判定');
+  eq(r.j.demands.find((d) => d.basisNo === 'GD-2609-104').spareState, 'unverified', 'O6b 演示case DN150-PN16 不在库存表 → 未核实（不借用 DN300-PN40 的库存）');
+  eq(r.j.demands.find((d) => d.basisNo === 'ZQ-001').spareState, 'short', 'O6c 演示case LT-8 库存 0 → 不足');
   r = run(['--input', path.join(EX, 'sample-sap-export.xlsx'), ...BASE], 'ex-sap');
-  ok(r.s.ok && r.j.counts.demands === 4 && r.j.counts.skippedDone === 1 && r.j.counts.statusUndetermined === 0 && r.j.demands.some((d) => d.basisNo === '40023001' && d.category === '抢修'), 'O7 examples SAP 导出：通知单 2 + 订单 2 纳入、TECO 1 条不重复申报、PM03→抢修');
+  ok(r.s.ok && r.j.counts.demands === 4 && r.j.counts.skippedDone === 1 && r.j.counts.statusUndetermined === 0 && r.j.demands.some((d) => d.basisNo === '40023001' && d.category === '抢修'), 'O7 演示case SAP 导出：通知单 2 + 订单 2 纳入、TECO 1 条不重复申报、PM03→抢修');
   r = run(['--input', path.join(EX, 'sample-no-basis.xlsx'), ...BASE], 'ex-nobasis');
-  eq(r.s.ok, false, 'O8 examples 全无依据报错');
+  eq(r.s.ok, false, 'O8 演示case 全无依据报错');
 }
 
 console.log(`\n${'='.repeat(56)}`);

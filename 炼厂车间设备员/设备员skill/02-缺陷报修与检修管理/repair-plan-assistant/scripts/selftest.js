@@ -457,16 +457,18 @@ r = run(['--equip-type', '离心泵', '--tag', 'P-9802', '--scope', '机封解�
 const q4 = qcOf(r.j, 'QC-PU4');
 ok(q4.standardSource === 'spec' && /0\.08~0\.12/.test(q4.standard) && /3~4 mm/.test(q4.standard) && /第 2、3 行/.test(q4.citation), 'R16 两项都有出处 → 合并引用两条原文并列出两处行号');
 
-// ============ Q. examples 样例（目录不存在则跳过） ============
-const EX = path.join(__dirname, '..', 'examples');
+// ============ Q. 演示case 样例（目录不存在则跳过） ============
+// 演示样例：仓库内在 炼厂车间设备员/演示case/<分类>/<技能>/，开发包内在技能目录 examples/
+const skillsRoot = path.resolve(__dirname, '../../..');
+const EX = path.basename(skillsRoot) === '设备员skill' ? path.join(skillsRoot, '..', '演示case', path.relative(skillsRoot, path.resolve(__dirname, '..'))) : path.join(__dirname, '..', 'examples');
 if (fs.existsSync(path.join(EX, 'sample-procedure-furnace.md'))) {
   r = run(['--equip-type', '管式加热炉', '--tag', 'F-3501', '--scope', '炉管更换与烧嘴检修（大检修）', '--spec', path.join(EX, 'sample-procedure-furnace.md'), '--duration', '20'], 'q-furnace');
-  ok(r.s.ok && r.j.meta.equipKey === 'furnace' && r.j.meta.dismantle === true && r.j.meta.level === 'overhaul', 'Q1 examples 加热炉样例：归类/解体/大检修识别');
-  eq(stepOf(r.j, 'FU4').valueSource, 'spec', 'Q2 examples 加热炉规程命中炉管壁厚/胀粗');
-  eq(stepOf(r.j, 'FU9').valueSource, 'spec', 'Q3 examples 加热炉规程命中试压');
-  eq(stepOf(r.j, 'FU10').valueSource, 'spec', 'Q4 examples 升温曲线行含数字时按原文引用（6.1 行命中 thermal 关键词）');
+  ok(r.s.ok && r.j.meta.equipKey === 'furnace' && r.j.meta.dismantle === true && r.j.meta.level === 'overhaul', 'Q1 演示case 加热炉样例：归类/解体/大检修识别');
+  eq(stepOf(r.j, 'FU4').valueSource, 'spec', 'Q2 演示case 加热炉规程命中炉管壁厚/胀粗');
+  eq(stepOf(r.j, 'FU9').valueSource, 'spec', 'Q3 演示case 加热炉规程命中试压');
+  eq(stepOf(r.j, 'FU10').valueSource, 'spec', 'Q4 演示case 升温曲线行含数字时按原文引用（6.1 行命中 thermal 关键词）');
   r = run(['--equip-type', '离心泵', '--tag', 'P-3101A', '--scope', '机械密封解体更换（小修）', '--spec', path.join(EX, 'sample-procedure-pump.md'), '--duration', '3'], 'q-pump');
-  ok(r.s.ok && r.j.counts.conflicts === 1 && r.j.meta.levelCn === '日常维修', 'Q5 examples 泵样例：1 处冲突，小修归日常维修');
+  ok(r.s.ok && r.j.counts.conflicts === 1 && r.j.meta.levelCn === '日常维修', 'Q5 演示case 泵样例：1 处冲突，小修归日常维修');
 }
 
 // ---- 输出

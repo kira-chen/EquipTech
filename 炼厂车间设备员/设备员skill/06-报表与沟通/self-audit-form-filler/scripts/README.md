@@ -119,7 +119,7 @@ node scripts/docx2text.js --input <自查表.docx>
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>]
+node scripts/make-sample.js [--seed <n>]
 ```
 
 生成 6 份样例：主自查表（15 项，客观项与判断类混合）、主台账数据（5 张表）、

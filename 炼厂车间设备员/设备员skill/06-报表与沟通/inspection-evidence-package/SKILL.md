@@ -90,4 +90,4 @@ metadata:
 | `scripts/selftest.js` | 自测：覆盖无法解析、时间不覆盖、单端日期推断、材料无法匹配、新增类别等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `assets/templates/evidence-template.md` | 资料清单模板（{{占位符}}） | 成文时 |
 | `references/sample-output.md` | 风格示范产出（内容均为虚构） | 拿不准清单风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/06-报表与沟通/inspection-evidence-package/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

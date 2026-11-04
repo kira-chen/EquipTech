@@ -60,7 +60,7 @@ const esc = (t) => String(t).replace(/\|/g, '\\|');
 const md = [];
 md.push('# 设备员技能包清单');
 md.push('');
-md.push(`共 ${rows.length} 个技能，每个技能一个 zip，文件名即技能英文名。示例问题的附件为开发目录 examples/ 下的样例，发布包不含。`);
+md.push(`共 ${rows.length} 个技能，每个技能一个 zip，文件名即技能英文名。示例问题的附件在 演示case/<分类>/<技能英文名>/ 下，发布包不含。`);
 md.push('');
 md.push('| 序号 | 分类 | 技能英文名 | 技能中文名 | 技能中文描述 | 示例问题 |');
 md.push('|---|---|---|---|---|---|');
@@ -98,7 +98,7 @@ const s1 = sheet(
 );
 const qRows = [];
 rows.forEach((r, i) => r.qs.forEach((q) => qRows.push([i + 1, r.name, r.cn, q.no, q.q, q.att || '无'])));
-const s2 = sheet(['技能序号', '技能英文名', '技能中文名', '题号', '示例问题', '演示附件（开发目录 examples/ 下，发布包不含）'], qRows, [8, 32, 22, 6, 80, 60]);
+const s2 = sheet(['技能序号', '技能英文名', '技能中文名', '题号', '示例问题', '演示附件（演示case/<分类>/<技能英文名>/ 下，发布包不含）'], qRows, [8, 32, 22, 6, 80, 60]);
 const s3 = sheet(['序号', '压缩包文件名', '技能中文名', '大小（KB）'], rows.map((r, i) => [i + 1, `${r.name}.zip`, r.cn, Math.round(r.size / 102.4) / 10]), [6, 40, 24, 12]);
 
 const styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'

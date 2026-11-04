@@ -73,7 +73,7 @@ node scripts/consumption.js --input MB51导出.xlsx --workshop 常减压车间 \
 ## make-sample.js
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>]
+node scripts/make-sample.js [--seed <n>]
 ```
 
 主样例恒 28 条：3 条未归属、2 条数量未填、5 种单位、跨 3 个月，另含上期基线样例（机封本期为上期数倍，触发异常增长），以及 SAP MB51 变体 `sample-sap-mb51.xlsx`（同一导出含 4~6 月基期与 7~9 月本期、262 冲销行、101 收货行、本位币金额列、无金额无位号的螺栓行）。

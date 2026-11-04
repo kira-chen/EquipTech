@@ -64,7 +64,7 @@ node "<技能目录>/scripts/query.js" --input "<台账xlsx>" --describe --out "
 ## make-sample.js
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>]
+node scripts/make-sample.js [--seed <n>]
 ```
 
 生成 4 份样例：主台账（12 台，带 SAP 8 位设备编号；动 5 静 4 电 2 仪 1，3 台早于 2015 年，1 台规格型号为空）、SAP PM 技术对象清单导出（6 台，1 台只有建造年份）、检修历史（SAP 工单导出列名）、EM 别名列头变体（标题行 + 合计行）。

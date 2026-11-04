@@ -65,7 +65,7 @@ S.classify('焊工资质证明.pdf', required);                    // → ['seWe
 ## make-sample.js
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>]
+node scripts/make-sample.js [--seed <n>]
 ```
 
 生成 5 份样例：主材料清单（11 份材料 + 1 份无法归类，作业票按作业许可系统命名）、日常维修齐全变体、材料极少变体、厂内设备台账、SAP PM 技术对象导出台账。

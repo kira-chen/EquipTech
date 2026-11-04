@@ -83,4 +83,4 @@ metadata:
 | `scripts/selftest.js` | 自测：覆盖类型不覆盖、docx/xlsx/txt 方案比对、资料缺口、三级验收签字、检修分级映射、EM 列名等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `assets/templates/acceptance-template.md` | 验收报告模板（{{占位符}}） | 用户要求调整版式时 |
 | `references/sample-output.md` | 风格示范产出（内容均为虚构） | 拿不准报告风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/02-缺陷报修与检修管理/completion-acceptance/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

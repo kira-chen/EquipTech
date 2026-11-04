@@ -91,7 +91,7 @@ node scripts/docx2text.js --input <条款文本.docx>
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>]
+node scripts/make-sample.js [--seed <n>]
 ```
 
 生成 8 份样例：主条款清单（12 条，含标题行与标准名称列，其中两条来源为虚构企业制度 Q/XX-虚构-00N，演示制度与法规同一口径）、主资料清单、笼统条款变体、

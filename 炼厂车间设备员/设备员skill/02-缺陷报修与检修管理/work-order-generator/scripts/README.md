@@ -88,7 +88,7 @@ D.decideNotifType({explicit:'', priority:1});       // {type:'M2', ...}
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
+node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 ```
 
 主样例恒为 4 条待转通知单的缺陷（动设备 2、静设备 1、仪表 1；A 1 / B 1 / C 2），其中 1 条位号不在设备台账、2 条无历史维修记录；设备台账与历史记录用 SAP 技术对象/订单历史列名。seed 只变滴数与工作中心，不变草稿数、专业分布与边界命中。
@@ -99,4 +99,4 @@ node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
 node scripts/selftest.js
 ```
 
-225 条断言：规则引擎（现象识别与 defect-intake-grading 同口径，含「温度偏高/持续上升」「高约 15℃」温升写法、专业归口顺序、SAP 优先级 1~4 与中文/旧四级映射、通知单类型、工时与备件表已删除）、文字描述路径（不自编工单号、工时备件留空、声明行与【注意】）、defects.json 对接（A/B/C 与旧四级、未判定不默认）、SAP 技术对象台账列名、SAP 订单历史列名（未完工工单行不列入历史）、已废参数报错、要求结束早于当前、批量与 SAP 通知单导出列名、产出完整性（CSV 为 SAP 通知单列、不含 EAM/工时）、参数校验、合计行与缺列缺表、位号与设备编号不混、输入已带通知单号时单列「已有通知单号」并注明勿重复创建（含 defects.json 的 sourceNo）、examples 预期计数。
+225 条断言：规则引擎（现象识别与 defect-intake-grading 同口径，含「温度偏高/持续上升」「高约 15℃」温升写法、专业归口顺序、SAP 优先级 1~4 与中文/旧四级映射、通知单类型、工时与备件表已删除）、文字描述路径（不自编工单号、工时备件留空、声明行与【注意】）、defects.json 对接（A/B/C 与旧四级、未判定不默认）、SAP 技术对象台账列名、SAP 订单历史列名（未完工工单行不列入历史）、已废参数报错、要求结束早于当前、批量与 SAP 通知单导出列名、产出完整性（CSV 为 SAP 通知单列、不含 EAM/工时）、参数校验、合计行与缺列缺表、位号与设备编号不混、输入已带通知单号时单列「已有通知单号」并注明勿重复创建（含 defects.json 的 sourceNo）、演示case 预期计数。

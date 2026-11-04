@@ -67,7 +67,7 @@ node scripts/daily.js --input /tmp/insp/status.json,/tmp/ord/orders.json,/tmp/de
 ## make-sample.js
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
+node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 ```
 
 主样例恒为：10 台设备（运行 5 / 备用 1 / 检修 1 / 停用 1 / 异常 2 / 未判定 0，特护 1 台）、3 条新增缺陷、5 条未闭环缺陷（1 待验收）、6 张工单（2 超期、1 待验收）、4 张作业票、3 个泄漏点（2 未修复、1 超期）、3 条隐患（1 重大、1 超期）、2 条异常事件（1 未闭环）、3 个检修项目。seed 只改检修完成比例与特护参数数值。

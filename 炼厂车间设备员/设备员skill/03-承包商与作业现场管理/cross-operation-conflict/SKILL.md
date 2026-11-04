@@ -79,4 +79,4 @@ metadata:
 | `assets/templates/conflicts-template.md` | 冲突报告模板（{{占位符}}） | 用户要求调整版式时 |
 | `assets/templates/rules-template.xlsx` | 厂内冲突口径模板（「冲突口径」表：规则号/严重度/启用/建议），填好后用 `--rules` 传入 | 用户要按厂内口径判定时 |
 | `references/sample-output.md` | 风格示范产出（内容均为虚构） | 拿不准报告风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/03-承包商与作业现场管理/cross-operation-conflict/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

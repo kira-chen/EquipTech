@@ -71,7 +71,7 @@ node "<技能目录>/scripts/todo.js" \
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
+node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 ```
 
 生成 11 份样例：6 个上游技能 JSON、1 份交接记录 `sample-handover.json`（meta.skill 约定，pending 3 条）、1 份待办表 xlsx、1 份 SAP/EM 风格待办表 `sample-todo-sap-style.xlsx`、1 份文字待办、1 个无法识别的 JSON。

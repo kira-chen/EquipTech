@@ -15,7 +15,7 @@ description: 打包炼厂车间设备员的 50 个技能：先跑自测，再生
 |---|---|
 | 打全部发布包，或更新技能清单 | `bash 炼厂车间设备员/tools/package.sh` |
 | 打一个或几个技能 | `bash 炼厂车间设备员/tools/package.sh --skill <英文名> --skill <英文名>` |
-| 打开发包 | `bash 炼厂车间设备员/tools/package.sh --with-examples` |
+| 打开发包（含 `演示case/` 样例） | `bash 炼厂车间设备员/tools/package.sh --with-examples` |
 
 用户只给中文名时，先在技能目录的 `上架信息.md` 中找到对应的英文目录名。全量打包约需数分钟，命令超时时间设为 10 分钟。
 

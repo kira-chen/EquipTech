@@ -71,7 +71,7 @@ node "<技能目录>/scripts/runtime.js" \
 ## make-sample.js
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>]
+node scripts/make-sample.js [--seed <n>]
 ```
 
 主样例恒 6 台设备：2 项超阈值、2 项接近阈值（含 1 项日历周期）、2 项未判定、1 条不配对、1 组重叠、1 处正常停机间隔。另有无阈值表、运行记录（带单位）、SAP 导出列名、运行状态时序四个变体。

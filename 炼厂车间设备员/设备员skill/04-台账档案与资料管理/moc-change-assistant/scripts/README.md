@@ -90,7 +90,7 @@ R.docUpdates('structure', true);               // 结构类资料清单，并入
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
+node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 node scripts/make-sample.js --spec-template assets/templates/plant-spec-template.xlsx   # 只再生 --spec 预填模板
 ```
 

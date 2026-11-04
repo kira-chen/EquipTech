@@ -83,7 +83,7 @@ R.REFUSAL_NOTE;          // '本技能不提供原因认定、事故定性与责
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
+node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 ```
 
 主样例恒为：1 处时间戳不一致（3 个来源、最大差 7 分钟）、数条运行参数缺口、1 条时间戳缺失、1 条超窗记录；变体样例分别覆盖单一来源、因果与追责表述、DCS 导出风格表头、SAP PM 工单导出（IW38 列名：订单/订单类型/功能位置/短文本/实际结束日期/通知单）。seed 只改变参数数值，上述预期结论不变。

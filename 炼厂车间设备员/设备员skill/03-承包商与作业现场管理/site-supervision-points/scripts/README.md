@@ -90,7 +90,7 @@ R.riskLevel({types:['hotwork'], hazards:['flammable'], mediumKnown:true, comboCo
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
+node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 ```
 
 产出 `sample-scenarios.json`（5 个可直接运行的场景参数，场景 1 带 `--level 一级用火`）与 `sample-work-plan.xlsx`（作业许可系统导出列名风格的台账：许可证编号/作业类别/作业级别/作业地点/属地监护人/作业单位监护人/属地确认人，**供人工对照抄参数，脚本不读取**）。

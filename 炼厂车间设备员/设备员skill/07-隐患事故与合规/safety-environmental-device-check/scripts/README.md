@@ -54,7 +54,7 @@ node "<技能目录>/scripts/facility.js" \
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
+node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 ```
 
 生成 4 份样例：主设施台账（七类设施、六种归档）、失效整改记录、系统导出风格变体（标题行+别名+合计行）、SAP/EM 导出列名变体（功能位置/设备描述/装置/检验类型…）。

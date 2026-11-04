@@ -81,4 +81,4 @@ metadata:
 | `scripts/selftest.js` | 自测：覆盖多源合并、隐患来源、SAP 列名、未判定不默认、疑似重复、模板列名不匹配等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `assets/templates/rollup-template.md` | 申报稿模板（{{占位符}}） | 成文时 |
 | `references/sample-output.md` | 风格示范产出（数字均为虚构） | 拿不准申报稿风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/02-缺陷报修与检修管理/maintenance-demand-rollup/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

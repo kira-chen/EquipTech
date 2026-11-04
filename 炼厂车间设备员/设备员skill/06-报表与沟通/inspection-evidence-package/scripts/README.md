@@ -79,7 +79,7 @@ node scripts/docx2text.js --input <检查通知.docx>
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>]
+node scripts/make-sample.js [--seed <n>]
 ```
 
 生成 8 份样例：主检查表（10 项，含标题行与检查类别列）、主资料清单、齐全变体（检查表+清单）、

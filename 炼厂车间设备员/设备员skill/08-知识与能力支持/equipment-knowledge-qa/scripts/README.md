@@ -68,7 +68,7 @@ node "<技能目录>/scripts/qa.js" \
 ## make-sample.js
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>]
+node scripts/make-sample.js [--seed <n>]
 ```
 
 生成一套厂内资料样例：`sample-docs/` 下含 `.md` 检修规程（既有机械密封原理描述、也有力矩与周期数值）、`.docx` 车间设备管理规定（本厂规定条款，缺陷按 A/B/C 三级）、`.md` 培训教材（纯原理、**刻意不含数值**）、伪 PDF 装配图（验证无文字层与 PDF 前置提示）、`.xlsx` 设备台账（SAP PM 导出列名：功能位置/设备描述/型号编号/制造商/开始日期，验证表格文件不作资料原文）。

@@ -73,7 +73,7 @@ node "<技能目录>/scripts/intake.js" \
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>]
+node scripts/make-sample.js [--seed <n>]
 ```
 
 生成 6 份样例：主台账（车间自维护列名，含合计行）、别名列头台账变体、SAP PM 技术对象清单（功能位置 / 设备 / 设备描述 / 对象类型 / 制造商 / 型号编号 / 制造商序列号 / 建造年份 / 设备代码 / 工厂区段 / ABC标识）、泵 / 电机 / 容器三份识别结果 JSON（全部字段带 raw，容器样例含设备代码且故意漏抄 1 项 raw）。

@@ -452,7 +452,7 @@ eq(r.s.changeType, '设备设施变更', 'Q8 末行摘要含变更类型');
 }
 
 // ============ S. 2026-11-04 核查补充：类别识别与材质牌号口径 ============
-// S1~S4：examples 用例 9 不带 --category，「维保单位 甲公司 → 乙公司」须识别为管理变更（原先只认「维保单位更换」）
+// S1~S4：演示case 用例 9 不带 --category，「维保单位 甲公司 → 乙公司」须识别为管理变更（原先只认「维保单位更换」）
 eq(R.classifyCategory('维保单位 甲公司 维保单位 乙公司'), 'management', 'S1 「维保单位 甲公司→乙公司」识别为管理变更');
 r = run(['--tag', '车间', '--before', '维保单位 甲公司', '--after', '维保单位 乙公司'], 's-mg');
 ok(r.j.category === 'management' && r.j.ruleId === 'U6', `S2 用例 9 无 --category 判管理变更 U6（实际 ${r.j.category}/${r.j.ruleId}）`);

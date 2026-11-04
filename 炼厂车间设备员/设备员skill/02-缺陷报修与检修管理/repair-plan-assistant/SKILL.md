@@ -80,4 +80,4 @@ metadata:
 | `scripts/selftest.js` | 自测：覆盖类型不覆盖、规程冲突、范围不清、分级别名、JSA/HSE 占位、新增类型等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `assets/templates/plan-template.md` | 方案模板（{{占位符}}） | 成文时 |
 | `references/sample-output.md` | 风格示范产出（内容均为虚构） | 拿不准方案风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/02-缺陷报修与检修管理/repair-plan-assistant/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

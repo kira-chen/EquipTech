@@ -68,7 +68,7 @@ S.TYPE_PATTERNS;                  // 设备类型识别表（与 training-materi
 ## make-sample.js
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>]
+node scripts/make-sample.js [--seed <n>]
 ```
 
 生成三个样例：`sample-equipment-list.xlsx`（覆盖 6 类设备，含 1 类不在覆盖范围的加热炉）、`sample-no-type.xlsx`（缺类型列）、`sample-sap-export.xlsx`（SAP PM 导出列名：功能位置 / 设备 / 设备描述 / 对象类型 / 工厂区段 / 维护工厂）。

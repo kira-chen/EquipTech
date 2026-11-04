@@ -52,7 +52,7 @@ node "<技能目录>/scripts/retrieve.js" \
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>]
+node scripts/make-sample.js [--seed <n>]
 ```
 
 生成 6 份样例：主案例库（16 条，泵 5 / 压缩机 3 / 大机组 3 / 换热器 3 / 阀门 2）、系统导出风格变体、SAP PM 通知单导出（IW28 列名）、Word 表格案例库（docx）、无现象描述变体、仅泵类变体。

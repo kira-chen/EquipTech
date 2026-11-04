@@ -77,4 +77,4 @@ metadata:
 | `scripts/selftest.js` | 自测：覆盖资料不足、题量不匹配、无出处拦截、否定式不改数值、SAP 列名等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `assets/templates/training-template.md` | 三份材料的模板（{{占位符}}） | 成文时 |
 | `references/sample-output.md` | 风格示范产出（内容均为虚构） | 拿不准材料风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/08-知识与能力支持/training-material-generator/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

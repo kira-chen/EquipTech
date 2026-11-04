@@ -78,4 +78,4 @@ metadata:
 | `scripts/selftest.js` | 自测：覆盖不配对、区间重叠、期初累计、日历周期、时序表、SAP 列名等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `assets/templates/runtime-report-template.md` | 报告版式参考（占位符与 runtime.json 键同名；脚本不读模板） | 用户要求调整版式时 |
 | `references/sample-output.md` | 风格示范产出（数字均为虚构，不对应任何输入） | 拿不准报告风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/01-日常运行监控与巡检/runtime-hours-tracker/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

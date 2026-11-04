@@ -98,7 +98,7 @@ node "<技能目录>/scripts/merge-report.js" --result "<源技能 result.json>"
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>]
+node scripts/make-sample.js [--seed <n>]
 ```
 
 生成虚构的检修方案 `sample-overhaul-plan.json`（E-1201 换热器检修，按源技能 plan-schema 填写），再**调用依赖技能 `check.js` 跑出真实 `sample-overhaul-result.json`**（3 缺失 / 5 建议完善 / 9 未判定 / 36 已有；规则号、原文与规则库同源，不手写），另生成 summary 不一致变体（must_fix 改写为 5）、车间侧 notes.json 正常与非法变体，并复制依赖技能的泵检修方案 docx 样例。seed 只改方案编号尾号、工期、承修单位与人名，计数结论不变。**找不到依赖技能时 ok:false 退出 1**（不手写替代品）。

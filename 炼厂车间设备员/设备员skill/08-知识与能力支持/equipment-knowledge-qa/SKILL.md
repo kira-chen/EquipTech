@@ -72,4 +72,4 @@ metadata:
 | `scripts/README.md` | 脚本参数与产出说明 | 运行脚本前 |
 | `scripts/selftest.js` | 自测：覆盖数值类问题拦截、资料未命中、PDF 前置提示、通用原理段扫描等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `references/sample-output.md` | 风格示范回答（含三类回答的标注示例） | 拿不准回答风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/08-知识与能力支持/equipment-knowledge-qa/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |

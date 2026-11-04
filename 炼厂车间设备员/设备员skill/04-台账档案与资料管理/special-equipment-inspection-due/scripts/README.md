@@ -53,7 +53,7 @@ node "<技能目录>/scripts/inspection.js" \
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
+node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 ```
 
 生成 4 份样例：主台账（车间自维护列名，含「上次年度检查日期」列与「储罐」行）、整改项清单、特种设备平台 / SAP PM 导出风格变体（功能位置 / 设备 / 设备描述 / 设备品种 / 设备代码 / 使用登记证编号 / 检验机构 / 检验类型 / 年度检查日期 / 工厂区段，含标题行与合计行）、全部在周期内变体。

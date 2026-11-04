@@ -53,7 +53,7 @@ node "<技能目录>/scripts/rotation.js" \
 ## make-sample.js —— 样例生成
 
 ```bash
-node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
+node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 ```
 
 生成 3 份样例：主样例（车间台账列名，含机组号、备机状态、切至位号）、仅台账变体、EM/SAP 导出风格变体（机组编号、设备描述、装置名称、功能位置、切换后主用、标题行与合计行）。

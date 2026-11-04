@@ -536,20 +536,22 @@ ok(al.records.every((x) => x.orderNo === ''), '23.3 裸「编号」列不再被�
 ok(/【注意】/.test(r.md) && !/[✅⚠️❌]/.test(r.md), '23.4 md 用【注意】提示且不含 emoji');
 
 
-// ================================================================ 24. examples 样例预期计数（目录不存在则跳过）
-const EX = path.join(__dirname, '..', 'examples');
+// ================================================================ 24. 演示case 样例预期计数（目录不存在则跳过）
+// 演示样例：仓库内在 炼厂车间设备员/演示case/<分类>/<技能>/，开发包内在技能目录 examples/
+const skillsRoot = path.resolve(__dirname, '../../..');
+const EX = path.basename(skillsRoot) === '设备员skill' ? path.join(skillsRoot, '..', '演示case', path.relative(skillsRoot, path.resolve(__dirname, '..'))) : path.join(__dirname, '..', 'examples');
 if (fs.existsSync(path.join(EX, 'sample-failures-2026-09-21.xlsx'))) {
   r = run(path.join(EX, 'sample-failures-2026-09-21.xlsx'), [], 'ex-main');
-  ok(r.summary.counts.records === 14 && r.summary.counts.valid === 12 && r.summary.counts.repeatEquipment === 3 && r.summary.counts.modelGroups === 1 && r.summary.counts.shortening === 1 && r.summary.counts.uninformative === 2, '24.1 examples 主样例：14 条/12 条参与/重复 3 台/共性 1 组/缩短 1 台/无信息 2 条');
+  ok(r.summary.counts.records === 14 && r.summary.counts.valid === 12 && r.summary.counts.repeatEquipment === 3 && r.summary.counts.modelGroups === 1 && r.summary.counts.shortening === 1 && r.summary.counts.uninformative === 2, '24.1 演示case 主样例：14 条/12 条参与/重复 3 台/共性 1 组/缩短 1 台/无信息 2 条');
   r = run(`${path.join(EX, 'sample-failures-2026-09-21.xlsx')},${path.join(EX, 'sample-failures-unit2-2026-09-21.xlsx')}`, ['--ledger', path.join(EX, 'sample-equip-ledger.xlsx')], 'ex-multi');
-  ok(r.summary.counts.files === 2 && r.summary.counts.valid === 14 && r.json.byModel.length === 1 && r.json.byModel[0].equipmentCount === 3 && r.json.byModel[0].count === 4, '24.2 examples 两装置文件合并：共性故障 3 台 4 次');
+  ok(r.summary.counts.files === 2 && r.summary.counts.valid === 14 && r.json.byModel.length === 1 && r.json.byModel[0].equipmentCount === 3 && r.json.byModel[0].count === 4, '24.2 演示case 两装置文件合并：共性故障 3 台 4 次');
   r = run(path.join(EX, 'sample-sap-notifications.xlsx'), [], 'ex-sap');
-  ok(r.summary.counts.valid === 6 && r.summary.counts.withCode === 6 && r.summary.counts.uninformative === 0 && r.summary.counts.repeatEquipment === 2, '24.3 examples SAP 通知单：6 条带代码、无信息 0、重复 2 台');
-  ok(r.json.byEquipment.find((x) => x.tag === 'P-2201A').hits.some((h) => h.ruleId === 'D2' && h.byCode && h.count === 3), '24.4 examples P-2201A 按 LEAK01 代码归为 3 次');
+  ok(r.summary.counts.valid === 6 && r.summary.counts.withCode === 6 && r.summary.counts.uninformative === 0 && r.summary.counts.repeatEquipment === 2, '24.3 演示case SAP 通知单：6 条带代码、无信息 0、重复 2 台');
+  ok(r.json.byEquipment.find((x) => x.tag === 'P-2201A').hits.some((h) => h.ruleId === 'D2' && h.byCode && h.count === 3), '24.4 演示case P-2201A 按 LEAK01 代码归为 3 次');
   r = run(path.join(EX, 'sample-vague-desc.xlsx'), [], 'ex-vague');
-  ok(r.summary.counts.uninformative === 4 && r.summary.counts.repeatEquipment === 0, '24.5 examples 全无信息样例不判重复');
+  ok(r.summary.counts.uninformative === 4 && r.summary.counts.repeatEquipment === 0, '24.5 演示case 全无信息样例不判重复');
   r = run(path.join(EX, 'sample-mes-export.xlsx'), [], 'ex-mes');
-  ok(r.summary.counts.valid === 2 && r.summary.counts.outOfRange === 1 && r.summary.counts.repeatEquipment === 1, '24.6 examples MES 导出：2 条有效、1 条区间外、1 台重复');
+  ok(r.summary.counts.valid === 2 && r.summary.counts.outOfRange === 1 && r.summary.counts.repeatEquipment === 1, '24.6 演示case MES 导出：2 条有效、1 条区间外、1 台重复');
 }
 
 // ================================================================ 输出

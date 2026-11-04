@@ -83,4 +83,4 @@ metadata:
 | `scripts/selftest.js` | 自测：覆盖时间戳不一致、数据缺口、窗口越界、SAP 列名、C5 推论句式等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
 | `assets/templates/investigation-template.md` | 调查框架模板（{{占位符}} 与 investigation.json 键一致） | 成文时 |
 | `references/sample-output.md` | 风格示范产出（内容均为虚构） | 拿不准框架风格时 |
-| `examples/` | 回归测试数据（仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/07-隐患事故与合规/failure-investigation-assistant/`） | 回归测试数据，发布包不含 | 目录不存在则跳过 |
