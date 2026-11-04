@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="128" height="128">
+  <defs>
+    <linearGradient id="bg-failure-investigation-assistant" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#C084FC"/><stop offset="1" stop-color="#7E22CE"/></linearGradient>
+    <linearGradient id="hl-failure-investigation-assistant" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg-failure-investigation-assistant)"/>
+  <rect width="512" height="512" rx="112" fill="url(#hl-failure-investigation-assistant)"/>
+    <line x1="104" y1="256" x2="352" y2="256" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M352 196 L416 256 L352 316 Z" fill="#fff" stroke="#fff" stroke-width="16" stroke-linejoin="round"/>
+    <line x1="168" y1="256" x2="124" y2="160" fill="none" stroke="#fff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/><line x1="168" y1="256" x2="124" y2="352" fill="none" stroke="#fff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="248" y1="256" x2="204" y2="160" fill="none" stroke="#fff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/><line x1="248" y1="256" x2="204" y2="352" fill="none" stroke="#fff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="328" y1="256" x2="284" y2="160" fill="none" stroke="#fff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/><line x1="328" y1="256" x2="284" y2="352" fill="none" stroke="#fff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

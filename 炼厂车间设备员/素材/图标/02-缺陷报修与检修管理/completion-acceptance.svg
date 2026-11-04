@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="128" height="128">
+  <defs>
+    <linearGradient id="bg-completion-acceptance" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#34D399"/><stop offset="1" stop-color="#047857"/></linearGradient>
+    <linearGradient id="hl-completion-acceptance" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg-completion-acceptance)"/>
+  <rect width="512" height="512" rx="112" fill="url(#hl-completion-acceptance)"/>
+    <path d="M206 314 L180 414 L218 398 L242 428 L262 340 Z" fill="#fff" opacity=".8"/>
+    <path d="M306 314 L332 414 L294 398 L270 428 L250 340 Z" fill="#fff" opacity=".8"/>
+    <circle cx="256" cy="220" r="118" fill="#fff"/>
+    <polyline points="198,222 240,264 318,182" fill="none" stroke="#047857" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="128" height="128">
+  <defs>
+    <linearGradient id="bg-repair-plan-assistant" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#A3E635"/><stop offset="1" stop-color="#4D7C0F"/></linearGradient>
+    <linearGradient id="hl-repair-plan-assistant" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg-repair-plan-assistant)"/>
+  <rect width="512" height="512" rx="112" fill="url(#hl-repair-plan-assistant)"/>
+    <rect x="112" y="100" width="210" height="276" rx="28" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="158" y1="170" x2="276" y2="170" fill="none" stroke="#fff" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="158" y1="226" x2="250" y2="226" fill="none" stroke="#fff" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="158" y1="282" x2="210" y2="282" fill="none" stroke="#fff" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+    <g transform="rotate(45 336 336)"><path d="M358 228 A44 44 0 1 1 314 228" fill="none" stroke="#4D7C0F" stroke-width="58" stroke-linecap="round"/><line x1="336" y1="310" x2="336" y2="436" stroke="#4D7C0F" stroke-width="62" stroke-linecap="round"/><path d="M358 228 A44 44 0 1 1 314 228" fill="none" stroke="#fff" stroke-width="30" stroke-linecap="round"/><line x1="336" y1="310" x2="336" y2="436" stroke="#fff" stroke-width="34" stroke-linecap="round"/></g>
+</svg>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="128" height="128">
+  <defs>
+    <linearGradient id="bg-spare-parts-demand" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#A3E635"/><stop offset="1" stop-color="#4D7C0F"/></linearGradient>
+    <linearGradient id="hl-spare-parts-demand" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg-spare-parts-demand)"/>
+  <rect width="512" height="512" rx="112" fill="url(#hl-spare-parts-demand)"/>
+    <path d="M244 112 L372 172 V316 L244 376 L116 316 V172 Z" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="116,172 244,232 372,172" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="244" y1="232" x2="244" y2="376" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="372" cy="368" r="56" fill="#fff" stroke="#4D7C0F" stroke-width="14"/>
+    <line x1="372" y1="342" x2="372" y2="394" fill="none" stroke="#4D7C0F" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/><line x1="346" y1="368" x2="398" y2="368" fill="none" stroke="#4D7C0F" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

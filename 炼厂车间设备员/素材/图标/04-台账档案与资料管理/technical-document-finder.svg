@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="128" height="128">
+  <defs>
+    <linearGradient id="bg-technical-document-finder" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#34D399"/><stop offset="1" stop-color="#047857"/></linearGradient>
+    <linearGradient id="hl-technical-document-finder" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg-technical-document-finder)"/>
+  <rect width="512" height="512" rx="112" fill="url(#hl-technical-document-finder)"/>
+    <path d="M256 156 C214 126 160 120 108 132 V372 C160 360 214 366 256 396 C298 366 352 360 404 372 V132 C352 120 298 126 256 156 Z" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="256" y1="156" x2="256" y2="396" fill="none" stroke="#fff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="150" y1="200" x2="218" y2="200" fill="none" stroke="#fff" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" opacity=".75"/>
+    <line x1="150" y1="250" x2="218" y2="250" fill="none" stroke="#fff" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" opacity=".75"/>
+    <line x1="150" y1="300" x2="200" y2="300" fill="none" stroke="#fff" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" opacity=".75"/>
+    <line x1="294" y1="200" x2="362" y2="200" fill="none" stroke="#fff" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" opacity=".75"/>
+    <rect x="282" y="228" width="92" height="44" rx="12" fill="#fff"/>
+    <line x1="294" y1="300" x2="350" y2="300" fill="none" stroke="#fff" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" opacity=".75"/>
+</svg>

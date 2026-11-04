@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="128" height="128">
+  <defs>
+    <linearGradient id="bg-repeat-failure-detector" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F87171"/><stop offset="1" stop-color="#B91C1C"/></linearGradient>
+    <linearGradient id="hl-repeat-failure-detector" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg-repeat-failure-detector)"/>
+  <rect width="512" height="512" rx="112" fill="url(#hl-repeat-failure-detector)"/>
+    <defs><marker id="ah-repeat" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="3" markerHeight="3" orient="auto-start-reverse">
+      <path d="M1 1 L9 5 L1 9" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+    <path d="M143 215 A120 120 0 0 1 348 179" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#ah-repeat)"/>
+    <path d="M369 297 A120 120 0 0 1 164 333" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#ah-repeat)"/>
+    <polygon points="272,166 204,270 248,270 236,350 308,244 262,244" fill="#fff" stroke="#fff" stroke-width="8" stroke-linejoin="round"/>
+</svg>

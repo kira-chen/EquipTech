@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="128" height="128">
+  <defs>
+    <linearGradient id="bg-cross-operation-conflict" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FB7185"/><stop offset="1" stop-color="#BE123C"/></linearGradient>
+    <linearGradient id="hl-cross-operation-conflict" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg-cross-operation-conflict)"/>
+  <rect width="512" height="512" rx="112" fill="url(#hl-cross-operation-conflict)"/>
+    <line x1="130" y1="382" x2="372" y2="140" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="300,140 372,140 372,212" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="382" y1="382" x2="140" y2="140" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="212,140 140,140 140,212" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="256" cy="256" r="50" fill="#fff" stroke="#BE123C" stroke-width="14"/>
+    <line x1="256" y1="232" x2="256" y2="260" fill="none" stroke="#BE123C" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="256" cy="284" r="9" fill="#BE123C"/>
+</svg>

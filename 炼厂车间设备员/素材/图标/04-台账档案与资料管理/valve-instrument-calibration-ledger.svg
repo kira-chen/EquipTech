@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="128" height="128">
+  <defs>
+    <linearGradient id="bg-valve-instrument-calibration-ledger" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F87171"/><stop offset="1" stop-color="#B91C1C"/></linearGradient>
+    <linearGradient id="hl-valve-instrument-calibration-ledger" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg-valve-instrument-calibration-ledger)"/>
+  <rect width="512" height="512" rx="112" fill="url(#hl-valve-instrument-calibration-ledger)"/>
+    <line x1="104" y1="336" x2="408" y2="336" fill="none" stroke="#fff" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+    <polygon points="160,280 256,336 160,392" fill="#fff" stroke="#fff" stroke-width="16" stroke-linejoin="round"/>
+    <polygon points="352,280 256,336 352,392" fill="#fff" stroke="#fff" stroke-width="16" stroke-linejoin="round"/>
+    <line x1="256" y1="336" x2="256" y2="212" fill="none" stroke="#fff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="256,212 222,200 290,180 222,160 290,140 256,128" fill="none" stroke="#fff" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="216" y="102" width="80" height="26" rx="10" fill="#fff"/>
+</svg>

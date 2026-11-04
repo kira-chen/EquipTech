@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="128" height="128">
+  <defs>
+    <linearGradient id="bg-equipment-weekly-monthly-report" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#818CF8"/><stop offset="1" stop-color="#4338CA"/></linearGradient>
+    <linearGradient id="hl-equipment-weekly-monthly-report" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg-equipment-weekly-monthly-report)"/>
+  <rect width="512" height="512" rx="112" fill="url(#hl-equipment-weekly-monthly-report)"/>
+    <rect x="112" y="132" width="288" height="264" rx="32" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="112" y1="208" x2="400" y2="208" fill="none" stroke="#fff" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="184" y1="104" x2="184" y2="156" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="328" y1="104" x2="328" y2="156" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="150" y="234" width="36" height="34" rx="8" fill="#fff" opacity=".45"/><rect x="208" y="234" width="36" height="34" rx="8" fill="#fff" opacity=".45"/><rect x="266" y="234" width="36" height="34" rx="8" fill="#fff" opacity=".45"/><rect x="324" y="234" width="36" height="34" rx="8" fill="#fff" opacity=".45"/>
+    <rect x="150" y="284" width="36" height="34" rx="8" fill="#fff"/><rect x="208" y="284" width="36" height="34" rx="8" fill="#fff"/><rect x="266" y="284" width="36" height="34" rx="8" fill="#fff"/><rect x="324" y="284" width="36" height="34" rx="8" fill="#fff"/>
+    <rect x="150" y="334" width="36" height="34" rx="8" fill="#fff" opacity=".45"/><rect x="208" y="334" width="36" height="34" rx="8" fill="#fff" opacity=".45"/><rect x="266" y="334" width="36" height="34" rx="8" fill="#fff" opacity=".45"/><rect x="324" y="334" width="36" height="34" rx="8" fill="#fff" opacity=".45"/>
+</svg>

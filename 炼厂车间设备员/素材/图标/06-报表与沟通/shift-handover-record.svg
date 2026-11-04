@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="128" height="128">
+  <defs>
+    <linearGradient id="bg-shift-handover-record" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#34D399"/><stop offset="1" stop-color="#047857"/></linearGradient>
+    <linearGradient id="hl-shift-handover-record" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg-shift-handover-record)"/>
+  <rect width="512" height="512" rx="112" fill="url(#hl-shift-handover-record)"/>
+    <line x1="120" y1="140" x2="372" y2="140" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="332,100 372,140 332,180" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="392" y1="372" x2="140" y2="372" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="180,332 140,372 180,412" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="200" y="196" width="112" height="120" rx="18" fill="#fff"/>
+    <line x1="226" y1="232" x2="286" y2="232" fill="none" stroke="#047857" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="226" y1="258" x2="286" y2="258" fill="none" stroke="#047857" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="226" y1="284" x2="264" y2="284" fill="none" stroke="#047857" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="128" height="128">
+  <defs>
+    <linearGradient id="bg-overhaul-process-check-bridge" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#60A5FA"/><stop offset="1" stop-color="#1D4ED8"/></linearGradient>
+    <linearGradient id="hl-overhaul-process-check-bridge" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg-overhaul-process-check-bridge)"/>
+  <rect width="512" height="512" rx="112" fill="url(#hl-overhaul-process-check-bridge)"/>
+    <rect x="112" y="100" width="200" height="268" rx="28" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="158" y1="170" x2="266" y2="170" fill="none" stroke="#fff" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="158" y1="226" x2="240" y2="226" fill="none" stroke="#fff" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="158" y1="282" x2="214" y2="282" fill="none" stroke="#fff" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M346 236 L424 262 V318 C424 366 392 398 346 416 C300 398 268 366 268 318 V262 Z" fill="#fff" stroke="#1D4ED8" stroke-width="14" stroke-linejoin="round"/>
+    <polyline points="314,322 338,346 380,300" fill="none" stroke="#1D4ED8" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

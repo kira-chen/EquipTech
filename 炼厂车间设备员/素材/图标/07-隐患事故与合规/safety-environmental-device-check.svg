@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="128" height="128">
+  <defs>
+    <linearGradient id="bg-safety-environmental-device-check" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4ADE80"/><stop offset="1" stop-color="#15803D"/></linearGradient>
+    <linearGradient id="hl-safety-environmental-device-check" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg-safety-environmental-device-check)"/>
+  <rect width="512" height="512" rx="112" fill="url(#hl-safety-environmental-device-check)"/>
+    <path d="M256 104 L392 152 V256 C392 336 334 386 256 412 C178 386 120 336 120 256 V152 Z" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M256 330 C196 296 192 228 256 176 C320 228 316 296 256 330 Z" fill="#fff"/>
+    <line x1="256" y1="214" x2="256" y2="316" fill="none" stroke="#15803D" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="256" y1="330" x2="256" y2="360" fill="none" stroke="#fff" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

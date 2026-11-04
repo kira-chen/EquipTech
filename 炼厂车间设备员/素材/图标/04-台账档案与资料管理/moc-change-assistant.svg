@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="128" height="128">
+  <defs>
+    <linearGradient id="bg-moc-change-assistant" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#A78BFA"/><stop offset="1" stop-color="#6D28D9"/></linearGradient>
+    <linearGradient id="hl-moc-change-assistant" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg-moc-change-assistant)"/>
+  <rect width="512" height="512" rx="112" fill="url(#hl-moc-change-assistant)"/>
+    <rect x="104" y="112" width="140" height="140" rx="28" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="268" y="260" width="140" height="140" rx="28" fill="#fff"/>
+    <path d="M272 182 H306 Q338 182 338 214 V236" fill="none" stroke="#fff" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="310,208 338,236 366,208" fill="none" stroke="#fff" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M242 330 H206 Q174 330 174 298 V280" fill="none" stroke="#fff" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" opacity=".7"/>
+    <polyline points="146,306 174,278 202,306" fill="none" stroke="#fff" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" opacity=".7"/>
+</svg>

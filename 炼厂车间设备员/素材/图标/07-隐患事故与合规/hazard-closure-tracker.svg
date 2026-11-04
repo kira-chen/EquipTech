@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="128" height="128">
+  <defs>
+    <linearGradient id="bg-hazard-closure-tracker" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FB923C"/><stop offset="1" stop-color="#C2410C"/></linearGradient>
+    <linearGradient id="hl-hazard-closure-tracker" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg-hazard-closure-tracker)"/>
+  <rect width="512" height="512" rx="112" fill="url(#hl-hazard-closure-tracker)"/>
+    <defs><marker id="ah-hazard" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="3" markerHeight="3" orient="auto-start-reverse">
+      <path d="M1 1 L9 5 L1 9" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+    <path d="M351 176 A124 124 0 1 1 234 134" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#ah-hazard)"/>
+    <polyline points="196,262 240,306 320,214" fill="none" stroke="#fff" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

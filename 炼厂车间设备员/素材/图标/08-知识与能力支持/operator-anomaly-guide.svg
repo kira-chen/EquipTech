@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="128" height="128">
+  <defs>
+    <linearGradient id="bg-operator-anomaly-guide" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FB923C"/><stop offset="1" stop-color="#C2410C"/></linearGradient>
+    <linearGradient id="hl-operator-anomaly-guide" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg-operator-anomaly-guide)"/>
+  <rect width="512" height="512" rx="112" fill="url(#hl-operator-anomaly-guide)"/>
+    <line x1="256" y1="112" x2="256" y2="400" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="196" y1="404" x2="316" y2="404" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M140 140 H340 L380 180 L340 220 H140 Q124 220 124 204 V156 Q124 140 140 140 Z" fill="#fff" stroke="#fff" stroke-width="8" stroke-linejoin="round"/>
+    <line x1="176" y1="164" x2="176" y2="184" fill="none" stroke="#C2410C" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="176" cy="202" r="7" fill="#C2410C"/>
+    <line x1="212" y1="180" x2="320" y2="180" fill="none" stroke="#C2410C" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M372 248 H172 L132 288 L172 328 H372 Q388 328 388 312 V264 Q388 248 372 248 Z" fill="#C2410C" stroke="#fff" stroke-width="26" stroke-linejoin="round"/>
+</svg>

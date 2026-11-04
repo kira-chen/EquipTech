@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="128" height="128">
+  <defs>
+    <linearGradient id="bg-special-equipment-inspection-due" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FB923C"/><stop offset="1" stop-color="#C2410C"/></linearGradient>
+    <linearGradient id="hl-special-equipment-inspection-due" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg-special-equipment-inspection-due)"/>
+  <rect width="512" height="512" rx="112" fill="url(#hl-special-equipment-inspection-due)"/>
+    <rect x="176" y="78" width="32" height="30" rx="8" fill="#fff"/>
+    <rect x="128" y="104" width="128" height="272" rx="64" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="142" y1="240" x2="242" y2="240" fill="none" stroke="#fff" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" opacity=".6"/>
+    <line x1="158" y1="380" x2="146" y2="414" fill="none" stroke="#fff" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="226" y1="380" x2="238" y2="414" fill="none" stroke="#fff" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="268" y="252" width="148" height="148" rx="26" fill="#fff" stroke="#C2410C" stroke-width="14"/>
+    <line x1="275" y1="298" x2="409" y2="298" stroke="#C2410C" stroke-width="10"/>
+    <line x1="342" y1="322" x2="342" y2="352" fill="none" stroke="#C2410C" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="342" cy="376" r="9" fill="#C2410C"/>
+</svg>

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="128" height="128">
+  <defs>
+    <linearGradient id="bg-contractor-performance-log" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FBBF24"/><stop offset="1" stop-color="#B45309"/></linearGradient>
+    <linearGradient id="hl-contractor-performance-log" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg-contractor-performance-log)"/>
+  <rect width="512" height="512" rx="112" fill="url(#hl-contractor-performance-log)"/>
+    <path d="M152 262 C152 188 198 140 256 140 C314 140 360 188 360 262 Z" fill="#fff"/>
+    <line x1="256" y1="160" x2="256" y2="226" fill="none" stroke="#B45309" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="116" y="252" width="280" height="42" rx="21" fill="#fff"/>
+    <polygon points="168,330 178,353 202,355 183,371 189,395 168,382 147,395 153,371 134,355 158,353" fill="#fff" stroke="#fff" stroke-width="8" stroke-linejoin="round"/><polygon points="256,330 266,353 290,355 271,371 277,395 256,382 235,395 241,371 222,355 246,353" fill="#fff" stroke="#fff" stroke-width="8" stroke-linejoin="round"/><polygon points="344,330 354,353 378,355 359,371 365,395 344,382 323,395 329,371 310,355 334,353" fill="#fff" stroke="#fff" stroke-width="8" stroke-linejoin="round" opacity=".45"/>
+</svg>

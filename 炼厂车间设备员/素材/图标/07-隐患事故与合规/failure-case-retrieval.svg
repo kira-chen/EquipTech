@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="128" height="128">
+  <defs>
+    <linearGradient id="bg-failure-case-retrieval" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#60A5FA"/><stop offset="1" stop-color="#1D4ED8"/></linearGradient>
+    <linearGradient id="hl-failure-case-retrieval" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg-failure-case-retrieval)"/>
+  <rect width="512" height="512" rx="112" fill="url(#hl-failure-case-retrieval)"/>
+    <rect x="160" y="104" width="232" height="168" rx="24" fill="#fff" opacity=".45"/>
+    <rect x="112" y="148" width="232" height="168" rx="24" fill="#fff"/>
+    <line x1="148" y1="196" x2="260" y2="196" fill="none" stroke="#1D4ED8" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="148" y1="236" x2="300" y2="236" fill="none" stroke="#1D4ED8" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="148" y1="276" x2="220" y2="276" fill="none" stroke="#1D4ED8" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="383" y1="383" x2="433" y2="433" stroke="#1D4ED8" stroke-width="60" stroke-linecap="round"/>
+    <circle cx="344" cy="344" r="74" fill="#1D4ED8"/>
+    <line x1="383" y1="383" x2="433" y2="433" stroke="#fff" stroke-width="32" stroke-linecap="round"/>
+    <circle cx="344" cy="344" r="54" fill="none" stroke="#fff" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
