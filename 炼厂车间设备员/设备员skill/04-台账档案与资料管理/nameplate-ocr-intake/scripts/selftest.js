@@ -469,6 +469,74 @@ ok(!/[✅⚠️❌]/.test(r.md), '17.1 md 不含 emoji');
 ok(r.csv.charCodeAt(0) === 0xfeff && r.csv.includes(DECL), '17.2 csv 带 BOM 且含新声明行');
 ok(r.summary.counts.rawMissing === 9, '17.3 旧格式（无 raw）全部字段标 rawMissing 并 warning（不中断）');
 
+// ================================================================ 18. 平台 MCP 台账口径（CSV 目录；制造日期为完整日期、数值去尾零、材质按部位合写）
+// 设备资产管理 get_equipment_ledger 导出：制造日期「2015-02-01」、设计压力「2.5」、材质「泵体 ZG230-450 / 叶轮 ZG1Cr13」
+const mcpDir = path.join(work, 'mcp-ledger');
+fs.mkdirSync(mcpDir, { recursive: true });
+fs.writeFileSync(path.join(mcpDir, '设备台账.csv'), '﻿' + [
+  '位号,设备编号,设备名称,设备类型,规格型号,制造厂,出厂编号,制造日期,投用日期,材质,执行标准,设备代码,功率(kW),扬程(m),设计压力(MPa),设计温度(℃)',
+  'P-01,10002100,进料泵,离心泵,OH2 150-400,北方石化泵业,176750,2015-02-01,2016-02-24,泵体 ZG230-450 / 叶轮 ZG1Cr13,API 610,,132,138,2.5,220',
+  'V-01,10002275,电脱盐罐,压力容器,DN3600×18000,江北压力容器厂,166751,2013-04-01,2014-04-03,Q345R,GB/T 150,2110-3701-2015-1259,,,2,150',
+].join('\r\n') + '\r\n', 'utf8');
+const mcpPump = (date, press, mat) => mkFields({ fields: [
+  F('型号', 'OH2 150-400', 'clear', { raw: 'OH2 150-400' }),
+  F('出厂编号', '176750', 'clear', { raw: '176750' }),
+  F('制造日期', date, 'clear', { raw: date }),
+  F('设计压力', press, 'clear', { unit: 'MPa', raw: `${press}MPa` }),
+  F('泵壳材质', mat, 'clear', { raw: mat }),
+] });
+const fm = (res, name) => (res.json.fields.find((f) => f.name === name) || {}).match;
+r = run(['--fields', mcpPump('2015.02', '2.50', 'ZG230-450'), '--tag', 'P-01', '--equip-type', '离心泵', '--ledger', mcpDir], 'mcp1');
+eq(r.summary.ok, true, '18.1 CSV 目录台账可读');
+eq(fm(r, '制造日期'), 'same', '18.2 铭牌制造日期「2015.02」与台账「2015-02-01」按铭牌精度（年月）比对为一致');
+eq(fm(r, '设计压力'), 'same', '18.3 铭牌「2.50」与台账「2.5」数值相等，不报冲突');
+eq(fm(r, '泵壳材质'), 'same', '18.4 泵壳材质与台账「泵体 ZG230-450 / 叶轮 ZG1Cr13」中泵体一段一致');
+eq(r.summary.counts.conflicts, 0, '18.5 格式差异不算冲突，0 冲突');
+ok(r.json.warnings.some((w) => w.includes('无须重复录入')), '18.6 全部一致时提示无须重复录入');
+r = run(['--fields', mcpPump('2015年2月', '2.5', 'ZG230-450'), '--tag', 'P-01', '--equip-type', '泵', '--ledger', mcpDir], 'mcp2');
+eq(fm(r, '制造日期'), 'same', '18.7 「2015年2月」与「2015-02-01」一致');
+r = run(['--fields', mcpPump('2015.03', '25', 'ZG1Cr13'), '--tag', 'P-01', '--equip-type', '泵', '--ledger', mcpDir], 'mcp3');
+eq(fm(r, '制造日期'), 'diff', '18.8 年月不同仍判不一致（不因放宽漏判）');
+eq(fm(r, '设计压力'), 'diff', '18.9 数值不等仍判不一致');
+eq((r.json.conflicts.find((c) => c.name === '设计压力') || {}).hint, '识别值与台账值相差 10 的整数倍，疑似小数点错位或漏位，优先核对识别是否有误', '18.10 设计压力 25 vs 2.5 提示疑似小数点错位');
+eq(fm(r, '泵壳材质'), 'diff', '18.11 泵壳材质与台账「叶轮」一段相同不算一致（不跨部位配对）');
+r = run(['--fields', mkFields({ fields: [F('制造日期', '2015-02-15', 'clear', { raw: '2015-02-15' })] }), '--tag', 'P-01', '--equip-type', '泵', '--ledger', mcpDir], 'mcp4');
+eq(fm(r, '制造日期'), 'diff', '18.12 铭牌精确到日且与台账日不同 → 不一致');
+r = run(['--fields', mkFields({ fields: [F('设计压力', '2.0', 'clear', { unit: 'MPa', raw: '2.0MPa' }), F('主体材质', 'Q345R', 'clear', { raw: 'Q345R' })] }), '--tag', 'V-01', '--equip-type', '压力容器', '--ledger', mcpDir], 'mcp5');
+eq(fm(r, '设计压力'), 'same', '18.13 容器铭牌「2.0」与台账「2」一致');
+eq(r.summary.equipType, '容器', '18.14 台账设备类型「压力容器」归入容器');
+// 新增建档（位号不在台账）：台账无对应列的字段同样进 unmapped，不因未命中而漏报
+r = run(['--fields', mkFields({ fields: [F('额定电压', '6000', 'clear', { unit: 'V', raw: '6000V' }), F('防爆标志', 'Ex db IIB T4 Gb', 'clear', { raw: 'Ex db IIB T4 Gb' }), F('额定功率', '250', 'clear', { unit: 'kW', raw: '250kW' })] }), '--tag', 'M-99', '--equip-type', '电机', '--ledger', mcpDir], 'mcpnew');
+eq(r.summary.tagExistsInLedger, false, '18.15 位号不在台账 → 新增建档');
+ok(r.json.unmapped.some((u) => u.name === '额定电压' && u.ledgerColumn === '电压(V)'), '18.16 新增建档时台账无「电压(V)」列 → 额定电压进 unmapped');
+ok(r.json.unmapped.some((u) => u.name === '防爆标志'), '18.17 新增建档时无对应台账列的字段进 unmapped');
+ok(!r.json.unmapped.some((u) => u.name === '额定功率'), '18.18 台账有对应列（功率(kW)）的字段不进 unmapped');
+eq(r.summary.counts.unmapped, 2, '18.19 新增建档 unmapped 计数');
+r = run(['--fields', basicFields, '--tag', 'A-01', '--equip-type', '空冷器'], 'aircool');
+eq(r.summary.equipType, '换热器', '18.20 台账设备类型「空冷器」归入换热器');
+r = run(['--fields', mkFields({ fields: [F('出厂编号', '0176750', 'clear', { raw: '0176750' })] }), '--tag', 'P-01', '--equip-type', '泵', '--ledger', mcpDir], 'mcpsn');
+eq(fm(r, '出厂编号'), 'diff', '18.21 编号列不按数值比：「0176750」与「176750」不一致');
+
+// ================================================================ 19. 台账制造日期带时分秒、材质部位名与材质紧挨着写（2026-11-04 复核补充）
+const mcpDir2 = path.join(work, 'mcp-ledger2');
+fs.mkdirSync(mcpDir2, { recursive: true });
+fs.writeFileSync(path.join(mcpDir2, '设备台账.csv'), '\ufeff' + [
+  '位号,设备名称,制造日期,材质,设计压力(MPa)',
+  'P-01,进料泵,2015-02-01 00:00:00,泵体铸铁 / 叶轮 ZG1Cr13,2.5',
+  'P-02,回流泵,2015-02-01T08:30,泵壳：HT250 / 叶轮 ZG1Cr13,2.5',
+].join('\r\n') + '\r\n', 'utf8');
+const pump19 = (date, mat) => mkFields({ fields: [F('制造日期', date, 'clear', { raw: date }), F('泵壳材质', mat, 'clear', { raw: mat })] });
+r = run(['--fields', pump19('2015.02', '铸铁'), '--tag', 'P-01', '--equip-type', '泵', '--ledger', mcpDir2], 'mcp19a');
+eq(fm(r, '制造日期'), 'same', '19.1 台账「2015-02-01 00:00:00」与铭牌「2015.02」一致（先去掉时分秒）');
+eq(fm(r, '泵壳材质'), 'same', '19.2 台账「泵体铸铁」（部位名与材质紧挨）与铭牌「铸铁」一致');
+eq(r.summary.counts.conflicts, 0, '19.3 两项格式差异不算冲突');
+r = run(['--fields', pump19('2015.03', 'ZG1Cr13'), '--tag', 'P-01', '--equip-type', '泵', '--ledger', mcpDir2], 'mcp19b');
+eq(fm(r, '制造日期'), 'diff', '19.4 去掉时分秒后年月不同仍判不一致');
+eq(fm(r, '泵壳材质'), 'diff', '19.5 部位前缀匹配仍不跨部位配对（叶轮一段相同不算一致）');
+r = run(['--fields', pump19('2015-02', 'HT250'), '--tag', 'P-02', '--equip-type', '泵', '--ledger', mcpDir2], 'mcp19c');
+eq(fm(r, '制造日期'), 'same', '19.6 台账「2015-02-01T08:30」去掉时刻后与「2015-02」一致');
+eq(fm(r, '泵壳材质'), 'same', '19.7 「泵壳：HT250」带冒号仍按部位前缀匹配');
+
 // ================================================================ 输出
 console.log(`\n${'='.repeat(56)}`);
 console.log(`nameplate-ocr-intake 自测：${pass} 通过，${fail} 失败`);

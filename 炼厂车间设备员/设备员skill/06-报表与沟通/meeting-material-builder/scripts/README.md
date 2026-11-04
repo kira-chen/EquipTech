@@ -21,7 +21,7 @@ node "<技能目录>/scripts/build.js" \
 | `--audience-spec` | 否 | 厂内层级名称，可带详略档位：`烯烃厂设备科`、`分厂领导:low`、`车间主任:medium`。名称只作展示，`:high|medium|low` 覆盖该层级默认详略 |
 | `--duration` | 是 | 汇报时长（分钟） |
 | `--weights` | 否 | 六个环节的时间权重，`开场:0.05,关键指标:0.3,主要工作:0.1,存在问题:0.2,需决策:0.3,下步打算:0.05`；须六项齐全且和为 1，否则报错。不传按听众层级默认权重 |
-| `--hide-tags` | 否（旗标） | 任何层级都去位号 / 工单号 / SAP 单号（保留设备名称）；`outline.json` 中的原文不受影响 |
+| `--hide-tags` | 否（旗标） | 任何层级都去位号 / 工单号 / SAP 单号（保留设备名称）；作用于存在问题、主要工作，以及 `--need-decision`、`--pending` 文本（`outline.json.needDecision[].text` 也是去位号后的文本，`tagsRemoved: true` 标记）；`outline.json` 的 `issues` 原文不受影响 |
 | `--out` | 否 | 输出目录，默认系统临时目录 `<os.tmpdir()>/mmb-out`，**建议始终传** |
 | `--topics` | 否 | 议题，逗号分隔；无数据支撑的议题写「需补充」 |
 | `--need-decision` | 否 | 需决策事项，分号或换行分隔 |
@@ -56,7 +56,7 @@ node "<技能目录>/scripts/build.js" \
 | `status.json` | inspection-data-digest | `byEquipment` + `abnormal` | 设备数、异常、未判定、漏检；异常项进问题项 |
 | `orders.json` | work-order-tracker | `byStatus` 或 `metrics.closeRate` | 工单总数、未闭环、超期、停滞、完成率；超期工单进问题项，责任方取 `vendor`（承修单位/工作中心），无 `vendor` 时才用 `owner` |
 | `defects.json` | defect-intake-grading | `counts.byLevel` + `defects` | 新增缺陷、各等级分布 |
-| `periodic.json` | equipment-weekly-monthly-report | `metrics` + `failures` + `dataGaps` | 指标键映射为中文（设备完好率 % / 静密封点泄漏率 ‰ / 大检修计划完成率 ……）；`dataGaps.recompute` 的指标与 `highlights` 进问题项；`basedOn` 数据覆盖进要点 |
+| `periodic.json` | equipment-weekly-monthly-report | `metrics` + `failures` + `dataGaps` | 指标键映射为中文（设备完好率 % / 静密封点泄漏率 ‰ / 大检修计划完成率 ……）；`dataGaps.recompute` 的指标与 `highlights` 进问题项；超期工单责任方写单位：`highlights[].unit` 或 `orders.overdueList[].workCenter` 有值时写工作中心，旧版只有「责任方 <责任人>」的、检修计划「责任人 <姓名>」的去掉人名并 warning；`basedOn` 数据覆盖进要点 |
 | `daily.json` | equipment-daily-report | `counts` + `status` + `orders` | counts 映射为中文（当日作业票、待验收工单……）；`special.list` 中异常的特护设备进问题项 |
 
 ### 退出码
@@ -98,4 +98,4 @@ node scripts/make-sample.js --out examples [--seed <n>]
 node scripts/selftest.js
 ```
 
-132 条断言，覆盖基础生成、数字不新增、听众层级差异（三档 + 旧称拒绝）、`--audience-spec` 名称与详略覆盖、`--weights`（生效 / 缺环节 / 和不为 1 / 未知环节 / 非数字）、`--hide-tags`、`slides` 提纲结构与不代拟、`periodic.json` / `daily.json` 中文标签映射与需复算指标进问题项、议题无数据不编造、不代拟、需决策与遗留、无法识别 JSON、隐患 JSON（按上游真实结构读 `metrics.closureRate`、兼容 `closeRate`、null 不补 0；已闭环重大隐患改列主要工作、不进存在问题）、工单责任方取承修单位不点人名、内容量匹配、参数校验、表格输入提示、提纲内容、不做责任归因、无 emoji。
+145 条断言，覆盖基础生成、数字不新增、听众层级差异（三档 + 旧称拒绝）、`--audience-spec` 名称与详略覆盖、`--weights`（生效 / 缺环节 / 和不为 1 / 未知环节 / 非数字）、`--hide-tags`、`slides` 提纲结构与不代拟、`periodic.json` / `daily.json` 中文标签映射与需复算指标进问题项（需复算指标即使上游带数也不进关键指标）、议题无数据不编造、不代拟、需决策与遗留、无法识别 JSON、隐患 JSON（按上游真实结构读 `metrics.closureRate`、兼容 `closeRate`、null 不补 0；已闭环重大隐患改列主要工作、不进存在问题）、工单责任方取承修单位不点人名（含 periodic.json 重点事项：有 `unit` / `workCenter` 写单位，只有责任人姓名的去掉并 warning）、公司层级需决策与遗留事项同样去位号、超期工单带设备名称与故障描述（公司层级去位号后仍可辨认）、内容量匹配、参数校验、表格输入提示、提纲内容、不做责任归因、无 emoji。

@@ -74,6 +74,7 @@ function main() {
   // ---------------- 设备范围
   const typeMap = new Map();      // 设备类型 -> [{tag,name,area}]
   const scopeTopics = [];         // --scope 中的自由主题（非设备类型）
+  const ledgerRecs = [];          // 台账有效设备 {type, tag, name, area}
   if (a.ledger) {
     if (!fs.existsSync(a.ledger)) throw new Error(`设备清单不存在: ${a.ledger}`);
     const book = loadBook(a.ledger);
@@ -91,12 +92,12 @@ function main() {
       if (!tag) { warnings.push(`工作表「设备台账」第${r._row}行 位号为空，已跳过`); continue; }
       const declared = C.str(r['设备类型']);
       const t = declared ? T.typeOf(declared) : T.typeOf(C.str(r['设备名称']));
-      if (!typeMap.has(t)) typeMap.set(t, []);
-      typeMap.get(t).push({ tag, name: C.str(r['设备名称']), area: C.str(r['区域']) });
+      ledgerRecs.push({ type: t, tag, name: C.str(r['设备名称']), area: C.str(r['区域']) });
     }
-    if (!typeMap.size) throw new Error('设备清单中没有有效设备行');
+    if (!ledgerRecs.length) throw new Error('设备清单中没有有效设备行');
   }
   const blockedTopics = [];
+  const scopePieces = [];         // 通过规程类拦截的 scope 片段 {piece, type, all}
   if (a.scope) {
     for (const piece of a.scope.split(/[,，、]/).map((x) => x.trim()).filter(Boolean)) {
       const chk = T.checkTopic(piece);
@@ -105,10 +106,37 @@ function main() {
         warnings.push(`主题「${piece}」属安全操作规程类内容（${chk.ruleId}：${chk.reason}），已剔除，不生成`);
         continue;
       }
-      const t = T.typeOf(piece);
-      if (t === '通用' && !/通用|全部|所有|设备管理/.test(piece)) scopeTopics.push(piece);
-      if (!typeMap.has(t)) typeMap.set(t, []);
+      scopePieces.push({ piece, type: T.typeOf(piece), all: /通用|全部|所有|设备管理/.test(piece) });
     }
+  }
+  // 台账 + scope 同时给：按 scope 过滤台账（设备类型命中，或位号 / 名称 / 区域含该片段）；scope 为「全部 / 所有」或只有自由主题时不过滤
+  const recMatch = (rec, p) => (p.type !== '通用' && rec.type === p.type)
+    || [rec.tag, rec.name, rec.area].some((v) => v && (v === p.piece || v.includes(p.piece)));
+  let keptRecs = ledgerRecs;
+  if (ledgerRecs.length && scopePieces.length && !scopePieces.some((p) => p.all)) {
+    const filtering = scopePieces.filter((p) => p.type !== '通用' || ledgerRecs.some((rec) => recMatch(rec, p)));
+    if (filtering.length) {
+      keptRecs = ledgerRecs.filter((rec) => filtering.some((p) => recMatch(rec, p)));
+      const dropped = ledgerRecs.filter((rec) => !keptRecs.includes(rec));
+      if (dropped.length) {
+        const dropTypes = [...new Set(dropped.map((rec) => rec.type))].join('、');
+        warnings.push(`已按 --scope「${a.scope}」过滤设备清单：保留 ${keptRecs.length} 台，剔除 ${dropped.length} 台（${dropTypes}）`);
+      }
+    } else {
+      warnings.push(`--scope「${a.scope}」中没有可识别的设备类型或台账位号，设备清单未过滤，按清单全部 ${ledgerRecs.length} 台生成`);
+    }
+  }
+  for (const rec of keptRecs) {
+    if (!typeMap.has(rec.type)) typeMap.set(rec.type, []);
+    typeMap.get(rec.type).push({ tag: rec.tag, name: rec.name, area: rec.area });
+  }
+  for (const p of scopePieces) {
+    const byText = p.type === '通用' && ledgerRecs.some((rec) => recMatch(rec, p));
+    if (byText) continue;                                   // 位号 / 区域类片段只用于过滤台账
+    if (p.all && ledgerRecs.length) continue;               // 有台账时「全部」只表示不过滤
+    if (p.type === '通用' && !p.all) scopeTopics.push(p.piece);
+    if (ledgerRecs.length && p.type !== '通用' && !typeMap.has(p.type)) warnings.push(`设备清单中没有「${p.type}」类设备，该类只按通用原理生成，提纲不列位号`);
+    if (!typeMap.has(p.type)) typeMap.set(p.type, []);
   }
   if (!typeMap.size) throw new Error('剔除不生成的主题后没有可用的培训范围');
 
@@ -368,9 +396,28 @@ function buildNumericStem(c) {
   const head = c.topicHint ? `${c.topicHint}：` : '';
   return `${head}按厂内规定，${masked}　请填出规定值。`;
 }
-/** 遮蔽技术数值（保留条款号、年份已在上一步剥离） */
+/**
+ * 遮蔽技术数值（保留条款号、年份已在上一步剥离）：
+ *   1. 带单位或周期词的数；2. 区间两端（0.05~0.10 mm、0.05-0.10mm 两端都遮，不带单位的区间右端也遮）；
+ *   3. 比较词后不带单位的数与分数（不低于 1/2、不高于 40）。
+ * 负号：前面是比较词、空白、句首、标点或区间符时算数的一部分，连同负号一起遮（低于-10℃、-20~-5℃）。
+ * 只有字母后的「-」按位号处理（P-2101A 不遮）；日期不当数值遮。
+ */
+const MASK_NUM = '\\d+(?:\\.\\d+)?(?:\\/\\d+(?:\\.\\d+)?)?';
+const MASK_CMP = '(?:不?(?:低于|高于|大于|小于|超过|少于)|≥|≤|＞|＜|>|<)';
+const MASK_SIGN = '[-−－]';
+// 数的起点：① 负号（前为句首/空白/标点/区间符/比较词/「为」「在」）连同负号；② 不带负号：前不是数字、小数点、斜杠、字母，
+// 也不是「字母-」（位号 P-2101A）或「数字-」（编号尾段 E-1201-3 次、M20-8.8级；真区间 3-5 天由左端 + 区间右端两步遮）
+const MASK_LEAD = `(?:(?<=^|[\\s，,：:；;（(、~～—至为在]|${MASK_CMP})${MASK_SIGN}|(?<![\\d./A-Za-z])(?<![A-Za-z\\d]${MASK_SIGN}))`;
+const MASK_UNIT = '(?:N·m|N\\.m|Nm|kN|MPa|kPa|Pa|bar|kgf|mm\\/s|μm|um|mm|cm|m3\\/h|m³\\/h|t\\/h|kg|℃|°C|°|K\\/h|kW|kV|V|A|Hz|rpm|r\\/min|ppm|mg\\/L|%|倍|级|小时|天|日|周|个?月|季度|年|圈|次|滴)';
+const MASK_RANGE = '[~～\\-—至]';
 function maskNumbers(s) {
-  return String(s).replace(/\d+(?:\.\d+)?(?=\s*(?:N·m|N\.m|Nm|kN|MPa|kPa|Pa|bar|kgf|mm\/s|μm|um|mm|cm|m3\/h|m³\/h|t\/h|kg|℃|°C|K\/h|kW|kV|V|A|Hz|rpm|r\/min|ppm|mg\/L|%|倍|级|小时|天|日|周|个?月|季度|年|圈|次|滴))/gi, '＿＿');
+  return String(s)
+    .replace(new RegExp(`${MASK_LEAD}${MASK_NUM}(?=\\s*${MASK_UNIT})`, 'gi'), '＿＿')
+    .replace(new RegExp(`${MASK_LEAD}${MASK_NUM}(?=\\s*${MASK_RANGE}\\s*${MASK_SIGN}?(?:\\d|＿))`, 'g'), '＿＿')
+    // 区间右端（左端已遮的才算区间，避免把「E-1201-3」这类编号的尾段当区间）
+    .replace(new RegExp(`(?<=＿＿\\s*${MASK_RANGE}\\s*)${MASK_SIGN}?${MASK_NUM}`, 'g'), '＿＿')
+    .replace(new RegExp(`(${MASK_CMP}\\s*)${MASK_SIGN}?${MASK_NUM}`, 'g'), '$1＿＿');
 }
 
 /** 按可用题型分配：数值类不做多选（避免拼凑干扰项时编造数值） */

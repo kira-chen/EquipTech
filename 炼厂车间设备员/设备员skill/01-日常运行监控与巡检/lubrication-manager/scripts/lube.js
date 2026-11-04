@@ -104,6 +104,7 @@ function loadBook(p) {
 /** 读 --run-hours：runtime-hours-tracker 的 runtime.json（byEquipment[].cumHours）或含「位号/累计运行小时」的表 */
 function loadRunHours(p) {
   const map = new Map();
+  map.partial = new Map();   // tag → 累计可能偏小的原因（runtime.json 中本期运行小时不可算 / 仅本期增量）
   if (/\.json$/i.test(p)) {
     let j; try { j = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (e) { throw new Error(`--run-hours JSON 解析失败 ${p}: ${e.message}`); }
     const list = Array.isArray(j.byEquipment) ? j.byEquipment : (Array.isArray(j) ? j : null);
@@ -114,6 +115,8 @@ function loadRunHours(p) {
       if (!tag) continue;
       if (h === null) { warnings.push(`--run-hours 中设备「${tag}」累计运行小时为空或无法解析，该设备运行小时周期不判定`); continue; }
       map.set(tag, h);
+      if (x.periodHours === null) map.partial.set(tag, `本期运行小时不可算（periodHours 为空），累计 ${h}h 仅为期初/上期值`);
+      else if (x.cumBasis === 'periodOnly') map.partial.set(tag, `累计口径为仅本期增量（无期初累计），累计 ${h}h 不含上次大检修前的运行小时`);
     }
     return map;
   }
@@ -194,6 +197,7 @@ function main() {
   const oilNames = new Map();       // oilKey → Set(原始写法)
   const nameOf = new Map();         // 位号 → 设备名称（台账为准，供其余表补名）
   const oilOf = new Map();          // 位号 → 油品牌号（台账为准，供油液分析匹配参考限值的油品类型）
+  const ledgerTags = new Set();     // 本次参与判定的台账位号（油液分析出现台账外位号时提示）
   let scopeSkipped = 0;
   const wd = {};                    // 五定齐备计数
   for (const w of WUDING) wd[w.key] = { filled: 0, total: 0, hasCol: ledger.hasCol(w.col) };
@@ -205,6 +209,7 @@ function main() {
     const tag = C.str(r['位号']);
     if (!tag) { warnings.push(`工作表「润滑台账」第${r._row}行 位号为空，已跳过`); continue; }
     if (!inScope(tag)) { scopeSkipped++; continue; }
+    ledgerTags.add(tag);
     if (C.str(r['设备名称']) && !nameOf.has(tag)) nameOf.set(tag, C.str(r['设备名称']));
     const oil = C.str(r['油品名称']);
     if (oil) {
@@ -235,6 +240,14 @@ function main() {
 
     // ---- 运行小时周期：按累计运行小时判定，不折算成日历天
     if (runH !== null) {
+      // 台账与 --run-hours 都给了累计小时：以台账为准；两者不一致时提示核对，不静默取其一
+      if (runHoursMap && runHoursMap.has(tag) && C.str(r['累计运行小时'])) {
+        const ledgerCum = num(r['累计运行小时'], { sheet: '润滑台账', row: r._row, col: '累计运行小时' });
+        const extCum = runHoursMap.get(tag);
+        if (ledgerCum !== null && Math.abs(ledgerCum - extCum) >= 1) {
+          warnings.push(`工作表「润滑台账」第${r._row}行 ${tag}：台账累计运行小时 ${ledgerCum}h 与 --run-hours ${extCum}h 不一致（差 ${C.round(extCum - ledgerCum, 1)}h），到期判定以台账为准，请核对台账是否需按启停记录更新`);
+        }
+      }
       const sinceRaw = C.str(r['自上次加换油运行小时']);
       let used = sinceRaw ? num(r['自上次加换油运行小时'], { sheet: '润滑台账', row: r._row, col: '自上次加换油运行小时' }) : null;
       let usedSource = used !== null ? '台账「自上次加换油运行小时」' : null;
@@ -243,7 +256,10 @@ function main() {
         const cumRaw = C.str(r['累计运行小时']);
         let cum = cumRaw ? num(r['累计运行小时'], { sheet: '润滑台账', row: r._row, col: '累计运行小时' }) : null;
         let cumSource = cum !== null ? '台账「累计运行小时」' : null;
-        if (cum === null && runHoursMap && runHoursMap.has(tag)) { cum = runHoursMap.get(tag); cumSource = '--run-hours'; }
+        if (cum === null && runHoursMap && runHoursMap.has(tag)) {
+          cum = runHoursMap.get(tag); cumSource = '--run-hours';
+          if (runHoursMap.partial && runHoursMap.partial.has(tag)) warnings.push(`--run-hours 中设备「${tag}」${runHoursMap.partial.get(tag)}，可能偏小，自上次加换油运行小时与到期判定可能偏晚，请核实启停记录后重跑`);
+        }
         const lastHRaw = C.str(r['上次加换油时累计小时']);
         const lastH = lastHRaw ? num(r['上次加换油时累计小时'], { sheet: '润滑台账', row: r._row, col: '上次加换油时累计小时' }) : null;
         if (cum === null) miss.push('缺累计运行小时（台账「累计运行小时」列或 --run-hours）');
@@ -431,11 +447,13 @@ function main() {
   if (oaRows) {
     const recs = C.toRecords(oaRows, ['位号', '检测项', '检测值'], '油液分析',
       ['取样日期', '限值', '结论', '油品名称', '设备名称'], warnings, ALIASES);
-    const abnormal = [], normalItems = [], noLimit = [], refChecked = [];
+    const abnormal = [], normalItems = [], noLimit = [], refChecked = [], outOfLedger = [];
+    const notInLedger = new Set();
     for (const r of recs) {
       const tag = C.str(r['位号']);
       if (!tag) { warnings.push(`工作表「油液分析」第${r._row}行 位号为空，已跳过`); continue; }
       if (!inScope(tag)) continue;
+      if (!ledgerTags.has(tag)) notInLedger.add(tag);
       const item = C.str(r['检测项']);
       const value = num(r['检测值'], { sheet: '油液分析', row: r._row, col: '检测值' });
       const rawLimit = C.str(r['限值']);
@@ -445,6 +463,12 @@ function main() {
         sampleDate: C.normDate(r['取样日期']), item, value, valueRaw: C.str(r['检测值']),
         limitRaw: rawLimit || null, conclusion: conclusion || null, sheet: '油液分析', row: r._row,
       };
+      // 台账外位号（全厂导出混入其他车间、或台账漏登）：单列，不计入本车间异常/正常/无限值计数；仍按厂内限值标出是否超限供核实
+      if (!ledgerTags.has(tag)) {
+        const l = value !== null && rawLimit ? parseLimit(rawLimit) : null;
+        outOfLedger.push({ ...base, limit: l ? l.text : null, exceeded: l ? l.test(value) : null });
+        continue;
+      }
       if (value === null) {
         noLimit.push({ ...base, reason: '检测值缺失或无法解析，不作异常判定' });
         warnings.push(`工作表「油液分析」第${r._row}行 ${tag} 检测项「${item}」检测值缺失或无法解析，不判异常（未按 0 计）`);
@@ -471,6 +495,8 @@ function main() {
       const rec = { ...base, limit: lim.text, exceeded };
       if (exceeded) abnormal.push(rec); else normalItems.push(rec);
     }
+    // 全厂导出的油液分析可能混入其他车间设备：照常列示，不静默丢弃，但点名提示
+    if (notInLedger.size) warnings.push(`油液分析中位号「${[...notInLedger].join('、')}」不在本次润滑台账内（可能属其他车间或台账漏登），已单列为「台账外油样」，不计入本车间异常/正常计数，请确认是否属本车间`);
     oilAnalysis = {
       provided: true,
       refStandardProvided: !!refStd,
@@ -478,10 +504,11 @@ function main() {
       normal: normalItems.sort(bySort),
       refChecked: refChecked.sort(bySort),
       noLimit: noLimit.sort(bySort),
+      outOfLedger: outOfLedger.sort(bySort),
       note: '油液分析结论以化验室报告为准，本表仅按厂内限值做超限标记，不作故障判定；参考限值比对项非厂内标准，仅供参考。',
     };
   } else {
-    oilAnalysis = { provided: false, refStandardProvided: !!refStd, abnormal: [], normal: [], refChecked: [], noLimit: [], note: '未提供油液分析数据。' };
+    oilAnalysis = { provided: false, refStandardProvided: !!refStd, abnormal: [], normal: [], refChecked: [], noLimit: [], outOfLedger: [], note: '未提供油液分析数据。' };
   }
 
   // ---------------------------------------------------------------- 计数与产出
@@ -501,6 +528,7 @@ function main() {
     oaRefChecked: oilAnalysis.provided ? oilAnalysis.refChecked.length : null,
     oaRefExceeded: oilAnalysis.provided ? oilAnalysis.refChecked.filter((x) => x.exceededRef).length : null,
     oaNoLimit: oilAnalysis.provided ? oilAnalysis.noLimit.length : null,
+    oaOutOfLedger: oilAnalysis.provided ? oilAnalysis.outOfLedger.length : null,
   };
 
   C.ensureDir(outDir);
@@ -573,6 +601,7 @@ function renderMd(a, R) {
     ['加换油记录条数', c.consumptionRecords === null ? '—（未提供记录表）' : c.consumptionRecords],
     ['油液分析异常项（超厂内限值）', c.oaAbnormal === null ? '—（未提供油液分析）' : c.oaAbnormal],
     ['油液分析参考比对超限项（非厂内标准）', c.oaRefExceeded === null ? '—' : c.oaRefExceeded],
+    ...(c.oaOutOfLedger ? [['台账外油样（不计入上面统计）', c.oaOutOfLedger]] : []),
   ]));
   L.push('## 二、五定齐备率');
   L.push('');
@@ -658,6 +687,15 @@ function renderMd(a, R) {
     L.push('');
     L.push(C.mdTable(['位号', '检测项', '检测值', '厂内限值'],
       R.oilAnalysis.normal.map((x) => [x.tag, x.item, C.fmt(x.value, 3), x.limit])));
+    if (R.oilAnalysis.outOfLedger.length) {
+      L.push('**台账外油样（不计入本车间统计）**');
+      L.push('');
+      L.push('【注意】以下油样的位号不在本次润滑台账内（可能属其他车间，或台账漏登），**不计入上面的异常/正常计数**，仅列示供核实；属本车间的请补登润滑台账后重跑。');
+      L.push('');
+      L.push(C.mdTable(['位号', '设备名称', '取样日期', '检测项', '检测值', '厂内限值', '是否超限', '出处'],
+        R.oilAnalysis.outOfLedger.map((x) => [x.tag, x.name || '—', x.sampleDate || '—', x.item, x.valueRaw || '—', x.limit || x.limitRaw || '（空）',
+          x.exceeded === null ? '—（无可用限值或检测值）' : x.exceeded ? '超限' : '未超限', `${x.sheet} 第${x.row}行`])));
+    }
   }
   L.push('## 八、润滑管理情况说明');
   L.push('');

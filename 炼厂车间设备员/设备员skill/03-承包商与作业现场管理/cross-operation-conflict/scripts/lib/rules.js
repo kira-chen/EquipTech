@@ -351,6 +351,15 @@ const RESOURCE_FIELDS = [
   { key: 'fireCover', ruleId: 'Z4', severity: '中', label: '消防设施覆盖区', note: '多项作业共用同一消防设施覆盖区，一处动用后其余作业消防保障被削弱' },
 ];
 
+/**
+ * Z2 只在起重类设备之间判：「使用设备」写的是吊车、葫芦、卷扬机等起重设备，或该作业本身是吊装作业，才参与比对；
+ * 两张票都写「电焊机」「试压泵」这类普通机具不构成 Z2。
+ */
+const CRANE_RE = /吊|起重|行车|天车|葫芦|卷扬|塔机|门机|桥机|龙门架/;
+function craneEligible(work, value) {
+  return CRANE_RE.test(String(value || '')) || (Array.isArray(work.types) && work.types.includes('lifting'));
+}
+
 // ---------------------------------------------------------------- 协调建议
 /**
  * 建议措辞只能是「建议错时 / 建议增加监护 / 建议先后作业 / 建议补充信息」等建议语气，
@@ -392,7 +401,7 @@ module.exports = {
   toMinutes, timeOverlap,
   spatialRelation, spatialRules,
   RISK_RULES, riskConflicts,
-  RESOURCE_FIELDS,
+  RESOURCE_FIELDS, CRANE_RE, craneEligible,
   ADVICE, adviceFor, maxSeverity, SEV_ORDER,
   KNOWN_RULES, applyRuleOverrides,
 };

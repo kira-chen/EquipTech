@@ -175,7 +175,11 @@ function fingerprint(s) {
  */
 const KEY_SUBS = new Set(['overdue', 'stalled', 'dueSoon', 'unverified', 'unresolvedFail', 'followup', 'pending', 'manual']);
 const keySeg = (s) => C.str(s).replace(/[|#]/g, '/');
-function keyKind(kind, sub) { return kind === 'calibration' && sub === 'unresolvedFail' ? 'calibration:fail' : kind; }
+function keyKind(kind, sub) {
+  if (kind === 'calibration' && sub === 'unresolvedFail') return 'calibration:fail';
+  if (kind === 'inspection' && sub === 'issue') return 'inspection:issue';   // 检验问题整改与定检超期/临期是两件事
+  return kind;
+}
 function itemKey(it) {
   const kind = keyKind(it.kind, it.sub);
   const ref = keySeg(it.keyRef);
@@ -295,7 +299,7 @@ function fromHazard(j, srcName, push) {
   }
 }
 
-function fromInspection(j, srcName, push) {
+function fromInspection(j, srcName, push, date) {
   for (const x of j.overdue || []) {
     push({
       kind: 'inspection', sub: 'overdue', refNo: x.regCode || '', keyRef: x.regCode, keyText: x.category, tag: x.tag || '', name: x.name || '',
@@ -312,6 +316,24 @@ function fromInspection(j, srcName, push) {
       dueDate: C.normDate(x.nextDate), owner: x.unit || '', srcName,
       detail: x.name || '', srcRef: x.sheet ? `${x.sheet} 第${x.row}行` : '',
       prio: priorityOf('inspection', 'dueSoon'),
+    });
+  }
+  // 检验报告提出的问题整改（上游 --issues 整改项清单 → openIssues）：整改超期 P1、未到期 P2；未填要求完成日期的进无到期日，不自设
+  if (!Array.isArray(j.openIssues)) {
+    warnings.push(`${srcName} 未含特种设备检验问题整改项（上游 special-equipment-inspection-due 未传 --issues，openIssues 为空），本清单不含检验问题整改；需要时上游加 --issues 重跑`);
+    return;
+  }
+  for (const x of j.openIssues) {
+    const due = C.normDate(x.dueDate);
+    const overdue = due ? C.diffDays(due, date) < 0 : false;
+    push({
+      kind: 'inspection', sub: 'issue', refNo: '', keyRef: '', keyText: x.issue, tag: x.tag || '', name: x.name || '',
+      title: `检验问题整改未闭环｜${x.tag || '（无位号）'} ${C.str(x.issue) || '（无整改内容）'}${x.status ? `（${C.str(x.status)}）` : ''}`,
+      dueDate: due, owner: x.owner || '', srcName,
+      detail: [x.name, x.inLedger === false ? '位号不在特种设备台账中，请核实' : ''].filter(Boolean).join('；'),
+      srcRef: x.sheet ? `${x.sheet} 第${x.row}行` : '',
+      noDueReason: due ? null : '整改项未填要求完成日期，脚本未自行设定',
+      prio: priorityOf('inspection', overdue ? 'overdue' : 'dueSoon'),
     });
   }
 }
@@ -347,12 +369,22 @@ function fromCalibration(j, srcName, push) {
   }
 }
 
+/** 润滑项按运行小时判定时 lube.json 的 dueDate 为 null（给 remainHours / overdueHours）：标题写小时数，不写「null」，也不自行换算成日期 */
+const LUBE_HOURS_REASON = '润滑周期按运行小时判定，来源未给日历到期日，脚本未自行换算日期';
+const hrs = (v) => (v === null || v === undefined || v === '' ? null : Math.round(Number(v)));
+function lubeWhen(x, overdue) {
+  if (x.dueDate) return `应加换油 ${x.dueDate}`;
+  const h = hrs(overdue ? x.overdueHours : x.remainHours);
+  return h === null || !Number.isFinite(h) ? '按运行小时判定' : `按运行小时判定，${overdue ? '超' : '剩余'} ${Math.abs(h)} 小时`;
+}
+
 function fromLube(j, srcName, push) {
   for (const x of j.overdue || []) {
     push({
       kind: 'lube', sub: 'overdue', refNo: '', keyRef: '', keyText: x.part, tag: x.tag || '', name: x.name || '',
-      title: `${x.tag} ${x.part || ''} 润滑已逾期（${x.level || ''}，应加换油 ${x.dueDate}）`.replace(/\s+/g, ' ').trim(),
+      title: `${x.tag} ${x.part || ''} 润滑已逾期（${x.level ? `${x.level}，` : ''}${lubeWhen(x, true)}）`.replace(/\s+/g, ' ').trim(),
       dueDate: C.normDate(x.dueDate), owner: x.owner || '', srcName,
+      noDueReason: C.normDate(x.dueDate) ? null : LUBE_HOURS_REASON,
       detail: [x.oil, x.mode].filter(Boolean).join(' / '), srcRef: x.sheet ? `${x.sheet} 第${x.row}行` : '',
       prio: priorityOf('lube', 'overdue'),
     });
@@ -360,8 +392,9 @@ function fromLube(j, srcName, push) {
   for (const x of j.dueSoon || []) {
     push({
       kind: 'lube', sub: 'dueSoon', refNo: '', keyRef: '', keyText: x.part, tag: x.tag || '', name: x.name || '',
-      title: `${x.tag} ${x.part || ''} 润滑临期（应加换油 ${x.dueDate}）`.replace(/\s+/g, ' ').trim(),
+      title: `${x.tag} ${x.part || ''} 润滑临期（${lubeWhen(x, false)}）`.replace(/\s+/g, ' ').trim(),
       dueDate: C.normDate(x.dueDate), owner: x.owner || '', srcName,
+      noDueReason: C.normDate(x.dueDate) ? null : LUBE_HOURS_REASON,
       detail: [x.oil, x.mode].filter(Boolean).join(' / '), srcRef: x.sheet ? `${x.sheet} 第${x.row}行` : '',
       prio: priorityOf('lube', 'dueSoon'),
     });
@@ -497,7 +530,7 @@ function main() {
       const t = detectJson(got.data);
       if (t === 'orders') { fromOrders(got.data, got.name, push); sources.push(`${got.name}→${SRC_CN.orders}(JSON)`); }
       else if (t === 'hazard') { fromHazard(got.data, got.name, push); sources.push(`${got.name}→${SRC_CN.hazard}(JSON)`); }
-      else if (t === 'inspection') { fromInspection(got.data, got.name, push); sources.push(`${got.name}→${SRC_CN.inspection}(JSON)`); }
+      else if (t === 'inspection') { fromInspection(got.data, got.name, push, date); sources.push(`${got.name}→${SRC_CN.inspection}(JSON)`); }
       else if (t === 'calibration') { fromCalibration(got.data, got.name, push); sources.push(`${got.name}→${SRC_CN.calibration}(JSON)`); }
       else if (t === 'lube') { fromLube(got.data, got.name, push); sources.push(`${got.name}→${SRC_CN.lube}(JSON)`); }
       else if (t === 'defects') { fromDefects(got.data, got.name, push); sources.push(`${got.name}→${SRC_CN.defects}(JSON)`); }
@@ -582,6 +615,11 @@ function main() {
         cur.carriedRounds = carried.carriedRounds;
         cur.originalDueDate = carried.originalDueDate;
         cur.originalSource = carried.originalSource;
+        // 上游本日到期日与原到期日不同：不静默改写，列出两个日期并 warning，由设备员在系统核实
+        if ((cur.dueDate || null) !== (carried.originalDueDate || null)) {
+          cur.dueDateChanged = { from: carried.originalDueDate || null, to: cur.dueDate || null };
+          warnings.push(`结转事项「${C.str(cur.title).slice(0, 30)}」上游到期日由 ${carried.originalDueDate || '未填'} 变为 ${cur.dueDate || '未填'}，请在系统核实；清单按上游本日到期日排序，原到期日一并列出`);
+        }
         continue;
       }
       // 结转项 key 与本日已有 key 撞上时（如两条旧项升级后同 key）加后缀，保持唯一
@@ -758,7 +796,7 @@ function row(x) {
   return [
     x.title,
     `${x.kindCn}｜${x.srcName || '—'}`,
-    x.dueDate || '—',
+    x.dueDateChanged ? `${x.dueDate || '未填'}（原 ${x.dueDateChanged.from || '未填'}，上游已变更）` : (x.dueDate || '—'),
     x.overdueDays !== null && x.overdueDays !== undefined ? `已逾期 ${x.overdueDays} 天` : (x.daysLeft === 0 ? '今日' : (x.daysLeft === null ? '—' : `剩 ${x.daysLeft} 天`)),
     x.priorityCn,
     x.carried ? `结转自 ${x.carriedFrom || '—'}` : '—',

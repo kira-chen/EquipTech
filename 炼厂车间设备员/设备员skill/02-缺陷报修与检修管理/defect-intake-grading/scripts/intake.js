@@ -36,7 +36,26 @@ const ALIASES = C.mergeAliases({
   '缺陷编号': ['缺陷编号', '缺陷号', '通知单号', '通知单', '维修通知单号'],
   '等级': ['等级', '缺陷等级', '级别'],
   '状态': ['状态', '处理状态', '当前状态', '系统状态', '用户状态', '通知单状态'],
+  // 批量登记时带出原记录编号：通知单号列与缺陷编号列分开取（不带「通知单」单字别名，免得前缀命中「通知单短文本/通知单类型」）
+  '原通知单号': ['通知单号', '维修通知单号', '通知单编号'],
+  '原缺陷编号': ['缺陷编号', '缺陷号', '缺陷登记号'],
 });
+
+/** 原记录等级 → 当前分级方案下的等级键（abc：A/B/C，旧 I~IV 按 I→A、II→B、III/IV→C 换算；iv：I~IV）；识别不了返回 null */
+function normSourceLevel(v, scheme) {
+  const t = C.str(v).replace(/\s+/g, '').toUpperCase();
+  if (!t) return null;
+  let iv = null, abc = null;
+  const mr = t.match(/^(IV|III|II|I)(?![A-Z])/) || t.match(/^[（(]?(IV|III|II|I)级/);
+  if (mr) iv = mr[1];
+  else if (/^[ABC](?![A-Z])/.test(t)) abc = t[0];
+  else if (/重大/.test(t)) abc = 'A';
+  else if (/严重/.test(t)) abc = 'B';
+  else if (/一般/.test(t)) abc = 'C';
+  if (scheme === 'iv') return iv;
+  if (abc) return abc;
+  return iv ? R.SCHEMES.abc.fromIV[iv] : null;
+}
 
 const DISCLAIMER = '本材料由脚本汇总、模型成文，仅供设备员复核参考，不替代审批、定性、验收与签字；厂内制度与系统数据为准。';
 
@@ -114,11 +133,16 @@ function main() {
     const rows = C.pickSheet(loadBook(a.input), '缺陷记录', '缺陷', '记录', '通知单');
     if (!rows) throw new Error('输入文件中未找到「缺陷记录」工作表');
     const recs = C.toRecords(rows, ['位号', '缺陷描述'], '缺陷记录',
-      ['设备名称', '缺陷部位', '发现时间', '发现人', '是否影响运行', '介质', '设备编号'], warnings, ALIASES);
+      ['原通知单号', '原缺陷编号', '等级', '设备名称', '缺陷部位', '发现时间', '发现人', '是否影响运行', '介质', '设备编号'], warnings, ALIASES);
+    // 原记录编号：有通知单号列取通知单号（SAP 系统已存在的通知单），否则取缺陷编号列
+    const hasNotifCol = recs.hasCol('原通知单号');
     for (const r of recs) {
       const tag = C.str(r['位号']);
       if (!tag) { warnings.push(`工作表「缺陷记录」第${r._row}行 位号为空，已跳过`); continue; }
+      const srcNo = hasNotifCol ? C.str(r['原通知单号']) : C.str(r['原缺陷编号']);
       inputs.push({
+        sourceNo: srcNo || null, sourceNoKind: srcNo ? (hasNotifCol ? 'notification' : 'defect') : null,
+        sourceLevel: C.str(r['等级']) || null,
         tag, name: C.str(r['设备名称']), desc: C.str(r['缺陷描述']), part: C.str(r['缺陷部位']),
         foundAt: C.normDateTime(r['发现时间']), by: C.str(r['发现人']),
         affectsRun: C.str(r['是否影响运行']), medium: C.str(r['介质']), equipNo: C.str(r['设备编号']), _row: r._row,
@@ -175,6 +199,9 @@ function main() {
       affectsRun: affects === null ? null : affects, foundAt: it.foundAt, by: it.by || '',
       level: g.level, levelCn: g.levelCn, basis: g.basis, ruleId: g.ruleId, scheme,
       dueDays: g.dueDays, dueDate,
+      // 原记录（批量输入行）的编号与等级原文，供与系统等级对比；单条登记或原记录没有时为 null
+      sourceNo: it.sourceNo || null, sourceNoKind: it.sourceNoKind || null, sourceLevel: it.sourceLevel || null,
+      sourceLevelDiffers: null,
       discipline: R.disciplineOf(it.tag, it.name),
       notification: {
         type: notifType, typeCn: notifType === 'M2' ? 'M2 故障报告' : notifType === 'M1' ? 'M1 维修申请' : null,
@@ -184,6 +211,12 @@ function main() {
       },
       srcRow: it._row,
     };
+    if (rec.sourceLevel && g.level !== 'undetermined') {
+      const sl = normSourceLevel(rec.sourceLevel, scheme);
+      rec.sourceLevelDiffers = sl === null ? null : sl !== g.level;
+      if (sl === null) warnings.push(`缺陷「${rec.no}」原记录等级「${rec.sourceLevel}」无法识别，未与脚本定级对比`);
+      else if (rec.sourceLevelDiffers) warnings.push(`缺陷「${rec.no}」（${rec.tag}${rec.sourceNo ? '，原记录 ' + rec.sourceNo : ''}）系统等级「${rec.sourceLevel}」与脚本定级「${g.levelCn}」不一致，请核对后以厂内定级为准`);
+    }
     defects.push(rec);
     if (g.level === 'undetermined') {
       undetermined.push({ no: rec.no, tag: rec.tag, desc: rec.desc, missing: g.missing, note: g.basis });
@@ -214,6 +247,7 @@ function main() {
     total: defects.length, byLevel,
     undetermined: undetermined.length, possibleDuplicate: possibleDuplicate.length,
     notificationDrafts: notifDrafts.length,
+    sourceLevelDiffers: defects.filter((d) => d.sourceLevelDiffers === true).length,
   };
 
   // ---- 产出
@@ -272,10 +306,12 @@ function main() {
       ['介质', d.medium || '—'], ['介质危险性', d.mediumHazard === null ? '未判定（介质未填或不在危险特性库）' : R.HAZ_CN[d.mediumHazard]],
       ['是否影响运行', d.affectsRun === null ? '未填写' : (d.affectsRun ? '是' : '否')],
       ['发现时间', d.foundAt || '—'], ['发现人', d.by || '—'],
+      ...(d.sourceNo ? [[d.sourceNoKind === 'notification' ? '原记录通知单号（系统已存在）' : '原记录缺陷编号', d.sourceNo]] : []),
+      ...(d.sourceLevel ? [['系统等级（原记录）', `${d.sourceLevel}${d.sourceLevelDiffers === true ? '　**与脚本定级不一致，请核对**' : d.sourceLevelDiffers === false ? '（与脚本定级一致）' : ''}`]] : []),
       ['**等级**', `**${d.levelCn}**`], ['定级依据', `${d.basis}（规则 ${d.ruleId}）`],
       ['建议处理时限', d.dueDays === null ? '—（等级未判定）' : `${d.dueDays} 天内${d.dueDate ? '，即 ' + d.dueDate + ' 前' : ''}`],
       ['建议责任专业', d.discipline],
-      ['通知单建议', d.notification.type ? `${d.notification.typeCn}，SAP 优先级 ${d.notification.sapPriority}` : '—（等级未判定，暂不生成草稿）'],
+      ['通知单建议', (d.notification.type ? `${d.notification.typeCn}，SAP 优先级 ${d.notification.sapPriority}` : '—（等级未判定，暂不生成草稿）') + (d.sourceNoKind === 'notification' ? `；系统已存在通知单 ${d.sourceNo}，勿重复创建` : '')],
     ]));
   }
   L.push('## 三、未判定清单');

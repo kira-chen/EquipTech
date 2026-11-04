@@ -275,6 +275,83 @@ ok(!/[\u2600-\u27BF\u{1F300}-\u{1FAFF}]/u.test(r.md), 'L29 md 不含 emoji');
 ok(fs.existsSync(path.join(__dirname, '..', 'assets', 'templates', 'inventory-answer-template.md')), 'L30 assets/templates 不再是空目录');
 eq(raw(['--input', SAP, '--query', 'x', '--mapping']).s.ok, false, 'L31 --mapping 缺值报错');
 
+// ============ M. 位号按分隔符逐个比对、目录与库存表同编码合并（MCP 导出：适用位号「P-2101A/P-2101B」，备件目录含库存表全部物料） ============
+const MULTI = mk('multi.xlsx', {
+  '库存表': [['物料编码', '物料描述', '规格型号', '非限制使用库存', '再订货点', '适用位号', '材质'],
+    ['M-1', '机械密封 P-101', '104-45', 2, 1, 'P-101A/P-101B', 'SiC'],
+    ['M-2', '机械密封 P-1011', '104-50', 3, 1, 'P-1011A/P-1011B', 'SiC'],
+    ['M-3', '深沟球轴承 6314', '6314 C3', 1, 2, 'P-101A/P-205A', ''],
+    ['M-4', '深沟球轴承 6312', '6312 C3', 4, 1, 'P-301A', '']],
+});
+r = run(['--input', MULTI, '--tag', 'P-101A'], 'tag-token');
+ok(r.j.matches.map((m) => m.code).join(',') === 'M-1,M-3', 'M1 位号按分隔符逐个比对：P-101A 不误中 P-1011A（实际 ' + r.j.matches.map((m) => m.code).join(',') + '）');
+r = run(['--input', MULTI, '--tag', 'P-101'], 'tag-family');
+ok(r.j.matches.map((m) => m.code).join(',') === 'M-1,M-3', 'M2 查 P-101 命中 P-101A/P-101B，不误中 P-1011A（实际 ' + r.j.matches.map((m) => m.code).join(',') + '）');
+const MCAT = mk('mcat.xlsx', { '备件目录': [['物料编码', '物料描述', '规格型号', '材质'],
+  ['M-3', '深沟球轴承 6314', '6314 C3', ''], ['M-4', '深沟球轴承 6312', '6312 C3', 'GCr15'], ['M-9', '深沟球轴承 6314', '6314 C3 NSK', '']] });
+r = run(['--input', MULTI, '--query', 'M-3', '--catalog', MCAT, '--alternatives'], 'cat-merge');
+const mc = r.j.alternatives[0].candidates;
+eq(mc.filter((c) => c.code === 'M-4').length, 1, 'M3 目录与库存表同编码的候选只列一次');
+eq((mc.find((c) => c.code === 'M-4') || {}).qty, 4, 'M4 同编码候选带库存表库存量，不显示为「—」');
+eq((mc.find((c) => c.code === 'M-4') || {}).from, '库存表 + 备件目录', 'M5 同编码候选来源写明两者');
+ok((mc.find((c) => c.code === 'M-4') || { diffs: [] }).diffs.some((d) => d.field === '材质' && d.candidate === 'GCr15'), 'M6 库存表缺的参数由目录补齐参与差异比对');
+eq((mc.find((c) => c.code === 'M-9') || {}).qty, null, 'M7 只在目录里的候选库存量仍为空（不按 0）');
+
+// ============ N. 位号常见写法：P-101AB、1#P-101A、P-101A/B（2026-11-04 复核补充） ============
+const TAGW = mk('tagw.xlsx', {
+  '库存表': [['物料编码', '物料描述', '规格型号', '非限制使用库存', '再订货点', '适用位号'],
+    ['N-1', '机械密封', '104-45', 2, 1, 'P-101AB'],
+    ['N-2', '轴承', '6314', 2, 1, '1#P-101A'],
+    ['N-3', '垫片', 'DN100', 2, 1, 'P-101A/B'],
+    ['N-4', '叶轮', 'φ250', 2, 1, 'P-1011A'],
+    ['N-5', '轴套', 'φ60', 2, 1, 'P-101C'],
+    ['N-6', '联轴器', 'LM6', 2, 1, 'P-101A、C'],
+    ['N-7', '轴承箱', 'BX', 2, 1, 'P-101泵'],
+    ['N-8', '密封环', 'φ200', 2, 1, 'P-101-1'],
+    ['N-9', '轴承', '6312', 2, 1, 'SP-101A']],
+});
+const codesOf = (args, tag) => { const x = run(args, tag); return (x.j && x.j.matches || []).map((m) => m.code).sort().join(','); };
+let cs = codesOf(['--input', TAGW, '--tag', 'P-101'], 'tagw-1');
+eq(cs, 'N-1,N-2,N-3,N-5,N-6,N-7', 'N1 查 P-101 命中 P-101AB、1#P-101A、P-101A/B、P-101C、P-101泵，不误中 P-1011A / P-101-1 / SP-101A');
+cs = codesOf(['--input', TAGW, '--tag', 'P-101A'], 'tagw-2');
+eq(cs, 'N-1,N-2,N-3,N-6', 'N2 查 P-101A 命中 P-101AB、1#P-101A、P-101A/B、P-101A、C，不误中 P-1011A / P-101C');
+cs = codesOf(['--input', TAGW, '--tag', 'P-101B'], 'tagw-3');
+eq(cs, 'N-1,N-3', 'N3 查 P-101B 命中 P-101AB、P-101A/B 的同组字母');
+cs = codesOf(['--input', TAGW, '--tag', 'P-101C'], 'tagw-4');
+eq(cs, 'N-5,N-6', 'N4 查 P-101C 命中 P-101C 与 P-101A、C，不误中 P-101AB / P-101A/B');
+cs = codesOf(['--input', TAGW, '--tag', 'P-1011'], 'tagw-5');
+ok(cs.split(',').includes('N-4') && !/N-[1235679]/.test(cs), `N5 查 P-1011 命中 P-1011A，不误中 P-101 组（实际 ${cs}）`);
+const MAPW = mk('mapw.xlsx', { '备件设备对应': [['位号', '备件编码'], ['1#P-101A', 'A-01'], ['P-101AB', 'B-01'], ['P-1011A', 'B-02']] });
+cs = codesOf(['--input', STOCK, '--tag', 'P-101A', '--mapping', MAPW], 'tagw-map');
+eq(cs, 'A-01,B-01', 'N6 对应表位号同样认 1#P-101A、P-101AB，不误中 P-1011A');
+
+// ============ O. 同组字母后紧跟「-数字」是另一个位号（第三轮 R8）；在途带采购订单号（v1-12） ============
+const TAGX = mk('tagx.xlsx', {
+  '库存表': [['物料编码', '物料描述', '规格型号', '非限制使用库存', '再订货点', '适用位号'],
+    ['O-1', '机械密封', '104-45', 2, 1, 'P-2101A、C-101'],
+    ['O-2', '轴承', '6314', 2, 1, 'P-2101A, B-202'],
+    ['O-3', '垫片', 'DN100', 2, 1, 'P-2101A、B、C-101'],
+    ['O-4', '叶轮', 'φ250', 2, 1, 'P-2101A/B 2台'],
+    ['O-5', '轴套', 'φ60', 2, 1, 'P-2101A/B-1']],
+});
+cs = codesOf(['--input', TAGX, '--tag', 'P-2101C'], 'tagx-c');
+eq(cs, '', 'O1 「P-2101A、C-101」「P-2101A、B、C-101」查 P-2101C 不命中（C-101 是另一个位号）');
+cs = codesOf(['--input', TAGX, '--tag', 'P-2101B'], 'tagx-b');
+eq(cs, 'O-3,O-4', 'O2 「P-2101A, B-202」查 P-2101B 不命中；「P-2101A、B、C-101」「P-2101A/B 2台」仍命中 B');
+cs = codesOf(['--input', TAGX, '--tag', 'P-2101A'], 'tagx-a');
+eq(cs, 'O-1,O-2,O-3,O-4,O-5', 'O3 查 P-2101A 各写法照常命中');
+const TRPO = mk('transit-po.xlsx', {
+  '在途采购': [['物料编码', '物料描述', '在途数量', '基本计量单位', '预计到货', '采购订单'],
+    ['A-02', '机械密封', 3, '套', '2026-09-30', '4500012345'],
+    ['A-02', '机械密封', 2, '套', '2026-10-20', '']],
+});
+r = run(['--input', STOCK, '--query', 'A-02', '--intransit', TRPO], 'transit-po');
+eq(((r.j && r.j.inTransit[0]) || { arrivals: [] }).arrivals[0].po, '4500012345', 'O4 在途 arrivals 带采购订单号');
+eq(((r.j && r.j.inTransit[0]) || { arrivals: [{}, {}] }).arrivals[1].po, null, 'O5 采购订单为空时为 null');
+ok(/采购订单/.test(r.md || '') && /4500012345/.test(r.md || ''), 'O6 md 在途表列出采购订单号');
+r = run(['--input', STOCK, '--query', 'A-02', '--intransit', TRANSIT], 'transit-nopo');
+ok(!/采购订单/.test(((r.md || '').split('## 三、在途情况')[1] || '').split('## 四')[0]), 'O7 在途表无采购订单列时 md 不出该列');
+
 console.log(`\n${'='.repeat(56)}`);
 console.log(`spare-parts-inventory-query 自测：${pass} 通过，${fail} 失败`);
 if (failures.length) { console.log('\n失败项：'); failures.forEach((f) => console.log('  ✗ ' + f)); }

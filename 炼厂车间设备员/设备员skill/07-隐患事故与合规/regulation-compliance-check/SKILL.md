@@ -26,6 +26,31 @@ metadata:
 - 必填信息：车间名称、自查范围（涉及哪些法规标准）、自查时点。可选：厂内管理制度、上次自查结果。
 - 环境：可执行 Node.js ≥ 18，脚本仅用内置模块，无需 npm 安装。**若环境无法执行 node（无 Bash 工具或 `node --version` 失败），明确告知用户并终止，不得凭记忆对照条款。**
 
+## 数据获取（MCP）
+
+平台接入了业务系统 MCP 服务时，按下表调用工具取数，不再请用户上传导出文件；未接入时按操作步骤请用户提供系统导出文件。工具全部只读，不在业务系统里创建或修改任何单据。
+
+| 服务 | 工具 | 参数 | 交给脚本 |
+|---|---|---|---|
+| 设备资产管理 | `get_equipment_ledger` | `workshop`：车间 | `--materials` |
+| 设备资产管理 | `get_special_equipment` | `workshop`：车间 | `--materials` |
+| 设备资产管理 | `get_safety_valves` | `workshop`：车间 | `--materials` |
+| 点检巡检App | `get_inspection_records` | `workshop`：车间 | `--materials` |
+| 设备资产管理 | `get_failure_history` | `workshop`：车间 | `--materials` |
+| HSE管理平台 | `get_hazards` | `workshop`：车间 | `--materials` |
+| HSE管理平台 | `get_personnel_certificates` | — | `--materials` |
+| 设备资产管理 | `get_notifications` | `workshop`：车间 | `--materials` |
+| 作业票系统 | `get_permits` | `workshop`：车间 | `--materials` |
+
+取数后：
+
+1. 工具返回下载链接（60 分钟内有效，过期重新调用）。csv 按原文件名放进新建的空目录，不改文件名，不与其他技能的文件混放；把目录作为“交给脚本”一列的参数值。
+2. `get_failure_history`：故障记录含处理措施，作为检修记录的证据，同时算缺陷与故障记录。
+3. `get_notifications` 的通知单是设备缺陷/故障报修记录，`get_hazards` 的隐患台账是隐患排查治理记录，两者分属两类材料、不互相充数；条款清单里没有缺陷类条款时，通知单列入「未对应材料」属正常。
+4. 目录扫描只看文件名：工具导出 0 行时文件仍在，交付前打开 csv 确认有记录，空表不能当作已见材料向用户转述。
+
+法规制度条款清单来自平台知识库，作 `--rules`（必需）；厂内制度清单可作 `--internal`。车间已有资料清单（xlsx）时，也可以直接作 `--materials`。
+
 ## 操作步骤
 1. **确认自查范围与条款来源** —— 涉及的法规标准或企业制度、条款文本来源、自查范围。**用户未提供条款文本时（包括只说了"按中石化设备管理规定查"这类制度名称），必须说明"无法从记忆中准确引用条款，请提供标准/制度文本或条款清单"，不得凭印象列举条款编号与要求。** 条款文件为 PDF 的，先按前置步骤转为 txt/docx。
 2. **运行脚本** —— 技能目录以平台实际加载路径为准（Windows 路径加双引号）：
@@ -56,7 +81,7 @@ metadata:
 | 文件 | 内容 | 何时读取 |
 |---|---|---|
 | `references/input-spec.md` | 条款清单与资料清单字段定义、条款解析规则 | 检查输入 / 用户询问格式时 |
-| `references/compliance-rules.md` | 对照口径、四档状态定义、禁止结论性表述清单、免责要求、25 类材料词表及与 inspection-evidence-package 的差异 | 成文前 |
+| `references/compliance-rules.md` | 对照口径、四档状态定义、禁止结论性表述清单、免责要求、26 类材料词表及与 inspection-evidence-package 的差异 | 成文前 |
 | `references/checklist.md` | 交付自检清单（含表述用语与声明行核对） | 交付前 |
 | `scripts/README.md` | 脚本参数与产出说明 | 运行脚本前 |
 | `scripts/selftest.js` | 自测：覆盖条款笼统、无对应资料、材料不完整等边界用例（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |

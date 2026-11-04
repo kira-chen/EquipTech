@@ -451,6 +451,8 @@ const LEVEL_NOTE = {
 
 // ---------------------------------------------------------------- 风险等级与频次
 const RISK_CN = { high: '高风险', medium: '中风险', low: '低风险' };
+/** 分级的作业类别：用火（特级/一级/二级）、高处（一~四级）、吊装（一~三级）；其余类别不分级 */
+const GRADED_TYPES = ['hotwork', 'height', 'lifting'];
 /** 各类型的基础风险等级（依据厂内特殊作业管理口径） */
 const TYPE_RISK = {
   hotwork: 'high', confined: 'high', lifting: 'high', blind: 'high',
@@ -478,7 +480,10 @@ function riskLevel({ types, hazards, mediumKnown, comboCount, level = null }) {
     if (RISK_ORDER[level.risk] > RISK_ORDER[lv]) lv = level.risk;
     reasons.push(`作业票级别：${level.cn}（级别以作业票为准，脚本不自判）→ 频次口径不低于${RISK_CN[level.risk]}`);
   } else {
-    reasons.push('未提供作业票级别（--level），频次按作业类型默认口径；有作业票时请按票面级别传入');
+    // 只有用火、高处、吊装分级（GB 30871-2022）；其余类别票面级别为空，不要求传 --level
+    const graded = types.filter((t) => GRADED_TYPES.includes(t));
+    if (types.length && !graded.length) reasons.push(`${types.map((t) => TYPE_CN[t] || t).join('、')}不分级，频次按作业类型默认口径`);
+    else reasons.push(`未提供作业票级别（--level），频次按作业类型默认口径；有作业票时请按票面级别传入${graded.length ? `（${graded.map((t) => TYPE_CN[t]).join('、')}）` : ''}`);
   }
   const bump = (why) => {
     reasons.push(why);
@@ -576,6 +581,6 @@ module.exports = {
   POINTS, GENERIC_POINTS, GENERIC_NOTE,
   ESCALATIONS, escalationsFor,
   RISK_CN, TYPE_RISK, riskLevel, FREQ_TABLE, keyMomentsFor,
-  parseLevel, LEVEL_NOTE,
+  parseLevel, LEVEL_NOTE, GRADED_TYPES,
   pointsFor,
 };

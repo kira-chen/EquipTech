@@ -413,6 +413,29 @@ ok(r.json.meta.ownership.includes('年度检查'), '24.3 meta 写明设备员可
 ok(/不由 GC 级别决定/.test(r.json.meta.basisNote), '24.4 meta 口径说明 GC 不决定周期');
 ok(r.json.meta.basisNote.includes('安全阀校验周期以厂内规定为准'), '24.5 meta 口径说明安全阀不代入');
 
+// ---- 25. 2026-11-04 核查补充
+// 25.1~25.4 --category 与 --issues 同用：被类别过滤掉的设备在台账中，其整改项不计入本次统计，也不误报「不在台账」
+r = run(mixed, ['--category', '压力容器', '--issues', issues], 'cat-issues');
+eq(r.summary.counts.openIssues, 2, '25.1 --category 压力容器时起重机械 QZ-91 的整改项不计入（V-91 1 项 + 台账外 ZZ-99 1 项）');
+ok(!r.json.openIssues.some((x) => x.tag === 'QZ-91'), '25.2 被类别过滤的设备整改项不进 openIssues');
+ok(!r.json.warnings.some((w) => w.includes('QZ-91') && w.includes('不在特种设备台账中')), '25.3 不误报 QZ-91「不在特种设备台账中」');
+ok(r.json.warnings.some((w) => /--category/.test(w) && /整改项/.test(w) && /1 项/.test(w)), '25.4 warning 说明按类别排除的整改项数');
+// 25.5~25.6 --date 不存在的日历日期（2 月 30 日）报错，不静默顺延到 3 月
+x = runRaw(['--input', base, '--workshop', '车间', '--date', '2026-02-30']);
+eq(x.s.ok, false, '25.5 --date 2026-02-30 报错');
+ok(/不是有效日期/.test(x.s.error || ''), '25.6 非法日历日期错误信息明确');
+// 25.7~25.10 4 级监控使用且台账载明下次检验日期（检验机构确定的监控期限）：单列 monitored，按台账日期参与超期/临期/正常分组，不按常规周期推算
+{
+  const g4 = mk('grade4-dated.xlsx', [
+    ['压力容器', 'V-63', '监控罐', '11063', '', '2024-01-15', '监控使用', d(-10), '4级', '罐区', 'φ2000', '在用'],
+  ]);
+  r = run(g4, [], 'grade4-dated');
+  eq(r.summary.counts.monitored, 1, '25.7 4 级有台账日期仍单列监控使用');
+  eq(r.summary.counts.overdue, 1, '25.8 监控期限已过按台账日期计超期（不因 4 级漏报超期）');
+  eq(r.summary.counts.undetermined, 0, '25.9 有台账日期时不进待核实');
+  eq(r.json.overdue[0].calcNext, null, '25.10 4 级不按常规周期推算计算值');
+}
+
 // ---- 输出
 console.log(`\n${'='.repeat(56)}`);
 console.log(`special-equipment-inspection-due 自测：${pass} 通过，${fail} 失败`);

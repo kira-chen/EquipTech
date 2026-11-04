@@ -420,6 +420,147 @@ ok(/未判定项 \| —（未提供阈值表）/.test(r.md), 'U9 无阈值表时
   ok(sj.ok && sj.out.startsWith(os.tmpdir()), 'U10 未传 --out 时写系统临时目录');
 }
 
+// ============ V. --running-until：停机时间为空表示「仍在运行」（DCS 启停记录口径），显式给截止时刻才计入 ============
+const OPEN = mk('open.xlsx', {
+  '启停记录': [['位号', '开机时间', '停机时间'],
+    ['P-01', '2026-09-10 08:00', '2026-09-12 08:00'],   // 48h 已闭合
+    ['P-01', '2026-09-20 08:00', ''],                   // 仍在运行
+    ['P-02', '2026-09-22 08:00', '']],                  // 开机晚于截止时刻 → 仍不配对
+  '阈值表': [['位号', '阈值类型', '阈值', '期初累计小时'], ['P-01', '运行小时', '100h', 40]],
+});
+r = run(OPEN, [], 'open-default');
+eq(r.j.byEquipment.find((x) => x.tag === 'P-01').periodHours, 48, 'V1 默认不给 --running-until：空停机时间段不计入（原口径不变）');
+eq(r.s.counts.unpaired, 2, 'V2 默认两条空停机时间均单列不配对');
+r = run(OPEN, ['--running-until', '2026-09-21 08:00'], 'open-until');
+const rj = r.j || { byEquipment: [], exceeded: [], warnings: [], meta: {} };
+const o1 = rj.byEquipment.find((x) => x.tag === 'P-01') || {};
+eq(o1.periodHours, 72, 'V3 给 --running-until 后仍在运行段计到该时刻（48+24）');
+eq(o1.cumHours, 112, 'V4 累计 = 期初 40 + 本期 72');
+ok(rj.exceeded.some((x) => x.tag === 'P-01'), 'V5 计入仍在运行段后超 100h 阈值（不再漏判）');
+eq((r.s.counts || {}).unpaired, 1, 'V6 开机晚于截止时刻的 P-02 仍单列不配对');
+ok(rj.warnings.some((w) => w.includes('P-01') && w.includes('仍在运行') && w.includes('2026-09-21 08:00')), 'V7 warning 点名按「截至该时刻仍在运行」计入的设备');
+eq(rj.meta.runningUntil, '2026-09-21 08:00', 'V8 meta 记录 runningUntil');
+ok(/仍在运行/.test(r.md || ''), 'V9 报告写明仍在运行段的计入口径');
+ok(raw(['--input', OPEN, '--workshop', 'X', '--date', DATE, '--running-until', '昨天']).s.ok === false, 'V10 --running-until 无法解析报错');
+ok(raw(['--input', OPEN, '--workshop', 'X', '--date', DATE, '--running-until', '2026-09-23 08:00']).s.ok === false, 'V11 --running-until 晚于 --date 当天报错');
+// 状态时序末条为运行，同样按 --running-until 计入
+const OPENS = mk('open-series.xlsx', {
+  '运行状态记录': [['位号', '时间', '运行状态'], ['P-05', '2026-09-20 08:00', '运行'], ['P-05', '2026-09-20 20:00', '运行']],
+});
+r = run(OPENS, ['--running-until', '2026-09-21 08:00'], 'open-series');
+eq(((r.j && r.j.byEquipment.find((x) => x.tag === 'P-05')) || {}).periodHours, 24, 'V12 状态时序末条为运行，按 --running-until 计到该时刻');
+// 上期 JSON 截止日不早于本期记录：续算会重复计入，必须提示
+r = run(BASE, [], 'prev-overlap-src');
+r = run(BASE, ['--prev', path.join(r.out, 'runtime.json')], 'prev-overlap');
+ok(r.j.warnings.some((w) => w.includes('上期') && w.includes('重复计入')), 'V13 上期截止日不早于本期最早运行段 → warning 提示重复计入');
+// 上期 JSON 中该设备累计小时为空：不得按 0 续算（否则累计只剩本期增量却标「上期续算」）
+const prevNull = path.join(work, 'prev-null.json');
+fs.writeFileSync(prevNull, JSON.stringify({ meta: { date: '2026-08-31' }, byEquipment: [{ tag: 'P-01', cumHours: null, cumStarts: 3 }] }), 'utf8');
+r = run(BASE, ['--prev', prevNull], 'prev-null');
+const pn = r.j.byEquipment.find((x) => x.tag === 'P-01');
+eq(pn.cumHours, null, 'V14 上期累计小时为空 → 本期累计为 null，不按 0 续算');
+ok(r.j.warnings.some((w) => w.includes('P-01') && w.includes('上期') && w.includes('未按 0')), 'V15 warning 写明上期累计为空、未按 0 续算');
+ok(!r.j.exceeded.some((x) => x.tag === 'P-01' && x.kind === 'hours') && r.j.undetermined.some((x) => x.tag === 'P-01'), 'V16 运行小时阈值改判未判定，不按本期增量判');
+eq(pn.cumStarts, 5, 'V17 启停次数上期有值时照常续算（3+2）');
+
+// ============ W. --running-until 只认每台时间上最后一段；重叠与「当前最大结束时刻」比较；上期启停为空不按 0 续算 ============
+const MID = mk('mid-open.xlsx', {
+  '启停记录': [['位号', '开机时间', '停机时间'],
+    ['P-01', '2026-09-01 08:00', ''],                   // 空停机，但其后还有开停记录 → 不是在运段，仍单列
+    ['P-01', '2026-09-05 08:00', '2026-09-07 08:00'],   // 48h
+    ['P-01', '2026-09-10 08:00', '2026-09-11 08:00']],  // 24h
+});
+r = run(MID, ['--running-until', '2026-09-21 08:00'], 'mid-open');
+const m1 = ((r.j && r.j.byEquipment) || []).find((x) => x.tag === 'P-01') || {};
+eq(m1.periodHours, 72, 'W1 中间的空停机行不计到截止时刻（48+24），只认最后一段');
+eq((r.s.counts || {}).unpaired, 1, 'W2 中间的空停机行仍按不配对单列');
+eq((r.s.counts || {}).overlaps, 0, 'W3 未把中间空停机行延到截止时刻，不产生虚假重叠');
+ok(!((r.j && r.j.warnings) || []).some((w) => w.includes('仍在运行') && w.includes('P-01')), 'W4 中间空停机行不在「仍在运行」warning 里点名');
+const LAST2 = mk('last-open2.xlsx', {
+  '启停记录': [['位号', '开机时间', '停机时间'],
+    ['P-01', '2026-09-10 08:00', ''],                   // 其后有 09-12 的停机记录 → 不是最后
+    ['P-01', '2026-09-05 08:00', '2026-09-12 08:00'],
+    ['P-03', '2026-09-15 08:00', ''],                   // 同台两条空停机：只认最晚一条
+    ['P-03', '2026-09-20 08:00', '']],
+});
+r = run(LAST2, ['--running-until', '2026-09-21 08:00'], 'last-open2');
+const l1 = ((r.j && r.j.byEquipment) || []).find((x) => x.tag === 'P-01') || {};
+const l3 = ((r.j && r.j.byEquipment) || []).find((x) => x.tag === 'P-03') || {};
+eq(l1.periodHours, 168, 'W5 空停机行其后还有停机记录 → 不计到截止时刻（只算 09-05~09-12）');
+eq(l3.periodHours, 24, 'W6 同台两条空停机只把最晚一条计到截止时刻（09-20 08:00~09-21 08:00）');
+ok(((r.j && r.j.warnings) || []).some((w) => w.includes('P-03') && w.includes('仍在运行') && w.includes('启停记录') && !w.includes('状态末条')), 'W7 启停记录来源的 warning 不再写「状态末条为运行」');
+const OVL3 = mk('ovl3.xlsx', {
+  '启停记录': [['位号', '开机时间', '停机时间'],
+    ['P-01', '2026-09-01 00:00', '2026-09-15 00:00'],
+    ['P-01', '2026-09-02 00:00', '2026-09-03 00:00'],
+    ['P-01', '2026-09-05 00:00', '2026-09-06 00:00']],
+});
+r = run(OVL3, [], 'ovl3');
+eq(r.s.counts.overlaps, 2, 'W8 长段同时覆盖后两段：重叠与当前最大结束时刻比较，两处都检出');
+ok(r.j.warnings.filter((w) => w.includes('重叠')).length === 2, 'W9 两处重叠各有 warning');
+eq(r.j.byEquipment[0].idleIntervals.length, 0, 'W10 被长段覆盖的间隔不记为停机间隔');
+const prevSN = path.join(work, 'prev-starts-null.json');
+fs.writeFileSync(prevSN, JSON.stringify({ meta: { date: '2026-08-31' }, byEquipment: [{ tag: 'P-01', cumHours: 1000, cumStarts: null }] }), 'utf8');
+const STH = mk('starts-th.xlsx', {
+  '启停记录': [['位号', '开机时间', '停机时间'], ['P-01', '2026-09-02 08:00', '2026-09-03 08:00'], ['P-01', '2026-09-05 08:00', '2026-09-06 08:00']],
+  '阈值表': [['位号', '阈值类型', '阈值'], ['P-01', '启停次数', '50次']],
+});
+r = run(STH, ['--prev', prevSN], 'prev-starts-null');
+const ps = r.j.byEquipment.find((x) => x.tag === 'P-01');
+eq(ps.cumStarts, null, 'W11 上期累计启停为空 → 本期累计启停为 null，不按 0 续算');
+eq(ps.cumHours, 1048, 'W12 上期累计小时有值照常续算（1000+48）');
+ok(r.j.warnings.some((w) => w.includes('P-01') && w.includes('启停') && w.includes('未按 0')), 'W13 warning 写明上期累计启停为空、未按 0 续算');
+ok(r.j.undetermined.some((x) => x.tag === 'P-01' && x.kind === 'starts'), 'W14 启停次数阈值判未判定');
+
+// ============ X. 同一时刻停机又开机（第三轮 R4）；重叠与所有未结束段比较（R13）；阈值表有、窗口内无记录的设备照常列出（v1-5） ============
+const SAMEPT = mk('same-instant.xlsx', {
+  '启停记录': [['位号', '开机时间', '停机时间'],
+    ['P-01', '2026-09-01 08:00', '2026-09-10 08:00'],   // 216h
+    ['P-01', '2026-09-10 08:00', ''],                   // 同一时刻再开机，停机为空 → 最后一段，计到截止时刻 264h
+    ['P-02', '2026-09-01', '2026-09-10'],               // 只有日期：同样是停机=开机
+    ['P-02', '2026-09-10', '']],
+});
+r = run(SAMEPT, ['--running-until', '2026-09-21 08:00'], 'same-instant');
+const sp1 = ((r.j && r.j.byEquipment) || []).find((x) => x.tag === 'P-01') || {};
+const sp2 = ((r.j && r.j.byEquipment) || []).find((x) => x.tag === 'P-02') || {};
+eq(sp1.periodHours, 480, 'X1 停机时刻正好等于下一段开机时刻：后一段仍是最后一段，计到 --running-until（216+264）');
+eq(sp2.periodHours, 488, 'X2 只有日期的记录同样处理（216+272）');
+eq((r.s.counts || {}).unpaired, 0, 'X3 同一时刻停机又开机不判不配对');
+eq((r.s.counts || {}).overlaps, 0, 'X4 首尾相接不算重叠');
+const OVLN = mk('ovl-nested.xlsx', {
+  '启停记录': [['位号', '开机时间', '停机时间'],
+    ['P-01', '2026-09-01 00:00', '2026-09-15 00:00'],
+    ['P-01', '2026-09-02 00:00', '2026-09-05 00:00'],
+    ['P-01', '2026-09-03 00:00', '2026-09-06 00:00']],
+});
+r = run(OVLN, [], 'ovl-nested');
+eq(r.s.counts.overlaps, 3, 'X5 被同一长段覆盖的两段之间互相重叠也检出（2-3、2-4、3-4）');
+ok(r.j.warnings.some((w) => w.includes('第3行与第4行')), 'X6 第 3、4 行之间的重叠有 warning');
+const NOREC = mk('no-record.xlsx', {
+  '启停记录': [['位号', '开机时间', '停机时间'], ['P-01A', '2026-09-02 08:00', '2026-09-03 08:00']],
+  '阈值表': [['位号', '设备名称', '阈值类型', '阈值', '期初累计小时'],
+    ['P-01A', '泵A', '运行小时', 8000, 100],
+    ['P-01B', '泵B', '运行小时', 8000, 7500],     // 备机：窗口内无启停记录，累计 = 期初，判接近阈值
+    ['P-03', '泵3', '运行小时', 8000, 9000]],     // 无记录但期初已超
+});
+r = run(NOREC, [], 'no-record');
+const nb = ((r.j && r.j.byEquipment) || []).find((x) => x.tag === 'P-01B') || {};
+const n3 = ((r.j && r.j.byEquipment) || []).find((x) => x.tag === 'P-03') || {};
+eq(((r.j && r.j.byEquipment) || []).length, 3, 'X7 阈值表有、窗口内无记录的设备照常列出');
+eq((r.s.counts || {}).equipment, 1, 'X7b counts.equipment 仍只计本期有记录的设备');
+eq((r.s.counts || {}).noRunRecord, 2, 'X7c counts.noRunRecord 另计本期无运行记录的设备');
+eq((r.s.counts || {}).listed, 3, 'X7d counts.listed = 列出的设备总数');
+eq(nb.periodHours, 0, 'X8 无运行记录的设备本期 0h');
+eq(nb.cumHours, 7500, 'X9 累计 = 期初值');
+eq(nb.noRunRecord, true, 'X10 标注本期无运行记录');
+ok(r.j.dueSoon.some((x) => x.tag === 'P-01B'), 'X11 无记录设备照常判阈值（7500/8000 接近）');
+ok(r.j.exceeded.some((x) => x.tag === 'P-03'), 'X12 无记录设备期初已超阈值 → 已超');
+ok(r.j.warnings.some((w) => w.includes('本期无运行记录') && w.includes('P-01B') && w.includes('P-03')), 'X13 warning 点名本期无运行记录的设备');
+ok(/本期无运行记录/.test(r.md || ''), 'X14 报告注明本期无运行记录');
+ok(((r.j && r.j.items) || []).some((x) => x.tag === 'P-01B' && x.cumulativeHours === 7500), 'X15 下游 items 也带上无记录设备');
+r = run(NOREC, ['--equipment', 'P-01A'], 'no-record-only');
+eq((r.s.counts || {}).listed, 1, 'X16 --equipment 限定范围时不补范围外的无记录设备');
+
 console.log(`\n${'='.repeat(56)}`);
 console.log(`runtime-hours-tracker 自测：${pass} 通过，${fail} 失败`);
 if (failures.length) { console.log('\n失败项：'); failures.forEach((f) => console.log('  ✗ ' + f)); }

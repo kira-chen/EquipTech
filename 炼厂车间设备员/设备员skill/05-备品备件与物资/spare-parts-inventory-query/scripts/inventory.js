@@ -38,6 +38,7 @@ const ALIASES = C.mergeAliases({
   '位号': ['位号', '设备位号', '适用设备', '适用位号', '功能位置', '安装位置'],
   '到货数量': ['到货数量', '在途数量', '采购数量', '订单数量', '数量'],
   '预计到货': ['预计到货', '到货日期', '预计到货日期', '交期', '交货日期'],
+  '采购订单': ['采购订单', '采购订单号', '采购凭证', '采购单号', 'PO号', 'PO'],
   '材质': ['材质', '材料'],
   '压力等级': ['压力等级', '公称压力', 'PN'],
   '温度范围': ['温度范围', '使用温度', '工作温度'],
@@ -45,6 +46,43 @@ const ALIASES = C.mergeAliases({
 
 function loadBook(p) { return fs.statSync(p).isDirectory() ? readCsvDir(p) : readXlsx(p); }
 const norm = (v) => C.str(v).toLowerCase().replace(/[\s\-_]/g, '');
+/**
+ * 位号比对（适用位号列常写成「P-2101A/P-2101B」「P-2101AB」「1#P-2101A」）：在单元格文字里找位号，
+ * 字符之间允许空白、-、_，大小写不敏感；前面不能紧挨字母或数字（查 SV-101 不中 PSV-101，「1#P-101A」的 # 算边界）。
+ *  - 查询以数字结尾（P-2101）：后面不能紧跟数字（不误中 P-21011A、P-2101-1），可跟任意个字母后缀（P-2101A、P-2101AB）；
+ *  - 查询以字母结尾（P-2101A）：完全相同，或「P-2101AB」「P-2101A/B」「P-2101A、C」里的同组字母含该字母（参考 technical-document-finder 的 tagRes.ab）；
+ *    同组字母后面不能紧跟「-数字」：「P-2101A、C-101」「P-2101A, B-202」里的 C-101、B-202 是另一个位号，不算同组字母。
+ */
+const TAG_SEP = '[\\s\\-_]*';
+const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const tagReCache = new Map();
+function tagRes(t) {
+  if (tagReCache.has(t)) return tagReCache.get(t);
+  const body = (s) => [...s].map(reEsc).join(TAG_SEP);
+  const res = { main: null, ab: null, letter: null };
+  if (/\d$/.test(t)) res.main = new RegExp(`(?<![a-z0-9])${body(t)}(?![\\-_]*\\d)(?=[a-z]*(?![a-z0-9]))`);
+  else {
+    res.main = new RegExp(`(?<![a-z0-9])${body(t)}(?![a-z0-9])`);
+    const m = t.match(/^(.*\d)([a-z])$/);
+    if (m) {
+      res.ab = new RegExp(`(?<![a-z0-9])${body(m[1])}${TAG_SEP}([a-z](?:(?:\\s*[/／、，,&＆]\\s*)?[a-z])+)(?![a-z0-9])(?!\\s*[\\-_－—]\\s*\\d)`, 'g');
+      res.letter = m[2];
+    }
+  }
+  tagReCache.set(t, res);
+  return res;
+}
+const tagHit = (cell, t) => {
+  if (!t) return false;
+  const s = C.str(cell).toLowerCase();
+  const r = tagRes(t);
+  if (r.main.test(s)) return true;
+  if (!r.ab) return false;
+  r.ab.lastIndex = 0;
+  let m;
+  while ((m = r.ab.exec(s))) { if (m[1].split(/[^a-z]+/).join('').includes(r.letter)) return true; }
+  return false;
+};
 
 function main() {
   const a = C.parseArgs(process.argv.slice(2), VALUE_OPTS, FLAG_OPTS);
@@ -102,7 +140,7 @@ function main() {
       const mm = C.toRecords(mr, ['位号', '备件编码'], '备件设备对应', [], warnings, ALIASES);
       mapping = new Map();
       for (const r of mm) {
-        const t = norm(r['位号']), code = C.str(r['备件编码']);
+        const t = C.str(r['位号']), code = C.str(r['备件编码']);
         if (!t || !code) continue;
         if (!mapping.has(t)) mapping.set(t, new Set());
         mapping.get(t).add(norm(code));
@@ -116,9 +154,9 @@ function main() {
   let tagSource = null;
   if (a.tag) {
     const t = norm(a.tag);
-    const viaCol = stock.filter((s) => s.tag && (norm(s.tag) === t || norm(s.tag).includes(t)));
+    const viaCol = stock.filter((s) => s.tag && tagHit(s.tag, t));
     const mappedCodes = new Set();
-    if (mapping) for (const [k, codes] of mapping) if (k === t || k.includes(t)) for (const c of codes) mappedCodes.add(c);
+    if (mapping) for (const [k, codes] of mapping) if (tagHit(k, t)) for (const c of codes) mappedCodes.add(c);
     const viaMap = stock.filter((s) => mappedCodes.has(norm(s.code)));
     const seen = new Set();
     matches = viaCol.concat(viaMap).filter((s) => (seen.has(s.code) ? false : (seen.add(s.code), true)));
@@ -153,19 +191,21 @@ function main() {
 
   // ---- 在途
   let inTransit = null;
+  let hasPo = false;
   if (a.intransit) {
     if (!fs.existsSync(a.intransit)) throw new Error(`在途采购表不存在: ${a.intransit}`);
     const ir = C.pickSheet(loadBook(a.intransit), '在途采购', '在途', '采购在途', '采购');
     if (!ir) warnings.push('在途文件中未找到「在途采购」工作表');
     else {
-      const it = C.toRecords(ir, ['备件编码'], '在途采购', ['备件名称', '到货数量', '预计到货', '单位'], warnings, ALIASES);
+      const it = C.toRecords(ir, ['备件编码'], '在途采购', ['备件名称', '到货数量', '预计到货', '单位', '采购订单'], warnings, ALIASES);
+      hasPo = it.hasCol('采购订单');
       const map = new Map();
       for (const r of it) {
         const code = C.str(r['备件编码']); if (!code) continue;
         const eta = C.normDate(r['预计到货']);
         if (r['预计到货'] && !eta) warnings.push(`工作表「在途采购」第${r._row}行 预计到货「${C.str(r['预计到货'])}」无法解析`);
         if (!map.has(code)) map.set(code, []);
-        map.get(code).push({ qty: num(r['到货数量'], { sheet: '在途采购', row: r._row, col: '到货数量' }), eta, unit: C.str(r['单位']) });
+        map.get(code).push({ qty: num(r['到货数量'], { sheet: '在途采购', row: r._row, col: '到货数量' }), eta, unit: C.str(r['单位']), po: C.str(r['采购订单']) || null });
       }
       inTransit = matches.map((m) => ({ code: m.code, name: m.name, arrivals: map.get(m.code) || [] }))
         .filter((x) => x.arrivals.length);
@@ -190,7 +230,16 @@ function main() {
         }
       }
     }
-    for (const s of stock) pool.push({ ...s, from: '库存表' });
+    // 同一编码既在库存表又在目录里（MCP 备件目录含库存表全部物料）：合并为一条，库存量取库存表，缺的参数由目录补齐
+    const byCode = new Map(pool.map((p) => [p.code, p]));
+    for (const s of stock) {
+      const c = byCode.get(s.code);
+      if (!c) { pool.push({ ...s, from: '库存表' }); continue; }
+      const merged = { ...s, from: '库存表 + 备件目录' };
+      for (const f of ['name', 'spec', 'unit', 'material', 'pressure', 'temp']) if (!merged[f] && c[f]) merged[f] = c[f];
+      pool[pool.indexOf(c)] = merged;
+      byCode.set(s.code, merged);
+    }
 
     alternatives = matches.map((m) => {
       const cat = SUB.categoryOf(m.name || m.spec);
@@ -274,7 +323,9 @@ function main() {
     for (const t of inTransit) {
       L.push(`**${t.code}${t.name ? ' ' + t.name : ''}**`);
       L.push('');
-      L.push(C.mdTable(['到货数量', '单位', '预计到货'], t.arrivals.map((x) => [C.fmt(x.qty), x.unit || '—', x.eta || '—'])));
+      L.push(hasPo
+        ? C.mdTable(['到货数量', '单位', '预计到货', '采购订单'], t.arrivals.map((x) => [C.fmt(x.qty), x.unit || '—', x.eta || '—', x.po || '—']))
+        : C.mdTable(['到货数量', '单位', '预计到货'], t.arrivals.map((x) => [C.fmt(x.qty), x.unit || '—', x.eta || '—'])));
     }
   }
   L.push('## 四、同规格候选（代用参考）');

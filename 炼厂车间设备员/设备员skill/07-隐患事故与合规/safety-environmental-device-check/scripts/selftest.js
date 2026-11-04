@@ -461,7 +461,7 @@ ok(['LS-1', 'LS-2', 'LS-3', 'LS-4'].every((id) => catOf(id) === '联锁与防爆
 ok(['XF-W1', 'XF-W2'].every((id) => catOf(id) === '消防'), '27.15 消防水泵/稳压泵归入「消防」');
 ok(r.data.byCategory.some((x) => x.category === '安全附件') && r.data.byCategory.some((x) => x.category === '联锁与防爆'), '27.16 分类汇总出现两个新类别');
 eq(r.summary.counts.undetermined, 1, '27.17 安全附件周期为空 → 待确认（不代入安全阀校验默认周期）');
-ok(r.data.undetermined[0].id === 'AQ-5' && r.data.undetermined[0].periodDays === null, '27.18 安全阀无周期时 periodDays 为 null，校验周期归 special-equipment-inspection-due');
+ok(r.data.undetermined[0].id === 'AQ-5' && r.data.undetermined[0].periodDays === null, '27.18 安全阀无周期时 periodDays 为 null，安全阀校验用 valve-instrument-calibration-ledger');
 r = run(seven, ['--category', '安全附件'], 'seven-aq');
 eq(r.summary.counts.total, 5, '27.19 --category 安全附件 过滤生效');
 r = run(seven, ['--category', '联锁与防爆'], 'seven-ls');
@@ -488,7 +488,11 @@ ok(!r.data.warnings.some((w) => w.includes('缺少列')), '27.26 系统导出列
 r = run(oos, [], 'statement');
 ok(r.md.includes('本材料由脚本汇总、模型成文，仅供设备员复核参考，不替代审批、定性、验收与签字；厂内制度与系统数据为准。'), '27.27 md 末尾含通用声明行');
 eq(r.data.meta.statement, '本材料由脚本汇总、模型成文，仅供设备员复核参考，不替代审批、定性、验收与签字；厂内制度与系统数据为准。', '27.28 meta.statement 写入声明行');
-ok(/special-equipment-inspection-due/.test(r.md) && /仪表专业/.test(r.md), '27.29 md 写明安全阀校验周期归 special-equipment-inspection-due、SIS 功能测试归仪表');
+ok(/special-equipment-inspection-due/.test(r.md) && /仪表专业/.test(r.md), '27.29 md 写明特种设备本体定检归 special-equipment-inspection-due、SIS 功能测试归仪表');
+ok(/安全阀校验[^。；]{0,12}valve-instrument-calibration-ledger/.test(r.md), '27.29b md 写明安全阀校验用 valve-instrument-calibration-ledger');
+ok(!/安全阀[^。；]{0,20}归 special-equipment-inspection-due/.test(r.md), '27.29c md 不再写安全阀校验归 special-equipment-inspection-due');
+ok(/压力表、温度计检定归计量（仪表）专业/.test(r.md), '27.29d md 写明压力表、温度计检定归计量（仪表）专业');
+ok(/valve-instrument-calibration-ledger/.test(r.data.meta.scopeNote) && /计量（仪表）/.test(r.data.meta.scopeNote), '27.29e meta.scopeNote 归口与 md 一致');
 ok(/安全环保设施状态检查（基准日/.test(r.md.split('\n')[0]), '27.30 md 标题为「安全环保设施状态检查」');
 ok(!/[⚠✅❌✔✗]/.test(r.md), '27.31 产出 md 不含 emoji');
 ok(/【注意】存在失效或超期未检/.test(r.md), '27.32 醒目提示以「【注意】」开头');
@@ -521,6 +525,30 @@ const both = mk('both.xlsx', {
 });
 r = run(both, [], 'both');
 eq(r.data.normal[0].id, 'E301-GD-001', '28.6 功能位置与 SAP 设备编号并存时，设施编号取功能位置（局部别名靠前）');
+
+// ---- 29. 整改记录跨表配对：整改完成日期早于本次检测日期的旧记录，不能闭环本次不合格
+const uf29 = mk('uf29.xlsx', {
+  '安全环保设施台账': [HEAD,
+    ['报警器', 'GD-60', '可燃气体报警器', '机泵房', '检定', '1年', ago(10), '不合格', '在用', '王工', ''],   // 10 天前检测不合格
+    ['报警器', 'GD-61', '可燃气体报警器', '机泵房', '检定', '1年', ago(30), '不合格', '在用', '王工', ''],   // 30 天前检测不合格
+    ['接地', 'JD-60', '塔防雷接地', '常压区', '接地电阻测试', '1年', ago(40), '不合格', '在用', '赵工', ''],
+  ],
+});
+const iss29 = mk('iss29.xlsx', {
+  '整改记录': [
+    ['设施编号', '整改状态', '整改完成日期', '整改措施'],
+    ['GD-60', '已整改', ago(200), '上一轮不合格的整改（早于本次检测）'],
+    ['GD-61', '已整改', ago(5), '更换传感器后复检合格'],
+    ['JD-60', '已整改', ago(100), '旧记录'],
+    ['JD-60', '已整改', ago(20), '补打接地极后复测合格'],
+  ],
+});
+r = run(uf29, ['--issues', iss29], 'pair29');
+ok(r.data.unresolvedFail.some((x) => x.id === 'GD-60'), '29.1 整改完成日期早于本次检测日期 → 不能闭环本次不合格，仍为不合格未整改');
+ok(r.data.warnings.some((w) => w.includes('GD-60') && /早于/.test(w)), '29.2 旧整改记录不配对时 warning 说明原因');
+ok(!r.data.unresolvedFail.some((x) => x.id === 'GD-61'), '29.3 整改完成日期晚于检测日期的记录正常闭环');
+ok(!r.data.unresolvedFail.some((x) => x.id === 'JD-60'), '29.4 同一设施多条整改记录时取最近一条（晚于检测日期）闭环');
+eq(r.summary.counts.unresolvedFail, 1, '29.5 不合格未整改只剩 GD-60');
 
 // ---- 输出
 console.log(`\n${'='.repeat(56)}`);

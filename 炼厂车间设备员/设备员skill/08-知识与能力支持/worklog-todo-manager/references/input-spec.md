@@ -20,7 +20,7 @@
 |---|---|---|---|
 | work-order-tracker | `orders.json` | `byStatus` + `stalled` | `overdue[]`（超期未闭环）、`stalled[]`（停滞）、`dueSoon[]`（临期） |
 | hazard-closure-tracker | `hazard.json` | `majorHazards` 或 `unverified` | `overdue[]`（超期未整改）、`dueSoon[]`（临期）、`unverified[]`（已整改未验收，待销号） |
-| special-equipment-inspection-due | `inspection.json` | `dateConflict`，或 `byCategory` + `prepMaterials` | `overdue[]`（定检超期）、`dueSoon[]`（定检临期） |
+| special-equipment-inspection-due | `inspection.json` | `dateConflict`，或 `byCategory` + `prepMaterials` | `overdue[]`（定检超期）、`dueSoon[]`（定检临期）、`openIssues[]`（检验问题整改未闭环：`tag`、`issue`、`dueDate`、`status`、`owner`、`inLedger`；上游未传 `--issues` 时为 null，脚本 warning 说明本清单不含检验问题整改） |
 | valve-instrument-calibration-ledger | `calibration.json` | `unresolvedFail` 或 `sendList` | `overdue[]`（超期未校）、`dueSoon[]`（临期）、`unresolvedFail[]`（不合格未整改） |
 | lubrication-manager | `lube.json` | `oilAnalysis` 或 `consumption` | `overdue[]`（润滑逾期）、`dueSoon[]`（润滑临期）；责任人取 `owner` |
 | defect-intake-grading | `defects.json` | `defects` + `counts.byLevel` | `defects[]` 全部条目，到期日取各条的 `dueDate`；等级按 A/B/C，旧 I~IV 映射并 warning；`notification`（通知单草稿对象：`typeCn` / `shortText`，无通知单号，号由 SAP 生成）写入说明，兼容旧结构的 `notificationNo` 字符串 |
@@ -34,9 +34,10 @@
 | 工单停滞 | 无（停滞工单本就没有有效的要求完成时间） | **恒归入无到期日**，原因写「停滞工单无要求完成时间」 |
 | 隐患 | `deadline` | 归入无到期日 |
 | 特种设备定检 | `nextDate` | 归入无到期日 |
+| 特种设备检验问题整改 | `openIssues[].dueDate`（要求完成日期） | 归入无到期日，原因写「整改项未填要求完成日期，脚本未自行设定」 |
 | 仪表校验超期 / 临期 | `nextDate` | 归入无到期日 |
 | 校验不合格未整改 | 无 | **恒归入无到期日**，原因写「须另行确定整改期限」 |
-| 润滑 | `dueDate` | 归入无到期日 |
+| 润滑 | `dueDate` | 归入无到期日；按运行小时判定的项 `dueDate` 为 null，标题写「按运行小时判定，剩余 / 超 N 小时」（取 `remainHours` / `overdueHours`），原因写「润滑周期按运行小时判定，来源未给日历到期日，脚本未自行换算日期」 |
 | 缺陷 | `dueDate`（由 defect-intake-grading 按等级算出） | 未定级或缺发现时间的缺陷无 `dueDate`，归入无到期日 |
 | 交接未完成事项 | `due`（`dueText` 为「（待补）」「待定」等占位时不 warning） | 归入无到期日，原因写「交接记录未写明期限，脚本未自行设定」 |
 
@@ -123,7 +124,7 @@
 - `status === 'done'` 的条目不结转
 - 其余条目**原样结转**，保留 `dueDate`、`srcName`、`srcRef`
 - 结转项追加 `carried: true`、`carriedFrom`（首次结转的日期，多次结转保留最早的那天）、`carriedRounds`（已结转次数）、`originalDueDate`、`originalSource`
-- 若本日来源中同一事项再次出现（key 相同），**不重复列**，把结转标记合并到本日那条上
+- 若本日来源中同一事项再次出现（key 相同），**不重复列**，把结转标记合并到本日那条上；本日上游到期日与 `originalDueDate` 不同时，`dueDate` 取上游本日值，条目加 `dueDateChanged: {from, to}` 并 warning「上游到期日由 X 变为 Y，请在系统核实」，清单两个日期都列
 
 **key 口径**：`key` = 类型 + 单号 + 位号（`<类型>|<单号>|<位号>`，如 `orders|WO-26090012|P-1101B`）；无单号时退回稳定的事项主体（`<类型>||<位号>|<主体指纹>`：润滑取部位，隐患/缺陷取描述，交接取事项内容，待办表/文字待办取事项文字）。key **不含子类与标题**，停滞天数变化、临期转超期、隐患由超期转待验收、交接状态变化都不改变 key，次日重跑上游不会出重复条目。单号取：工单号、隐患编号、特种设备注册代码、校验证书号、待办表「编号」列；缺陷登记号由 defect-intake-grading 按运行当日生成、次日重跑会变，不作单号（有真实通知单号时用通知单号）。校验「不合格未整改」与「超期/临期」是两件事，类型写作 `calibration:fail`。同一次运行内撞 key（如同一工单既超期又停滞）时，后出现的一条追加 `#<子类>`（如 `orders|WO-26090102|K-1201#stalled`）。
 

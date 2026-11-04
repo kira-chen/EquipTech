@@ -22,6 +22,49 @@ const C = require('./lib/common');
 
 const warnings = [];
 const num = C.makeNum(warnings);
+/**
+ * 预计工期 → 天。SAP/设备资产管理系统的工期常以小时记（「72小时」），申报表「工期(天)」按天：
+ * 带小时后缀的按 24 小时折天（保留 2 位），带天/日后缀或纯数字按天；其余交给 num（剥离单位并 warning）。
+ */
+const hoursNoted = new Set();
+/**
+ * 表头本身带小时单位（如「预计工期(h)」「工期（小时）」）时，纯数字按小时折天。
+ * 仿 toRecords 的取列顺序：先找与别名全等的列（全等列不带单位，按天），再按别名顺序找前缀命中的列，看去掉别名后的剩余部分是否含 h/小时。
+ * 返回实际列名（按小时计）或 null（按天）。
+ */
+const DURATION_ALIASES = ['预计工期', '工期', '预计时间', '作业工期', '预计天数', '工期(天)'];
+function durationHourHeader(rows) {
+  for (let i = 0; i < Math.min(10, (rows || []).length); i++) {
+    const hdr = (rows[i] || []).map((c) => C.str(c).replace(/\s+/g, ''));
+    if (DURATION_ALIASES.some((al) => hdr.includes(al))) return null;
+    for (const al of DURATION_ALIASES) {
+      const col = hdr.find((x) => x && x.startsWith(al));
+      if (col) return /h|小时/i.test(col.slice(al.length)) ? col : null;
+    }
+  }
+  return null;
+}
+function durationDays(v, ctx, hourHeader) {
+  const s = C.str(v).replace(/\s/g, '');
+  if (hourHeader && /^\d+(?:\.\d+)?$/.test(s)) {
+    if (ctx && !hoursNoted.has(ctx.sheet)) {
+      hoursNoted.add(ctx.sheet);
+      warnings.push(`工作表「${ctx.sheet}」列「${hourHeader}」表头以小时计（如「${s}」），已按 24 小时折算为天`);
+    }
+    return C.round(Number(s) / 24, 2);
+  }
+  const h = s.match(/^(\d+(?:\.\d+)?)(小时|个小时|h|hr|hrs)$/i);
+  if (h) {
+    if (ctx && !hoursNoted.has(ctx.sheet)) {
+      hoursNoted.add(ctx.sheet);
+      warnings.push(`工作表「${ctx.sheet}」列「预计工期」以小时计（如「${s}」），已按 24 小时折算为天`);
+    }
+    return C.round(Number(h[1]) / 24, 2);
+  }
+  const d = s.match(/^(\d+(?:\.\d+)?)(天|日|d)$/i);
+  if (d) return Number(d[1]);
+  return num(v, ctx);
+}
 const VALUE_OPTS = ['input', 'workshop', 'period', 'out', 'template', 'spare', 'window', 'due'];
 const FLAG_OPTS = ['include-cyclic', 'help'];
 
@@ -44,6 +87,8 @@ const ALIASES = C.mergeAliases({
   '工单号': ['工单号', '工单编号', '单号', '派工单号'],
   '工单内容': ['工单内容', '工作内容', '检修内容', '作业内容', '内容', '订单描述', '订单短文本'],
   '工单类型': ['工单类型', '订单类型', '维修类型', '工单类别'],
+  // 工单表里的「通知单号」：SAP 订单由通知单转出，用于把已转工单的通知单与工单配对（不用裸「通知单」，免得前缀抢到「通知单类型」）
+  '关联通知单号': ['通知单号', '维修通知单号', '通知单编号'],
   '计划完成': ['计划完成', '计划完成时间', '要求完成', '计划完工', '计划日期', '基本结束日期', '计划结束日期', '要求结束'],
   '周期项编号': ['周期项编号', '项目编号', '计划编号', '周期编号', '维护计划', '维护计划编号', '维护项目'],
   '项目名称': ['项目名称', '检修项目', '项目', '检修项'],
@@ -243,6 +288,9 @@ function main() {
     due = C.normDate(a.due);
     if (!due) throw new Error(`--due 「${a.due}」不是有效日期，应为 YYYY-MM-DD`);
   }
+  // 申报周期起止（周期项按下次到期日筛选用；--due 是上报截止日，不参与筛选）
+  const periodStart = C.normDate(`${period}-01`);
+  const periodEnd = periodStart ? new Date(Date.UTC(+period.slice(0, 4), pm, 0)).toISOString().slice(0, 10) : null;
 
   const inputs = C.str(a.input).split(/[,，;；]/).map((s) => s.trim()).filter(Boolean);
   if (!inputs.length) throw new Error('--input 未给出任何有效路径');
@@ -254,7 +302,12 @@ function main() {
   const statusUndetermined = [];   // 状态无法判断是否闭环 → 未判定，不纳入正式清单
   const foundSources = [];
   const includeCyclic = !!a['include-cyclic'];
+  const cyclicOutOfPeriod = [];   // 下次到期日晚于申报周期末的周期项：不进申报清单，单列
+  let cyclicPeriodWarned = false;
   let skippedDone = 0;
+  const doneOrderNotif = new Map();   // 通知单号（去前导零）→ { orderNo, state: 已完工待验收 / 已闭环 }
+  /** 通知单号配对键：SAP 导出常把 12 位通知单号补前导零（000010046656），去掉前导零再比 */
+  const notifKey = (v) => C.str(v).replace(/^0+(?=\d)/, '');
 
   /** 状态门：返回 true 表示继续纳入；closed/done 跳过；null → 记入 statusUndetermined 并跳过 */
   function statusGate(r, base, sheet, basisNo, tag, descText, srcCn) {
@@ -274,6 +327,13 @@ function main() {
     return true;
   }
 
+  /** 来源表有没有备件列：没有备件列（如 MCP 通知单/工单表）≠ 备件列为空，前者备件需求未知，不能判「无备件需求」 */
+  function spareColOf(recs, sheet) {
+    const has = recs.hasCol('备件需求') || recs.hasCol('备件型号');
+    if (!has && recs.length) warnings.push(`工作表「${sheet}」无备件列（备件需求/备件型号），该表各项备件需求未知，备件到位写「未核实（来源表无备件列）」，请到 SAP 订单组件或 MRO 工单预留核实`);
+    return has;
+  }
+
   for (const p of inputs) {
     let book;
     try { book = loadBook(p); } catch (e) { throw new Error(`读取失败 ${p}: ${e.message}`); }
@@ -283,9 +343,11 @@ function main() {
     const defRows = C.pickSheet(book, '缺陷台账', '缺陷记录', '缺陷', '通知单');
     if (defRows) {
       foundSources.push(`${base}→未闭环缺陷`);
+      const hourHdr = durationHourHeader(defRows);
       const recs = C.toRecords(defRows, ['位号'], `${base}/缺陷台账`,
         ['缺陷编号', '缺陷描述', '设备名称', '等级', '状态', '发现时间', '是否需停机', '预计工期', '备件需求', '备件型号', '需求数量', '专业'],
         warnings, ALIASES);
+      const spareCol = spareColOf(recs, `${base}/缺陷台账`);
       for (const r of recs) {
         const tag = C.str(r['位号']);
         if (!tag) { warnings.push(`工作表「${base}/缺陷台账」第${r._row}行 位号为空，已跳过`); continue; }
@@ -299,9 +361,9 @@ function main() {
           level: C.str(r['等级']), status: C.str(r['状态']),
           since: C.normDate(r['发现时间']),
           needShutdown: parseYN(r['是否需停机']),
-          durationDays: num(r['预计工期'], { sheet: `${base}/缺陷台账`, row: r._row, col: '预计工期' }),
+          durationDays: durationDays(r['预计工期'], { sheet: `${base}/缺陷台账`, row: r._row, col: '预计工期' }, hourHdr),
           spareName: C.str(r['备件需求']), spareModel: C.str(r['备件型号']),
-          spareQty: num(r['需求数量'], { sheet: `${base}/缺陷台账`, row: r._row, col: '需求数量' }),
+          spareQty: num(r['需求数量'], { sheet: `${base}/缺陷台账`, row: r._row, col: '需求数量' }), spareNoCol: !spareCol,
           discipline: C.str(r['专业']), prio,
           prioReason: prio === null ? (C.str(r['等级']) ? `缺陷等级「${C.str(r['等级'])}」无法识别` : '缺陷等级为空') : null,
           sheet: `${base}/缺陷台账`, row: r._row,
@@ -313,12 +375,20 @@ function main() {
     const ordRows = C.pickSheet(book, '工单台账', '工单记录', '工单', '订单');
     if (ordRows) {
       foundSources.push(`${base}→未闭环工单`);
+      const hourHdr = durationHourHeader(ordRows);
       const recs = C.toRecords(ordRows, ['位号'], `${base}/工单台账`,
-        ['工单号', '工单内容', '设备名称', '工单类型', '状态', '计划完成', '是否需停机', '预计工期', '备件需求', '备件型号', '需求数量', '专业', '等级'],
+        ['工单号', '工单内容', '设备名称', '工单类型', '状态', '计划完成', '是否需停机', '预计工期', '备件需求', '备件型号', '需求数量', '专业', '等级', '关联通知单号'],
         warnings, ALIASES);
+      const spareCol = spareColOf(recs, `${base}/工单台账`);
       for (const r of recs) {
         const tag = C.str(r['位号']);
         if (!tag) { warnings.push(`工作表「${base}/工单台账」第${r._row}行 位号为空，已跳过`); continue; }
+        const notifNo = C.str(r['关联通知单号']);
+        // 已完工待验收或已闭环（CLSD 等）的工单：其通知单也不再按未闭环缺陷重复申报。
+        // 已取消/删除标记（DLFL、作废）的工单活没干，不算闭环，通知单照常按未闭环缺陷申报
+        const ost = rollupState(r['状态']);
+        const cancelled = C.normSapStatus(C.str(r['状态'])) === '已取消';
+        if (notifNo && !cancelled && (ost === 'done' || ost === 'closed')) doneOrderNotif.set(notifKey(notifNo), { orderNo: C.str(r['工单号']), state: ost === 'done' ? '已完工待验收' : '已闭环' });
         if (!statusGate(r, base, '工单台账', C.str(r['工单号']), tag, C.str(r['工单内容']), '未闭环工单')) continue;
         const plan = C.normDate(r['计划完成']);
         if (r['计划完成'] && !plan) warnings.push(`工作表「${base}/工单台账」第${r._row}行 计划完成「${C.str(r['计划完成'])}」无法解析`);
@@ -331,12 +401,12 @@ function main() {
           level: C.str(r['等级']), status: C.str(r['状态']),
           since: plan,
           needShutdown: parseYN(r['是否需停机']),
-          durationDays: num(r['预计工期'], { sheet: `${base}/工单台账`, row: r._row, col: '预计工期' }),
+          durationDays: durationDays(r['预计工期'], { sheet: `${base}/工单台账`, row: r._row, col: '预计工期' }, hourHdr),
           spareName: C.str(r['备件需求']), spareModel: C.str(r['备件型号']),
-          spareQty: num(r['需求数量'], { sheet: `${base}/工单台账`, row: r._row, col: '需求数量' }),
+          spareQty: num(r['需求数量'], { sheet: `${base}/工单台账`, row: r._row, col: '需求数量' }), spareNoCol: !spareCol,
           discipline: C.str(r['专业']), prio,
           prioReason: prio === null ? (C.str(r['等级']) ? `等级「${C.str(r['等级'])}」无法识别` : '工单无等级/优先级，未按「高」默认') : null,
-          planDate: plan,
+          planDate: plan, notifNo,
           sheet: `${base}/工单台账`, row: r._row,
         });
       }
@@ -349,9 +419,11 @@ function main() {
         warnings.push(`文件「${base}」中存在「周期检修项」工作表，但未加 --include-cyclic，本次未纳入周期性检修项`);
       } else {
         foundSources.push(`${base}→周期性检修项`);
+        const hourHdr = durationHourHeader(cycRows);
         const recs = C.toRecords(cycRows, ['位号'], `${base}/周期检修项`,
           ['周期项编号', '项目名称', '设备名称', '检修周期', '上次检修', '是否需停机', '预计工期', '备件需求', '备件型号', '需求数量', '专业'],
           warnings, ALIASES);
+        const spareCol = spareColOf(recs, `${base}/周期检修项`);
         for (const r of recs) {
           const tag = C.str(r['位号']);
           if (!tag) { warnings.push(`工作表「${base}/周期检修项」第${r._row}行 位号为空，已跳过`); continue; }
@@ -360,17 +432,38 @@ function main() {
           const last = C.normDate(r['上次检修']);
           if (r['上次检修'] && !last) warnings.push(`工作表「${base}/周期检修项」第${r._row}行 上次检修「${C.str(r['上次检修'])}」无法解析`);
           const nextDue = (last && cycleDays !== null) ? C.addDays(last, cycleDays) : null;
+          // 按下次到期日对申报周期筛选：晚于周期末 → 本期不申报（单列）；早于周期初 → 已超期照常纳入；算不出 → 纳入并 warning
+          let dueStatus, overdue = null;
+          if (!periodEnd) {
+            dueStatus = '未按周期筛选';
+            if (!cyclicPeriodWarned) { cyclicPeriodWarned = true; warnings.push(`上报周期「${period}」无法识别起止日期，周期性检修项未按到期筛选，全部纳入，请人工核对哪些不在本期`); }
+          } else if (!nextDue) {
+            dueStatus = '到期日未知';
+            const why = [!last ? (C.str(r['上次检修']) ? '上次检修日期无法解析' : '缺上次检修日期') : '', cycleDays === null ? (C.str(r['检修周期']) ? '检修周期无法解析' : '检修周期为空') : ''].filter(Boolean).join('、');
+            warnings.push(`工作表「${base}/周期检修项」第${r._row}行（${tag}${C.str(r['周期项编号']) ? ' ' + C.str(r['周期项编号']) : ''}）${why}，下次到期日算不出，无法判断是否本期到期，已照常纳入，请核实`);
+          } else if (nextDue > periodEnd) {
+            cyclicOutOfPeriod.push({
+              tag, name: C.str(r['设备名称']), basisNo: C.str(r['周期项编号']), project: C.str(r['项目名称']),
+              cycle: C.str(r['检修周期']), cycleDays, lastDate: last, nextDue,
+              from: `${base}/周期检修项 第${r._row}行`,
+              note: `下次到期日晚于申报周期末（${periodEnd}），本期不申报`,
+            });
+            continue;
+          } else {
+            overdue = nextDue < periodStart;
+            dueStatus = overdue ? '已超期' : '本期到期';
+          }
           raw.push({
             sourceType: 'cyclic', sourceCn: '周期性检修项',
             basisNo: C.str(r['周期项编号']), tag, name: C.str(r['设备名称']),
             project: C.str(r['项目名称']),
             desc: C.str(r['项目名称']) + (cycleDays !== null ? `（周期 ${C.fmtPeriod ? C.fmtPeriod(cycleDays) : cycleDays + ' 天'}）` : ''),
             level: '', status: '',
-            since: last, cycleDays, lastDate: last, nextDue,
+            since: last, cycleDays, lastDate: last, nextDue, dueStatus, overdue,
             needShutdown: parseYN(r['是否需停机']),
-            durationDays: num(r['预计工期'], { sheet: `${base}/周期检修项`, row: r._row, col: '预计工期' }),
+            durationDays: durationDays(r['预计工期'], { sheet: `${base}/周期检修项`, row: r._row, col: '预计工期' }, hourHdr),
             spareName: C.str(r['备件需求']), spareModel: C.str(r['备件型号']),
-            spareQty: num(r['需求数量'], { sheet: `${base}/周期检修项`, row: r._row, col: '需求数量' }),
+            spareQty: num(r['需求数量'], { sheet: `${base}/周期检修项`, row: r._row, col: '需求数量' }), spareNoCol: !spareCol,
             discipline: C.str(r['专业']), prio: null,
             prioReason: '周期性检修项无缺陷等级，未按「中」默认；按应完成日期安排',
             sheet: `${base}/周期检修项`, row: r._row,
@@ -383,9 +476,11 @@ function main() {
     const hzRows = C.pickSheet(book, '隐患台账', '隐患整改', '隐患');
     if (hzRows) {
       foundSources.push(`${base}→隐患整改项`);
+      const hourHdr = durationHourHeader(hzRows);
       const recs = C.toRecords(hzRows, ['位号'], `${base}/隐患台账`,
         ['隐患编号', '隐患描述', '设备名称', '隐患等级', '整改措施', '整改期限', '状态', '责任人', '是否需停机', '预计工期', '备件需求', '备件型号', '需求数量', '专业'],
         warnings, ALIASES);
+      const spareCol = spareColOf(recs, `${base}/隐患台账`);
       for (const r of recs) {
         const tag = C.str(r['位号']);
         if (!tag) { warnings.push(`工作表「${base}/隐患台账」第${r._row}行 位号为空（非设备类隐患不进检修需求），已跳过`); continue; }
@@ -402,20 +497,58 @@ function main() {
           level: C.str(r['隐患等级']), status: C.str(r['状态']),
           since: deadline, deadline, owner: C.str(r['责任人']),
           needShutdown: parseYN(r['是否需停机']),
-          durationDays: num(r['预计工期'], { sheet: `${base}/隐患台账`, row: r._row, col: '预计工期' }),
+          durationDays: durationDays(r['预计工期'], { sheet: `${base}/隐患台账`, row: r._row, col: '预计工期' }, hourHdr),
           spareName: C.str(r['备件需求']), spareModel: C.str(r['备件型号']),
-          spareQty: num(r['需求数量'], { sheet: `${base}/隐患台账`, row: r._row, col: '需求数量' }),
+          spareQty: num(r['需求数量'], { sheet: `${base}/隐患台账`, row: r._row, col: '需求数量' }), spareNoCol: !spareCol,
           discipline: C.str(r['专业']), prio: hp.prio, prioReason: hp.reason,
           sheet: `${base}/隐患台账`, row: r._row,
         });
       }
     }
   }
+  // ---- 通知单 ↔ 工单配对：工单「通知单号」明确指向的通知单已转工单，按工单申报一次，不再单列（这不是相似度猜测，是系统里的单据关联）
+  const linkedNotif = [];
+  {
+    const orderByNotif = new Map(raw.filter((x) => x.sourceType === 'order' && x.notifNo).map((x) => [notifKey(x.notifNo), x]));
+    for (let i = raw.length - 1; i >= 0; i--) {
+      const it = raw[i];
+      if (it.sourceType !== 'defect' || !it.basisNo) continue;
+      const o = orderByNotif.get(notifKey(it.basisNo));
+      const done = doneOrderNotif.get(notifKey(it.basisNo));
+      if (!o && !done) continue;
+      raw.splice(i, 1);
+      if (o) {
+        // 工单缺的字段沿用通知单：缺陷等级、是否停机、工期
+        if (o.prio === null && it.prio !== null) { o.prio = it.prio; o.prioReason = null; o.level = o.level || it.level; o.prioFrom = it.basisNo; }
+        if (o.needShutdown === null && it.needShutdown !== null) o.needShutdown = it.needShutdown;
+        if (o.durationDays === null && it.durationDays !== null) o.durationDays = it.durationDays;
+        // 工单没有备件信息时沿用通知单的备件名称、型号、数量（SAP 订单的组件常不随导出带出，备件需求只在通知单上）
+        if (!o.spareName && !o.spareModel && (it.spareName || it.spareModel)) {
+          o.spareName = it.spareName; o.spareModel = it.spareModel; o.spareQty = it.spareQty; o.spareFrom = it.basisNo;
+        }
+        // 工单表无备件列、通知单表有备件列：备件需求以通知单为准（通知单备件列为空即无备件需求）
+        if (o.spareNoCol && !it.spareNoCol) o.spareNoCol = false;
+        if (!o.desc && it.desc) { o.desc = it.desc; if (!o.project) o.project = it.desc.slice(0, 24); }
+        if (!o.discipline && it.discipline) o.discipline = it.discipline;
+      }
+      linkedNotif.push({ notifNo: it.basisNo, tag: it.tag, orderNo: o ? o.basisNo : done.orderNo, orderState: o ? '未闭环' : done.state, from: `${it.sheet} 第${it.row}行` });
+    }
+    linkedNotif.reverse();
+    if (linkedNotif.length) {
+      warnings.push(`${linkedNotif.length} 条通知单已转工单（工单「通知单号」列对应），按工单申报、不再单列：${linkedNotif.map((x) => `${x.notifNo}→${x.orderNo}${x.orderState !== '未闭环' ? `（工单${x.orderState}，本期不申报）` : ''}`).join('、')}`);
+    }
+  }
+  if (cyclicOutOfPeriod.length) {
+    warnings.push(`${cyclicOutOfPeriod.length} 条周期项下次到期日晚于申报周期末（${periodEnd}），本期不申报，已单列「周期外周期项（本期不申报）」：${cyclicOutOfPeriod.map((x) => `${x.basisNo || x.tag}（${x.nextDue}）`).join('、')}`);
+  }
   if (!foundSources.length) throw new Error('未在输入中找到「缺陷台账/通知单」「工单台账/订单」「周期检修项」「隐患台账」任一工作表（周期检修项需加 --include-cyclic）');
-  if (!raw.length && !statusUndetermined.length) throw new Error('各来源中没有任何未闭环需求项，无需上报');
+  if (!raw.length && !statusUndetermined.length) {
+    throw new Error(`各来源中没有任何未闭环需求项，无需上报${cyclicOutOfPeriod.length ? `（另有 ${cyclicOutOfPeriod.length} 条周期项下次到期日晚于申报周期末 ${periodEnd}，本期不申报：${cyclicOutOfPeriod.map((x) => `${x.basisNo || x.tag}（${x.nextDue}）`).join('、')}）` : ''}`);
+  }
 
   // ============ 二、备件库存（SAP MM 列名可读）============
   let spareStock = null;   // Map: 型号|名称 → 库存数量
+  let stockHasModel = false;   // 库存表有型号：需求写了型号时只按型号查，不借用同名其他规格的库存
   if (a.spare) {
     if (!fs.existsSync(a.spare)) throw new Error(`备件库存表不存在: ${a.spare}`);
     const sb = loadBook(a.spare);
@@ -428,8 +561,10 @@ function main() {
         const nm = C.str(r['备件名称']), mo = C.str(r['备件型号']);
         if (!nm && !mo) continue;
         const qty = num(r['库存数量'], { sheet: '备件库存', row: r._row, col: '库存数量' });
-        if (mo) spareStock.set('M:' + mo, qty);
-        if (nm) spareStock.set('N:' + nm, qty);
+        // 同型号多行（多个库位/库存地点）与同名多行（不同型号）都合计；任一行数量无法解析则合计也记 null
+        const add = (k) => spareStock.set(k, spareStock.has(k) ? (spareStock.get(k) === null || qty === null ? null : spareStock.get(k) + qty) : qty);
+        if (mo) { add('M:' + mo); stockHasModel = true; }
+        if (nm) add('N:' + nm);
       }
       if (!spareStock.size) { warnings.push('备件库存表未解析出任何记录，备件是否到位一律写「未核实」'); spareStock = null; }
     }
@@ -437,13 +572,18 @@ function main() {
     warnings.push('未提供备件库存表（--spare），所有需求的「备件是否到位」一律写「未核实」，不得按有库存处理');
   }
 
-  /** 备件到位判定：无库存表→「未核实」；查不到型号→「未核实」+warning；需求数量未填→未判定（不按 1 件）；数量不足→「不足」 */
+  /** 备件到位判定：来源表无备件列→「未核实（来源表无备件列）」（需求未知）；无库存表→「未核实」；查不到型号→「未核实」+warning；需求数量未填→未判定（不按 1 件）；数量不足→「不足」 */
   function spareStatus(it) {
+    if (!it.spareName && !it.spareModel && it.spareNoCol) return { text: '未核实（来源表无备件列）', state: 'unknown', stock: null, undetermined: null };
     if (!it.spareName && !it.spareModel) return { text: '无备件需求', state: 'none', stock: null, undetermined: null };
     if (!spareStock) return { text: '未核实', state: 'unverified', stock: null, undetermined: null };
     let stock = null, hit = null;
     if (it.spareModel && spareStock.has('M:' + it.spareModel)) { stock = spareStock.get('M:' + it.spareModel); hit = it.spareModel; }
-    else if (it.spareName && spareStock.has('N:' + it.spareName)) { stock = spareStock.get('N:' + it.spareName); hit = it.spareName; }
+    else if (it.spareName && spareStock.has('N:' + it.spareName) && !(it.spareModel && stockHasModel)) {
+      // 只在需求没写型号、或库存表没有型号列时按名称匹配；写了型号却查不到的，不借用同名其他规格的库存
+      stock = spareStock.get('N:' + it.spareName); hit = it.spareName;
+      if (it.spareModel) warnings.push(`备件「${it.spareName} ${it.spareModel}」（${it.tag}）：库存表无型号列，已按名称匹配，未核对型号`);
+    }
     if (hit === null) {
       warnings.push(`备件「${it.spareModel || it.spareName}」（${it.tag}）不在备件库存表中，备件是否到位写「未核实」`);
       return { text: '未核实', state: 'unverified', stock: null, undetermined: null };
@@ -498,8 +638,8 @@ function main() {
     const sp = spareStatus(it);
     const reasonParts = [];
     if (it.sourceType === 'defect') reasonParts.push(`缺陷/通知单 ${it.basisNo}${it.level ? '（' + it.level + '）' : ''}${it.since ? ' 于 ' + it.since + ' 发现' : ''}未闭环`);
-    if (it.sourceType === 'order') reasonParts.push(`工单 ${it.basisNo} 未闭环${it.orderType ? '（' + it.orderType + '）' : ''}${it.planDate ? '，计划完成 ' + it.planDate : ''}`);
-    if (it.sourceType === 'cyclic') reasonParts.push(`周期项 ${it.basisNo}${it.cycleDays !== null ? '，周期 ' + it.cycleDays + ' 天' : ''}${it.lastDate ? '，上次检修 ' + it.lastDate : ''}${it.nextDue ? '，应于 ' + it.nextDue + ' 前完成' : ''}`);
+    if (it.sourceType === 'order') reasonParts.push(`工单 ${it.basisNo} 未闭环${it.orderType ? '（' + it.orderType + '）' : ''}${it.notifNo ? '，对应通知单 ' + it.notifNo + (it.prioFrom ? '（' + it.level + '）' : '') : ''}${it.spareFrom ? '，备件需求沿用通知单 ' + it.spareFrom : ''}${it.planDate ? '，计划完成 ' + it.planDate : ''}`);
+    if (it.sourceType === 'cyclic') reasonParts.push(`周期项 ${it.basisNo}${it.cycleDays !== null ? '，周期 ' + it.cycleDays + ' 天' : ''}${it.lastDate ? '，上次检修 ' + it.lastDate : ''}${it.nextDue ? '，应于 ' + it.nextDue + ' 前完成' : ''}${it.dueStatus === '已超期' ? '（已超期，申报周期开始前已到期未做）' : it.dueStatus === '到期日未知' ? '，下次到期日算不出（未按到期筛选）' : ''}`);
     if (it.sourceType === 'hazard') reasonParts.push(`隐患 ${it.basisNo}${it.level ? '（' + it.level + '）' : ''}未整改${it.deadline ? '，整改期限 ' + it.deadline : ''}${it.owner ? '，责任人 ' + it.owner : ''}`);
     if (it.desc) reasonParts.push(`记录原文：${it.desc}`);
     const seq = i + 1;
@@ -518,6 +658,8 @@ function main() {
       needShutdown: it.needShutdown,                  // true/false/null（null=未填，不默认）
       needShutdownCn: it.needShutdown === null ? '未填写' : (it.needShutdown ? '是' : '否'),
       planStart: null, planEnd,
+      dueStatus: it.dueStatus || null,                // 周期项：本期到期 / 已超期 / 到期日未知；其他来源 null
+      overdue: it.sourceType === 'cyclic' ? (it.overdue === undefined ? null : it.overdue) : null,
       durationDays: it.durationDays,
       spareName: it.spareName || '', spareModel: it.spareModel || '', spareQty: it.spareQty,
       spareStatus: sp.text, spareState: sp.state, spareStock: sp.stock,
@@ -531,6 +673,7 @@ function main() {
       srcSheet: it.sheet, srcRow: it.row,
       statusRaw: it.status || '',
       orderType: it.orderType || '', owner: it.owner || '',
+      notifNo: it.notifNo || null,
     };
   });
 
@@ -630,14 +773,19 @@ function main() {
     noBasis: noBasis.length,
     statusUndetermined: statusUndetermined.length,
     skippedDone,
+    linkedNotif: linkedNotif.length,
     undetermined: undetermined.length,
     priorityUndetermined: demands.filter((d) => d.priority === null).length,
     needShutdown: needShutdown.length,
     shutdownUnknown: shutdownUnknown.length,
     spareGap: spareGap.length,
     spareUnverified: demands.filter((d) => d.spareState === 'unverified').length,
+    spareNeedUnknown: demands.filter((d) => d.spareState === 'unknown').length,   // 来源表无备件列，备件需求未知（不计入 spareGap）
     spareQtyUndetermined: undetermined.filter((u) => u.kind === 'spareQty').length,
     possibleDuplicate: possibleDuplicate.length,
+    cyclicOutOfPeriod: cyclicOutOfPeriod.length,     // 下次到期日晚于申报周期末，本期不申报（不计入 demands）
+    cyclicOverdue: demands.filter((d) => d.dueStatus === '已超期').length,
+    cyclicDueUnknown: demands.filter((d) => d.dueStatus === '到期日未知').length,
     byPriority: { 紧急: 0, 高: 0, 中: 0, 低: 0, 未判定: 0 },
     bySource: { 未闭环缺陷: 0, 未闭环工单: 0, 周期性检修项: 0, 隐患整改项: 0 },
     byCategory: {},
@@ -653,7 +801,7 @@ function main() {
 
   const result = {
     meta: {
-      workshop: a.workshop, period, due, window: a.window || null,
+      workshop: a.workshop, period, periodStart, periodEnd, due, window: a.window || null,
       includeCyclic, sources: foundSources, generatedAt: C.localDateTime(),
       spareProvided: !!a.spare, spareResolved: !!spareStock,
       templateProvided: !!a.template, declaration: DECL, disclaimer: DISCLAIMER,
@@ -661,14 +809,14 @@ function main() {
       columns: STD_COLS,
     },
     counts, demands, netDemand, needShutdown, shutdownUnknown, spareGap,
-    possibleDuplicate, undetermined, noBasis,
+    possibleDuplicate, undetermined, noBasis, linkedNotif, cyclicOutOfPeriod,
     template: tplCols ? { columns: tplCols, unmatched: tplUnmatched, missingKeyColumns: tplMissing } : null,
     warnings,
   };
   fs.writeFileSync(path.join(outDir, 'demands.json'), JSON.stringify(result, null, 2), 'utf8');
 
   // ---- 检修需求表.xlsx（月度检修计划申报表列头，或按模板列名）
-  const spareText = (d) => ([d.spareName, d.spareModel].filter(Boolean).join(' ') + (d.spareQty === null ? '' : ` ×${d.spareQty}`)) || '无';
+  const spareText = (d) => ([d.spareName, d.spareModel].filter(Boolean).join(' ') + (d.spareQty === null ? '' : ` ×${d.spareQty}`)) || (d.spareState === 'unknown' ? '未知（来源表无备件列）' : '无');
   const cellOf = (d, std) => {
     switch (std) {
       case '序号': return d.seq;
@@ -689,7 +837,7 @@ function main() {
       case '建议专业': return d.discipline;
       case '优先级': return d.priorityCn;
       case '申报理由': return d.reason;
-      case '备注': return [d.priorityNote, d.orderType ? '工单类型 ' + d.orderType : '', d.owner ? '责任人 ' + d.owner : ''].filter(Boolean).join('；');
+      case '备注': return [d.dueStatus === '已超期' ? '已超期' : d.dueStatus === '到期日未知' ? '下次到期日算不出' : '', d.priorityNote, d.orderType ? '工单类型 ' + d.orderType : '', d.owner ? '责任人 ' + d.owner : ''].filter(Boolean).join('；');
       default: return '';
     }
   };
@@ -714,6 +862,9 @@ function main() {
     '建议核实区': [['功能位置', '设备名称', '来源', '需求描述', '缺失依据', '出处', '说明'],
       ...noBasis.map((x) => [x.tag, x.name || '', x.source, x.desc, x.missing, x.from, x.note])],
   };
+  const OOP_COLS = ['功能位置', '设备名称', '检修项目名称', '周期项编号', '检修周期', '上次检修', '下次到期', '出处', '说明'];
+  const oopRow = (x) => [x.tag, x.name || '', x.project || '', x.basisNo || '', x.cycle || '', x.lastDate || '', x.nextDue, x.from, x.note];
+  if (includeCyclic) sheets['周期外周期项（本期不申报）'] = [OOP_COLS, ...cyclicOutOfPeriod.map(oopRow)];
   writeXlsx(path.join(outDir, '检修需求表.xlsx'), sheets);
 
   // ---- 需求汇总.md
@@ -725,7 +876,7 @@ function main() {
   L.push('');
   L.push(`数据来源：${foundSources.join('、')}`);
   L.push(`上报周期：${period}${due ? ` ｜ 上报截止：${due}` : ''}${a.window ? ` ｜ 停机窗口：${a.window}` : ''} ｜ 申报对象：${result.meta.reportTo}`);
-  L.push(`周期性检修项：${includeCyclic ? '已纳入（--include-cyclic）' : '未纳入'}　备件库存表：${spareStock ? '已提供' : '未提供（备件到位情况一律为「未核实」）'}`);
+  L.push(`周期性检修项：${includeCyclic ? (periodEnd ? `已纳入（--include-cyclic），只报下次到期日不晚于 ${periodEnd} 的（含已超期），周期外 ${cyclicOutOfPeriod.length} 条本期不申报` : '已纳入（--include-cyclic），上报周期起止无法识别，未按到期筛选') : '未纳入'}　备件库存表：${spareStock ? '已提供' : '未提供（备件到位情况一律为「未核实」）'}`);
   L.push(`生成时间：${C.localDateTime()}（北京时间）`);
   L.push('');
   L.push('## 一、汇总概览');
@@ -736,13 +887,20 @@ function main() {
     ['　未闭环工单', counts.bySource['未闭环工单'] || 0],
     ['　周期性检修项', includeCyclic ? (counts.bySource['周期性检修项'] || 0) : '—（未纳入）'],
     ['　隐患整改项', counts.bySource['隐患整改项'] || 0],
+    ...(includeCyclic ? [
+      ['　　其中周期项已超期', counts.cyclicOverdue],
+      ['　　其中周期项下次到期日算不出', counts.cyclicDueUnknown],
+      ['周期外周期项（本期不申报）', counts.cyclicOutOfPeriod],
+    ] : []),
     ['需停机项', counts.needShutdown],
     ['停机与否未填', counts.shutdownUnknown],
     ['备件缺口项', counts.spareGap],
     ['　其中备件未核实/未判定', counts.spareUnverified],
+    ['备件需求未知（来源表无备件列）', counts.spareNeedUnknown],
     ['疑似重复（待确认）', counts.possibleDuplicate],
     ['未判定项（优先级/数量/状态/停工）', counts.undetermined],
     ['已完工待验收（本期不重复申报）', counts.skippedDone],
+    ['已转工单的通知单（按工单申报，不单列）', counts.linkedNotif],
     ['无依据项（未进正式清单）', counts.noBasis],
   ]));
   L.push(C.mdTable(['优先级', '条数'], Object.entries(counts.byPriority).map(([k, v]) => [k, v])));
@@ -760,7 +918,7 @@ function main() {
   L.push('');
   L.push(C.mdTable(['序号', '功能位置', '设备名称', '检修项目名称', '检修类别', '来源', '检修内容', '是否停工', '计划结束', '工期(天)', '主要备件材料', '备件到位情况', '建议专业', '优先级', '依据编号'],
     demands.map((d) => [d.seq, d.tag, d.name || '—', d.project || '—', d.category, d.source, d.desc || '—', d.needShutdownCn,
-      d.planEnd || '—', d.durationDays === null ? '未填' : d.durationDays,
+      (d.planEnd || '—') + (d.dueStatus === '已超期' ? '（已超期）' : d.dueStatus === '到期日未知' ? '（到期日未知）' : ''), d.durationDays === null ? '未填' : d.durationDays,
       spareText(d), d.spareStatus, d.discipline, d.priorityCn, d.basisNo])));
   L.push('### 申报理由');
   L.push('');
@@ -780,6 +938,11 @@ function main() {
   if (!spareStock) L.push('【注意】未提供备件库存表（--spare），下列项目的备件到位情况一律为「未核实」，不得按有库存处理。\n');
   L.push(C.mdTable(['序号', '功能位置', '备件名称', '备件型号/物料', '需求数量', '到位情况'],
     spareGap.map((x) => [x.seq, x.tag, x.spareName || '—', x.spareModel || '—', x.spareQty === null ? '未填' : x.spareQty, x.status])));
+  if (counts.spareNeedUnknown) {
+    const unk = demands.filter((d) => d.spareState === 'unknown');
+    L.push(`【注意】另有 ${unk.length} 项的来源表无备件列（备件需求/备件型号），备件需求未知，未计入上表，也不得写成不需要备件；请到 SAP 订单组件或 MRO 工单预留核实：序号 ${unk.map((d) => `${d.seq}（${d.tag}）`).join('、')}。`);
+    L.push('');
+  }
   L.push('## 五、疑似重复待确认');
   L.push('');
   if (!possibleDuplicate.length) L.push('_无_\n');
@@ -818,6 +981,17 @@ function main() {
   L.push('（由模型依据 references/rollup-rules.md 口径撰写 200~400 字，结构：本期需求总数与来源构成 → 需停机项与停机窗口衔接 → 备件缺口与到货跟催 → 与上期遗留项的衔接及需公司设备管理部门协调事项。数量一律引用 demands.json，申报理由须引用来源记录原文要点，不得夸大紧急程度。）');
   L.push('<!-- ANALYSIS_END -->');
   L.push('');
+  if (includeCyclic) {
+    L.push('## 附：周期外周期项（本期不申报）');
+    L.push('');
+    if (!periodEnd) L.push('【注意】上报周期起止无法识别，周期性检修项未按到期筛选，全部列入了需求明细，请人工核对。\n');
+    else if (!cyclicOutOfPeriod.length) L.push('_无_\n');
+    else {
+      L.push(C.mdTable(OOP_COLS, cyclicOutOfPeriod.map((x) => oopRow(x).map((c) => (c === '' || c === null ? '—' : c)))));
+      L.push(`【注意】以上 ${cyclicOutOfPeriod.length} 条周期项下次到期日晚于申报周期末（${periodEnd}），未列入本期申报清单，到期所在月份再申报。`);
+      L.push('');
+    }
+  }
   if (warnings.length) {
     L.push('## 附：数据提示');
     L.push('');

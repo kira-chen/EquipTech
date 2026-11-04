@@ -206,7 +206,10 @@ function main() {
     ['预计时长', duration === null ? '—' : `${C.fmt(duration)} 小时`],
     ['作业起止', startAt && endAt ? `${startAt} ～ ${endAt}` : (startAt || endAt || '—')],
     ['作业票', permitNote || '—'],
-    ['作业票级别（填报）', a.level === undefined ? '—（未提供，频次按作业类型默认口径）' : (level ? `${level.cn}${levelEffective ? '' : '（与识别类型不符，仅记录）'}` : `${a.level}（无法识别）`)],
+    ['作业票级别（填报）', a.level === undefined
+      ? (types.length && !types.some((t) => R.GRADED_TYPES.includes(t))
+        ? `—（${types.map((t) => R.TYPE_CN[t]).join('、')}不分级，频次按作业类型默认口径）`
+        : '—（未提供，频次按作业类型默认口径）') :(level ? `${level.cn}${levelEffective ? '' : '（与识别类型不符，仅记录）'}` : `${a.level}（无法识别）`)],
     ['**风险等级（频次口径）**', `**${risk.levelCn}**`],
   ]));
   L.push('判定依据：');

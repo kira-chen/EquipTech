@@ -86,7 +86,7 @@ function main() {
   const equip = R.classifyEquip(a['equip-type'], a.name);
   const covered = R.COVERED.includes(equip);
   if (!covered) {
-    warnings.push(`设备类型「${a['equip-type']}」不在本技能覆盖范围（泵类 / 机组类 / 静设备 / 阀门 / 电气）内，只输出通用检修框架，具体拆装步骤、力矩值与间隙标准须由技术人员补充，模型不得凭通用知识填充`);
+    warnings.push(`设备类型「${a['equip-type']}」不在本技能覆盖范围（泵类 / 机组类 / 静设备 / 阀门 / 电气 / 加热炉 / 空冷器 / 仪表回路）内，只输出通用检修框架，具体拆装步骤、力矩值与间隙标准须由技术人员补充，模型不得凭通用知识填充`);
   }
 
   // ---- 是否解体（三态，不默认）
@@ -103,6 +103,11 @@ function main() {
   const level = R.classifyLevel(a.scope, a.level);
   if (!level) warnings.push('未识别出检修分级（大检修/日常维修/抢修/专项），方案中分级一栏留「—」');
   if (a.level && level && (R.LEVEL_ALIASES[String(a.level).trim()] || (/^(大修|中修|小修)$/.test(String(a.level).trim())))) warnings.push(`--level「${a.level}」为旧口径（大修/中修/小修已废止），已按别名归入「${R.LEVEL_CN[level]}」`);
+  else if (level && !R.classifyLevel('', a.level)) {
+    // 分级来自检修内容文字：其中的旧口径词同样提示已归并
+    const old = (String(a.scope || '').match(/大修|(?<!集)中修|小修/) || [])[0];   // 「集中修复」不算旧口径「中修」
+    if (old && R.classifyLevel(old, '') === level) warnings.push(`检修内容中的「${old}」为旧口径（大修/中修/小修已废止），已按别名归入「${R.LEVEL_CN[level]}」`);
+  }
 
   const ctx = { equip, dismantle, level, specLines, specName };
   const built = R.buildPlan(ctx);

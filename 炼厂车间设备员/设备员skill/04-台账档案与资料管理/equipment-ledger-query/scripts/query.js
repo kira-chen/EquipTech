@@ -38,7 +38,7 @@ const ALIASES = C.mergeAliases({
   '规格型号': ['规格型号', '型号编号', '设备型号', '型号', '规格'],
   '制造厂': ['制造厂', '制造商', '厂家', '生产厂家', '供应商'],
   '投用日期': ['投用日期', '投用时间', '投产日期', '开始日期', '启用日期', '安装日期', '建造年份'],
-  '专业': ['专业', '所属专业', '类别', '设备类别', '对象类型', '设备类型'],
+  '专业': ['专业', '所属专业', '类别', '设备类别', '对象类型'],
   '区域': ['区域', '装置区', '位置', '所在区域', '安装位置'],
   '介质': ['介质', '工艺介质'],
   '重要度': ['重要度', 'ABC标识', '重要性', '关键度', '设备等级', 'ABC分类'],
@@ -46,8 +46,35 @@ const ALIASES = C.mergeAliases({
   '检修日期': ['检修日期', '日期', '完工日期', '检修时间', '实际结束日期'],
   '检修内容': ['检修内容', '内容', '工作内容', '检修项目', '订单描述'],
   '工作中心': ['工作中心', '主工作中心', '承修单位', '维修班组', '施工单位'],
+  '故障现象': ['故障现象', '故障描述'],
+  '发生时间': ['发生时间', '故障发生时间', '发生日期'],
   '建造年份': ['建造年份', '制造年份', '出厂年份', '出厂日期'],
 });
+// 共享别名里「特护」归在重要度下；本技能把「特护标记」与 ABC 重要度分开（关键设备按 A 类还是特护要向用户确认，见 query-rules.md）
+ALIASES['重要度'] = ALIASES['重要度'].filter((x) => x !== '特护');
+// 「设备类型」不作「专业」别名：没有专业列时，设备类型按原列名保留（作为其它列），不改名为专业
+ALIASES['专业'] = ALIASES['专业'].filter((x) => x !== '设备类型');
+// 「设备」不作设备编号的前缀别名：否则没有设备编号列时「设备类型 / 设备类别 / 设备等级」会被前缀匹配进设备编号。
+// SAP 导出表头恰为「设备」时由 renameSapEquipHeader 先改成「设备编号」再识别（只认全等）
+ALIASES['设备编号'] = ALIASES['设备编号'].filter((x) => x !== '设备');
+/** 表头行里恰为「设备」的单元格（SAP 设备编号列）改名为「设备编号」；表头行已有设备编号类列名时不动。只改表头行，不碰数据行 */
+function renameSapEquipHeader(rows) {
+  const hn = (r) => (r || []).map((c) => C.str(c).replace(/\s+/g, ''));
+  let h = -1, best = 0;
+  for (let i = 0; i < Math.min(10, rows.length); i++) {
+    const hdr = hn(rows[i]);
+    const hits = ['位号', '设备编号'].filter((n) => C.findCol(hdr, n, ALIASES) >= 0).length + (hdr.includes('设备') ? 1 : 0);
+    if (hits > best) { best = hits; h = i; }
+  }
+  if (h < 0) return rows;
+  const hdr = hn(rows[h]);
+  const j = hdr.indexOf('设备');
+  if (j < 0 || ALIASES['设备编号'].some((al) => hdr.includes(al))) return rows;
+  const out = rows.slice();
+  out[h] = rows[h].slice();
+  out[h][j] = '设备编号';
+  return out;
+}
 // 「设备编号」放最后：其别名含「设备」，前缀匹配时不能抢走「设备型号」等其它列
 const LEDGER_OPTIONAL = ['设备名称', '规格型号', '制造厂', '建造年份', '投用日期', '专业', '区域', '介质', '重要度', '状态', '装置', '车间', '成本中心', '工作中心', '出厂编号', '设备代码', '设备编号'];
 const DECLARATION = '数据来自所提供台账文件，权威数据以 EM 设备管理信息系统 / ERP（SAP PM）技术对象主数据与设备档案为准。';
@@ -73,6 +100,44 @@ function cmp(a, b) {
 }
 
 function loadBook(p) { return fs.statSync(p).isDirectory() ? readCsvDir(p) : readXlsx(p); }
+
+/**
+ * 台账里标准列以外的其它列（如业务系统导出的设备类型、功率(kW)、设计压力(MPa)）：
+ * 按与 common.js toRecords 相同的表头识别与两轮分配（全等优先、再前缀）找出未被标准列认领的表头，
+ * 以表头原文（去空白）为列名原样挂到每条记录上，返回这些列名。
+ */
+function attachExtraColumns(rows, recs, required, optional) {
+  const hn = (r) => (r || []).map((c) => C.str(c).replace(/\s+/g, ''));
+  let h = -1, best = 0;
+  for (let i = 0; i < Math.min(10, rows.length); i++) {
+    const hdr = hn(rows[i]);
+    const hits = required.filter((n) => C.findCol(hdr, n, ALIASES) >= 0).length;
+    if (hits > best) { best = hits; h = i; }
+  }
+  if (h < 0) { h = 0; while (h < rows.length && !(rows[h] || []).some((c) => C.str(c))) h++; }
+  const header = hn(rows[h]);
+  const names = required.concat(optional);
+  const taken = new Set(), claimed = new Set();
+  for (const pass of ['eq', 'prefix']) {
+    for (const n of names) {
+      if (claimed.has(n)) continue;
+      for (const al of (ALIASES[n] || [n])) {
+        const j = header.findIndex((x, i) => x && (pass === 'eq' ? x === al : x.startsWith(al)) && !taken.has(i));
+        if (j >= 0) { taken.add(j); claimed.add(n); break; }
+      }
+    }
+  }
+  const extras = [];
+  header.forEach((name, j) => {
+    if (!name || taken.has(j) || names.includes(name) || extras.some((e) => e.name === name)) return;
+    extras.push({ name, j });
+  });
+  for (const r of recs) {
+    const row = rows[r._row - 1] || [];
+    for (const e of extras) r[e.name] = row[e.j] === undefined ? null : row[e.j];
+  }
+  return extras.map((e) => e.name);
+}
 
 function parseQuery(raw) {
   const s = String(raw || '').trim();
@@ -105,21 +170,28 @@ function main() {
 
   // ---- 读台账
   const book = loadBook(a.input);
-  const rows = C.pickSheet(book, '设备台账', '台账', '设备清单', '技术对象', '功能位置', '设备');
+  const rawRows = C.pickSheet(book, '设备台账', '台账', '设备清单', '技术对象', '功能位置', '设备');
+  const rows = rawRows ? renameSapEquipHeader(rawRows) : rawRows;
   if (!rows) throw new Error('输入文件中未找到「设备台账」工作表（可接受：设备台账 / 台账 / 设备清单 / 技术对象 / 功能位置 / 设备）');
   // 先按「位号」找表头行；旧台账只有「设备编号」列时，改以「设备编号」为必需列再识别一次表头
-  let recs = C.toRecords(rows, ['位号'], '设备台账', LEDGER_OPTIONAL, [], ALIASES);
+  let required = ['位号'], optional = LEDGER_OPTIONAL;
+  let recs = C.toRecords(rows, required, '设备台账', optional, [], ALIASES);
   if (!recs.hasCol('位号')) {
     const w2 = [];
-    const alt = C.toRecords(rows, ['设备编号'], '设备台账', LEDGER_OPTIONAL.filter((c) => c !== '设备编号').concat('位号'), w2, ALIASES);
+    required = ['设备编号']; optional = LEDGER_OPTIONAL.filter((c) => c !== '设备编号').concat('位号');
+    const alt = C.toRecords(rows, required, '设备台账', optional, w2, ALIASES);
     if (!alt.hasCol('设备编号')) throw new Error('设备台账既无「位号」（功能位置）列也无「设备编号」列，无法定位设备');
     recs = alt; warnings.push(...w2);
     warnings.push('台账无「位号/功能位置」列，仅按「设备编号」定位设备');
   } else {
     // 重跑一次以收集 warning（第一次为探测，未收集）
-    recs = C.toRecords(rows, ['位号'], '设备台账', LEDGER_OPTIONAL, warnings, ALIASES);
+    recs = C.toRecords(rows, required, '设备台账', optional, warnings, ALIASES);
   }
   if (!recs.length) throw new Error('设备台账中没有有效数据行');
+  // 标准列以外的其它列原样保留（input-spec：台账可以有任意其它列，查询时一并支持）
+  const extraCols = attachExtraColumns(rows, recs, required, optional);
+  const stdHasCol = recs.hasCol;
+  recs.hasCol = (n) => stdHasCol(n) || extraCols.includes(n);
 
   // 实际存在的列（查询不存在的字段时要明确告知，不能用相近字段替代）
   const allCols = new Set();
@@ -127,9 +199,15 @@ function main() {
   const FIRST = ['位号', '设备编号'];
   const presentCols = [...allCols].filter((c) => recs.hasCol(c)).sort((x, y) => (FIRST.indexOf(x) < 0 ? 9 : FIRST.indexOf(x)) - (FIRST.indexOf(y) < 0 ? 9 : FIRST.indexOf(y)));
   const fieldsNotFound = [];
-  const checkField = (f) => {
-    if (!presentCols.includes(f)) { if (!fieldsNotFound.includes(f)) fieldsNotFound.push(f); return false; }
-    return true;
+  // 字段名 → 台账实际列名：全等；否则唯一一个「去掉末尾单位括号后全等」的列（设计压力 → 设计压力(MPa)）。不做包含/近义匹配。
+  const stripUnitSuffix = (c) => c.replace(/[（(][^（）()]*[）)]$/, '');
+  const resolveField = (f) => {
+    const name = C.str(f);
+    if (presentCols.includes(name)) return name;
+    const cand = presentCols.filter((c) => c !== stripUnitSuffix(c) && stripUnitSuffix(c) === name);
+    if (cand.length === 1) return cand[0];
+    if (!fieldsNotFound.includes(name)) fieldsNotFound.push(name);
+    return null;
   };
 
   // ---- --describe：只输出列名与样例值，不做查询
@@ -182,14 +260,17 @@ function main() {
     const hr = C.pickSheet(loadBook(a.history), '检修历史', '检修记录', '维修记录', '历史', '工单', '订单');
     if (!hr) warnings.push('检修历史文件中未找到「检修历史」工作表');
     else {
-      const h = C.toRecords(hr, ['位号'], '检修历史', ['检修日期', '检修内容', '工作中心', '工单号', '工单类型'], warnings, ALIASES);
+      const h = C.toRecords(hr, ['位号'], '检修历史', ['检修日期', '检修内容', '工作中心', '工单号', '工单类型', '故障现象', '发生时间'], warnings, ALIASES);
       historyMap = new Map();
       for (const r of h) {
         const t = norm(r['位号']); if (!t) continue;
         if (!historyMap.has(t)) historyMap.set(t, []);
-        historyMap.get(t).push({ date: C.normDate(r['检修日期']), content: C.str(r['检修内容']), vendor: C.str(r['工作中心']), order: C.str(r['工单号']) || null, orderType: C.str(r['工单类型']) || null });
+        // 未完工的记录没有完工日期/检修内容：检修日期保持 null（不用发生时间冒充），另带出发生时间与故障现象
+        historyMap.get(t).push({ date: C.normDate(r['检修日期']), content: C.str(r['检修内容']), vendor: C.str(r['工作中心']), order: C.str(r['工单号']) || null, orderType: C.str(r['工单类型']) || null,
+          occurred: C.normDate(r['发生时间']), symptom: C.str(r['故障现象']) || null });
       }
-      for (const v of historyMap.values()) v.sort((x, y) => (y.date || '').localeCompare(x.date || ''));
+      // 按完工日期倒序；无完工日期的按发生时间参与排序
+      for (const v of historyMap.values()) v.sort((x, y) => (y.date || y.occurred || '').localeCompare(x.date || x.occurred || ''));
     }
   }
 
@@ -207,25 +288,27 @@ function main() {
     let list = recs;
     for (const w of (q.where || [])) {
       if (!Array.isArray(w) || w.length < 2) throw new Error(`where 条件格式应为 [字段, 操作符, 值]，收到 ${JSON.stringify(w)}`);
-      const [f, op, val] = w;
+      const [fq, op, val] = w;
       if (!OPS[op]) throw new Error(`不支持的操作符「${op}」，可用: ${Object.keys(OPS).join(', ')}`);
       // 字段不存在时不能"跳过条件后照常返回"，否则用户会误以为结果是按条件筛出来的
-      if (!checkField(f)) throw new Error(`台账中无字段「${f}」，无法按该条件筛选；台账实际字段：${presentCols.join('、')}（可用 --describe 查看列名与样例值）`);
+      const f = resolveField(fq);
+      if (!f) throw new Error(`台账中无字段「${fq}」，无法按该条件筛选；台账实际字段：${presentCols.join('、')}（可用 --describe 查看列名与样例值）`);
       list = list.filter((r) => OPS[op](r[f], val));
       appliedFilters.push(`${f} ${op} ${Array.isArray(val) ? JSON.stringify(val) : val === undefined ? '' : val}`);
     }
     if (q.orderBy && q.orderBy.field) {
-      if (checkField(q.orderBy.field)) {
+      const of = resolveField(q.orderBy.field);
+      if (of) {
         const dir = q.orderBy.dir === 'desc' ? -1 : 1;
-        list = list.slice().sort((x, y) => dir * cmp(x[q.orderBy.field], y[q.orderBy.field]));
+        list = list.slice().sort((x, y) => dir * cmp(x[of], y[of]));
       } else warnings.push(`台账中无字段「${q.orderBy.field}」，排序已跳过`);
     }
     if (q.type === 'filter') {
       records = list.slice(0, limit);
       if (list.length > limit) warnings.push(`命中 ${list.length} 条，按 --limit 仅返回前 ${limit} 条`);
     } else {
-      const gb = q.groupBy;
-      if (gb && !checkField(gb)) throw new Error(`统计字段「${gb}」不在台账中（可用 --describe 查看列名）`);
+      const gb = q.groupBy ? resolveField(q.groupBy) : null;
+      if (q.groupBy && !gb) throw new Error(`统计字段「${q.groupBy}」不在台账中；台账实际字段：${presentCols.join('、')}（可用 --describe 查看列名与样例值）`);
       const groups = new Map();
       for (const r of list) {
         const k = gb ? (C.str(r[gb]) || '（空）') : '全部';
@@ -255,6 +338,17 @@ function main() {
     return o;
   });
   if (yearOnlyCount) warnings.push(`${yearOnlyCount} 台投用日期缺失或不是完整日期（如只有建造年份），投用年限未推算`);
+
+  // --fields：返回列（多条表格时使用）；不存在的字段在写 result.json 之前记入 fieldsNotFound 与 warnings
+  let tableCols = presentCols.slice(0, 8);
+  if (a.fields) {
+    tableCols = [];
+    for (const f of a.fields.split(',').map((s) => s.trim()).filter(Boolean)) {
+      const c = resolveField(f);
+      if (c) { if (!tableCols.includes(c)) tableCols.push(c); } else warnings.push(`台账中无字段「${f}」，已从返回列中移除`);
+    }
+    if (!tableCols.length) tableCols = presentCols.slice(0, 8);
+  }
 
   const counts = { ledgerTotal: recs.length, matched: q.type === 'stats' ? stats.total : enriched.length, fieldsNotFound: fieldsNotFound.length };
 
@@ -309,12 +403,15 @@ function main() {
         L.push('#### 检修历史（通知单/工单）');
         L.push('');
         L.push(C.mdTable(['检修日期', '工单号', '检修内容', '工作中心/承修单位'],
-          (r['_检修历史'] || []).map((h) => [h.date || '—', h.order || '—', h.content || '—', h.vendor || '—'])));
+          (r['_检修历史'] || []).map((h) => [
+            h.date || (h.occurred ? `—（无完工日期，${h.occurred} 发生）` : '—'),
+            h.order || '—',
+            h.content || (h.symptom ? `—（未填检修内容；故障现象：${h.symptom}）` : '—'),
+            h.vendor || '—'])));
       }
     }
   } else {
-    const cols = a.fields ? a.fields.split(',').map((s) => s.trim()).filter((f) => { const okf = presentCols.includes(f); if (!okf) { warnings.push(`台账中无字段「${f}」，已从返回列中移除`); if (!fieldsNotFound.includes(f)) fieldsNotFound.push(f); } return okf; })
-      : presentCols.slice(0, 8);
+    const cols = tableCols;
     L.push(`## 一、查询结果（${enriched.length} 条）`);
     L.push('');
     L.push(C.mdTable(cols, enriched.map((r) => cols.map((c) => r[c] === null ? '—' : r[c]))));

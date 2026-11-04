@@ -83,6 +83,21 @@ function periodMonths(period) {
   return null;
 }
 
+/** 需求周期 → 起止日期 {from, to}（YYYY-MM-DD）；识别不了返回 null。2026-Q4 → 2026-10-01~2026-12-31 */
+function periodRange(period) {
+  const s = C.str(period).replace(/\s/g, '');
+  const pad = (n) => String(n).padStart(2, '0');
+  const last = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const mk = (y1, m1, y2, m2) => (m1 >= 1 && m1 <= 12 && m2 >= 1 && m2 <= 12 ? { from: `${y1}-${pad(m1)}-01`, to: `${y2}-${pad(m2)}-${pad(last(y2, m2))}` } : null);
+  let m;
+  if ((m = s.match(/^(\d{4})-?Q([1-4])$/i))) return mk(+m[1], +m[2] * 3 - 2, +m[1], +m[2] * 3);
+  if ((m = s.match(/^(\d{4})[-/年](\d{1,2})月?$/))) return mk(+m[1], +m[2], +m[1], +m[2]);
+  if ((m = s.match(/^(\d{4})[-/](\d{1,2})[~～至\-]+(\d{4})[-/](\d{1,2})$/))) return mk(+m[1], +m[2], +m[3], +m[4]);
+  if ((m = s.match(/^(\d{4})(年度|年)?$/))) return mk(+m[1], 1, +m[1], 12);
+  if ((m = s.match(/^(\d{4})[-/]H([12])$/i))) return m[2] === '1' ? mk(+m[1], 1, +m[1], 6) : mk(+m[1], 7, +m[1], 12);
+  return null;
+}
+
 function main() {
   const a = C.parseArgs(process.argv.slice(2), VALUE_OPTS, FLAG_OPTS);
   if (!a.input) throw new Error('缺少 --input');
@@ -168,6 +183,7 @@ function main() {
 
   // ---------------- 二、历史消耗驱动
   const histAgg = new Map(); // key: code|unit
+  let mb51Window = null;     // MB51 导出窗口（无领用月按 0 计）
   let histFound = false;
   if (method === 'history' || method === 'both') {
     const hfs = findAll('历史消耗', '历史消耗', '消耗记录', '消耗', '领用记录', '出库记录', '物料凭证', 'MB51');
@@ -179,6 +195,11 @@ function main() {
       const recs = hfs.flatMap((hf) => C.toRecords(hf.rows, ['备件编码'], `历史消耗（${hf.file}）`,
         ['备件名称', '规格型号', '单位', '消耗月份', '消耗数量', '位号', '移动类型'], warnings, ALIASES));
       let mvtSkipped = 0, mvtReversed = 0;
+      // MB51 物料凭证只记发生的业务：导出窗口（全表过账日期的首末月，含 101 收货等不计消耗的行）内没有领用凭证的月份就是当月没领，按 0 期计；
+      // 汇总式消耗表（一行一个月）没列的月份可能是没统计，仍只数有值的期（口径不变）
+      const mbMonths = new Set();
+      // 数量无法解析的行所在月份（key: code|unit）：该月不按 0 补齐、不计入期数，依据栏写明剔除了几期
+      const badMonths = new Map();
       for (const r of recs) {
         const code = C.str(r['备件编码']);
         if (!code) { warnings.push(`工作表「历史消耗」第${r._row}行 备件编码为空，已跳过`); continue; }
@@ -191,23 +212,52 @@ function main() {
         let qty = num(r['消耗数量'], { sheet: '历史消耗', row: r._row, col: '消耗数量' });
         const unit = C.str(r['单位']);
         const mvt = C.str(r['移动类型']);
+        if (mvt && /^\d{4}-\d{2}$/.test(mon)) mbMonths.add(mon);
         if (mvt) {
           if (MVT_REVERSAL.test(mvt)) { if (qty !== null) qty = -Math.abs(qty); mvtReversed++; }
           else if (MVT_ISSUE.test(mvt)) { if (qty !== null) qty = Math.abs(qty); }
           else { mvtSkipped++; continue; }
         }
         if (!mon) { warnings.push(`工作表「历史消耗」第${r._row}行 备件「${code}」消耗月份为空，该条不计入期数`); continue; }
-        if (qty === null) { warnings.push(`工作表「历史消耗」第${r._row}行 备件「${code}」消耗数量无法解析，未按 0 计，该条不计入`); continue; }
+        if (qty === null) {
+          warnings.push(`工作表「历史消耗」第${r._row}行 备件「${code}」消耗数量无法解析，未按 0 计，该条不计入`);
+          if (/^\d{4}-\d{2}$/.test(mon)) { const bk = code + '|' + unit; if (!badMonths.has(bk)) badMonths.set(bk, new Set()); badMonths.get(bk).add(mon); }
+          continue;
+        }
         const key = code + '|' + unit;
         if (!histAgg.has(key)) {
           histAgg.set(key, { code, unit, name: C.str(r['备件名称']), spec: C.str(r['规格型号']),
-            tag: C.str(r['位号']), periods: new Map(), rows: [] });
+            tag: C.str(r['位号']), periods: new Map(), rows: [], mb51: false, zeroMonths: new Set(), badMonths: new Set() });
         }
         const g = histAgg.get(key);
         if (!g.name) g.name = C.str(r['备件名称']);
         if (!g.spec) g.spec = C.str(r['规格型号']);
         g.periods.set(mon, (g.periods.get(mon) || 0) + qty);
         g.rows.push(r._row);
+        if (mvt) g.mb51 = true;
+      }
+      for (const [bk, ms] of badMonths) { const g = histAgg.get(bk); if (g) for (const m of ms) if (!g.periods.has(m)) g.badMonths.add(m); }
+      if (mbMonths.size) {
+        const sorted = [...mbMonths].sort();
+        const toIdx = (m) => { const [y, mm] = m.split('-').map(Number); return y * 12 + mm - 1; };
+        const toMon = (i) => `${Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}`;
+        let lo = toIdx(sorted[0]), hi = toIdx(sorted[sorted.length - 1]);
+        // 窗口最后一个月是运行当月：未满月，不计入期数，该月领用也不计入月均（否则按整月摊会压低月均）
+        const cur = C.localDate().slice(0, 7);
+        if (toMon(hi) === cur && hi > lo) {
+          hi--;
+          let dropped = 0;
+          for (const g of histAgg.values()) if (g.mb51 && g.periods.has(cur)) { g.periods.delete(cur); dropped++; }
+          warnings.push(`物料凭证（MB51）最后一个月 ${cur} 为当月、未满月，不计入期数与月均${dropped ? `（涉及 ${dropped} 个物料的当月领用）` : ''}`);
+        }
+        let filled = 0;
+        for (const g of histAgg.values()) {
+          if (!g.mb51) continue;
+          for (let i = lo; i <= hi; i++) { const m = toMon(i); if (!g.periods.has(m) && !g.badMonths.has(m)) { g.periods.set(m, 0); g.zeroMonths.add(m); } }
+          if (g.zeroMonths.size) filled++;
+        }
+        mb51Window = { from: toMon(lo), to: toMon(hi), months: hi - lo + 1 };
+        if (filled) warnings.push(`物料凭证（MB51）导出窗口 ${toMon(lo)}~${toMon(hi)} 共 ${hi - lo + 1} 个月，${filled} 个物料窗口内无领用的月份按 0 计入期数（凭证表没有领用凭证即当月未领用）`);
       }
       if (mvtReversed) warnings.push(`历史消耗含 ${mvtReversed} 行冲销（移动类型 262/202 等），已按负数抵减当月消耗`);
       if (mvtSkipped) warnings.push(`历史消耗含 ${mvtSkipped} 行非发料/非冲销移动类型（如 101 收货、311 转储），不计入消耗`);
@@ -283,24 +333,46 @@ function main() {
   const lowConfidence = [];  // 历史期数不足
   const noHistory = [];      // 无依据，只进建议核实区
 
-  // 计划驱动
+  // 计划驱动：按 --period 起止日期核对「基本开始日期（计划开工）」
+  //  - 晚于周期末 → 属后续周期，单列 planOutOfPeriod，不计入本期；
+  //  - 早于周期初 → 工单/预留仍未关闭、料未领出，仍是本期要备的料，计入并标记 startBeforePeriod、warning 提示核实；
+  //  - 无日期 → 无法核对，计入并 warning。周期识别不了起止日期时不过滤并 warning。
+  const range = periodRange(a.period);
+  const today = C.localDate();
+  const planOutOfPeriod = [], beforePeriod = [], noStart = [], passed = [];
+  if (planItems.length && !range) warnings.push(`需求周期「${a.period}」无法识别起止日期，检修计划需求未按周期过滤（全部计入），请核对基本开始日期是否都在本期`);
   for (const p of planItems) {
+    if (!p._noBasis && range && p.start && p.start > range.to) {
+      planOutOfPeriod.push({ code: p.code, name: p.name, spec: p.spec, unit: p.unit, qty: p.qty, project: p.project, projectName: p.projectName,
+        tag: p.tag, planStart: p.start, row: p._row, reason: `基本开始日期 ${p.start} 晚于需求周期末 ${range.to}，属后续周期`, note: '未计入本期需求' });
+      continue;
+    }
     if (p._noBasis) {
       noHistory.push({ code: p.code, name: p.name, spec: p.spec, unit: p.unit, qty: p.qty,
         source: '检修计划', reason: p._noBasis,
         note: '无有效依据，未进入正式清单，请补齐后重新提报', row: p._row });
       continue;
     }
+    const startBefore = !!(range && p.start && p.start < range.from);
+    if (startBefore) beforePeriod.push(`${p.code}（${p.project}，${p.start}）`);
+    if (!p.start) noStart.push(`${p.code}（${p.project}）`);
+    const sa = p.start ? C.addDays(p.start, -LEAD_DAYS) : null;
+    if (sa && sa < today) passed.push(`${p.code}（${p.project}，建议到货 ${sa}）`);
     items.push({
       code: p.code, name: p.name, spec: p.spec, unit: p.unit,
-      grossQty: p.qty, source: '检修计划',
+      grossQty: p.qty, source: '检修计划', startBeforePeriod: startBefore, arrivalPassed: sa ? sa < today : null,
       basis: `检修项目 ${p.project}${p.projectName ? '（' + p.projectName + '）' : ''}`,
       project: p.project, projectName: p.projectName, tag: p.tag,
-      suggestArrival: p.start ? C.addDays(p.start, -LEAD_DAYS) : null,
+      suggestArrival: sa,
       planStart: p.start, periodsUsed: null, monthlyAvg: null, safetyQty: null,
       formula: `检修计划用量 ${C.fmt(p.qty)}`,
     });
   }
+
+  if (planOutOfPeriod.length) warnings.push(`${planOutOfPeriod.length} 项检修计划需求的基本开始日期晚于需求周期「${a.period}」（${range.from}~${range.to}），属后续周期，已单列、未计入本期：${planOutOfPeriod.map((x) => `${x.code}（${x.project}，${x.planStart}）`).join('、')}`);
+  if (beforePeriod.length) warnings.push(`${beforePeriod.length} 项检修计划需求的基本开始日期早于需求周期，工单/预留尚未关闭，仍计入本期需求，请核实工单是否仍要执行：${beforePeriod.join('、')}`);
+  if (noStart.length) warnings.push(`${noStart.length} 项检修计划需求无基本开始日期（计划开工），无法核对是否在需求周期内，已计入本期：${noStart.join('、')}`);
+  if (passed.length) warnings.push(`${passed.length} 项检修计划需求的建议到货日已过（早于今天 ${today}），请尽快催办或与计划员确认开工日期：${passed.join('、')}`);
 
   // 历史驱动
   for (const g of histAgg.values()) {
@@ -311,7 +383,9 @@ function main() {
     const avg = n > 0 ? C.round(total / n, 2) : null;
     const safety = safetyMap.has(g.code) ? safetyMap.get(g.code).qty : null;
     const gross = avg === null ? null : C.round(avg * months + (safety === null ? 0 : safety), 2);
-    const basis = `历史消耗 ${n} 期（${used[0] || '—'}~${used[n - 1] || '—'}）`;
+    const zeroUsed = used.filter((m) => g.zeroMonths.has(m)).length;
+    const badUsed = n ? [...g.badMonths].filter((m) => m >= used[0] && m <= used[n - 1]).length : 0;
+    const basis = `历史消耗 ${n} 期（${used[0] || '—'}~${used[n - 1] || '—'}${zeroUsed ? `，其中无领用月按 0 计 ${zeroUsed} 期` : ''}${badUsed ? `，数量无法解析剔除 ${badUsed} 期` : ''}）`;
     const row = {
       code: g.code, name: g.name, spec: g.spec, unit: g.unit,
       grossQty: gross, source: '历史消耗', basis,
@@ -445,6 +519,8 @@ function main() {
     codeAmbiguity: codeAmbiguity.length,
     noHistory: noHistory.length,
     unitConflicts: unitConflicts.length,
+    planOutOfPeriod: planOutOfPeriod.length,
+    arrivalPassed: items.filter((x) => x.arrivalPassed).length,
   };
 
   // ---------------- 产出
@@ -455,12 +531,12 @@ function main() {
       workshop: C.str(a.workshop), period: C.str(a.period), months, method, lookback: Math.round(lookback),
       sources: inputs.map((p) => path.basename(p)),
       stockProvided: !!stockMap, safetyProvided: safetyMap.size > 0, intransitProvided: !!transitMap,
-      grossOnly, minPeriods: MIN_PERIODS, leadDays: LEAD_DAYS, mergedSources,
+      grossOnly, minPeriods: MIN_PERIODS, leadDays: LEAD_DAYS, mergedSources, mb51Window, periodRange: range, today,
       generatedAt: C.localDateTime(),
       statement: STATEMENT,
       demandKind: grossOnly ? '毛需求（未扣减在库量）' : '净需求（已扣减在库与在途）',
     },
-    counts, items, netDemand, lowConfidence, codeAmbiguity, noHistory, unitConflicts, warnings,
+    counts, items, netDemand, lowConfidence, codeAmbiguity, noHistory, unitConflicts, planOutOfPeriod, warnings,
   };
   fs.writeFileSync(path.join(outDir, 'demand.json'), JSON.stringify(result, null, 2), 'utf8');
 
@@ -492,7 +568,9 @@ function main() {
   L.push('**口径说明**');
   L.push('');
   L.push(`- 推算方式：${methodText}。检修计划驱动按项目（PM 工单/预留）备件清单直接取用量，建议到货 = 计划开工 − ${LEAD_DAYS} 天${a['lead-days'] === undefined ? '（默认值，厂内采购周期不同时用 --lead-days 调整）' : ''}；历史消耗驱动按「月均消耗 × ${months} 个月 + 安全库存」。`);
+  if (planFound) L.push(range ? `- 检修计划需求按需求周期 ${range.from}~${range.to} 核对基本开始日期：晚于周期末的属后续周期，单列于第二节末、不计入本期；早于周期初而工单/预留未关闭的仍计入本期并提示核实；建议到货日已过的标「已过，请催办」。` : `- 需求周期「${C.str(a.period)}」无法识别起止日期，检修计划需求未按周期过滤。`);
   L.push(`- 历史消耗期数少于 ${MIN_PERIODS} 期的备件不进正式清单，单列于第四节，**未按不足的数据外推当作正常需求**${a['min-periods'] === undefined ? '（期数下限为默认值，可用 --min-periods 调整）' : ''}。`);
+  if (mb51Window) L.push(`- 历史消耗来自 MB51 物料凭证：导出窗口 ${mb51Window.from}~${mb51Window.to}（${mb51Window.months} 个月），窗口内没有领用凭证的月份按 0 计入期数，月均按窗口月数摊；运行当月未满月不计入。`);
   if (mergedSources.plan.length > 1 || mergedSources.history.length > 1) L.push(`- 多个输入文件含同名工作表，已合并读取：检修计划来自 ${mergedSources.plan.join('、') || '—'}；历史消耗来自 ${mergedSources.history.join('、') || '—'}。`);
   L.push('- 毛需求分列为「计划毛需求」与「历史毛需求」，合计后再扣减在库与在途。');
   if (grossOnly) {
@@ -511,7 +589,14 @@ function main() {
   if (!items.length) L.push('_本期无有依据的需求项。_\n');
   else {
     L.push(C.mdTable(['备件编码', '名称', '规格型号', '单位', '毛需求量', '来源', '依据', '推算式', '建议到货'],
-      items.map((x) => [x.code, x.name || '—', x.spec || '—', x.unit || '—', C.fmt(x.grossQty), x.source, x.basis, x.formula, x.suggestArrival || '—'])));
+      items.map((x) => [x.code, x.name || '—', x.spec || '—', x.unit || '—', C.fmt(x.grossQty), x.source, x.basis, x.formula,
+        x.suggestArrival ? `${x.suggestArrival}${x.arrivalPassed ? '（已过，请催办）' : ''}` : '—'])));
+  }
+  if (planOutOfPeriod.length) {
+    L.push(`**需求周期外的检修计划需求（基本开始日期晚于 ${range.to}，单列，不计入本期）**`);
+    L.push('');
+    L.push(C.mdTable(['备件编码', '名称', '单位', '数量', '订单/项目', '基本开始日期', '说明'],
+      planOutOfPeriod.map((x) => [x.code, x.name || '—', x.unit || '—', C.fmt(x.qty), `${x.project}${x.projectName ? '（' + x.projectName + '）' : ''}`, x.planStart, x.reason])));
   }
 
   L.push(`## 三、${grossOnly ? '毛需求汇总（未扣减在库量）' : '净需求'}`);
@@ -602,6 +687,10 @@ function main() {
     '编码待确认': [
       ['类型', '备件编码', '备件名称', '规格型号', '单位', '来源', '说明'],
       ...codeAmbiguity.flatMap((am) => am.items.map((x) => [am.type, x.code, x.name, x.spec, x.unit, x.source, am.note])),
+    ],
+    '周期外计划需求': [
+      ['备件编码', '备件名称', '规格型号', '单位', '数量', '订单/项目', '基本开始日期', '说明'],
+      ...planOutOfPeriod.map((x) => [x.code, x.name, x.spec, x.unit, x.qty, x.project, x.planStart, x.reason]),
     ],
     '无依据待核实': [
       ['备件编码', '备件名称', '规格型号', '单位', '数量', '来源', '缺什么依据', '处理'],

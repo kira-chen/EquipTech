@@ -71,6 +71,8 @@ eq(R.classifyEquip('空冷器', ''), 'aircooler', 'A12c 空冷器→aircooler（
 eq(R.classifyEquip('压力变送器', ''), 'instrument', 'A12d 变送器→instrument');
 eq(R.classifyEquip('气动调节阀', ''), 'instrument', 'A12e 调节阀归仪表回路，不归阀门');
 eq(R.classifyEquip('弹簧式安全阀', ''), 'valve', 'A12f 安全阀仍归阀门');
+eq(R.classifyEquip('起重机械', '机泵区检修单梁起重机'), 'generic', 'A12g 起重机械不因名称里的「机泵区」误归泵类');
+eq(R.classifyEquip('起重机械', '压缩机厂房桥式起重机'), 'generic', 'A12h 起重机械不因名称里的「压缩机厂房」误归机组类');
 eq(R.classifyEquip('电机', '循环水泵电机'), 'electrical', 'A13 类型字段优先于名称');
 eq(R.classifyEquip('', '循环水泵电机'), 'pump', 'A14 仅名称时按命中顺序');
 ok(R.COVERED.length === 8 && !R.COVERED.includes('generic') && ['furnace', 'aircooler', 'instrument'].every((k) => R.COVERED.includes(k)), 'A15 覆盖范围为八类（含加热炉/空冷器/仪表回路）且不含 generic');
@@ -156,6 +158,7 @@ ok(r.j.qcPoints.every((x) => x.item.includes('待技术人员补充')), 'D12 质
 eq(acOf(r.j, 'AC-GEN1').acId, 'AC-GEN1', 'D13 验收项退化为通用待补充项');
 ok(!NUMERIC_UNIT.test(r.md), 'D14 覆盖范围外方案全文不出现任何具体数值');
 ok(r.j.counts.toBeConfirmed > 0, 'D15 覆盖范围外的通用数值项仍列入待确认');
+ok(r.j.warnings.some((w) => w.includes('不在本技能覆盖范围') && ['泵类', '机组类', '静设备', '阀门', '电气', '加热炉', '空冷器', '仪表回路'].every((k) => w.includes(k))), 'D16 覆盖范围外 warning 列全八类覆盖范围（含加热炉/空冷器/仪表回路）');
 
 // ============ E. 硬约束 3：规程与通用口径冲突 → 以厂内规程为准 + conflicts 单列 ============
 r = run([...PUMP, '--spec', SPEC_FULL], 'e-conf');
@@ -378,6 +381,17 @@ eq(r.j.meta.level, 'emergency', 'O18 抢修识别');
 r = run(['--equip-type', '离心泵', '--tag', 'P-9104', '--scope', '机封更换', '--level', '大检修'], 'o-ovh');
 eq(r.j.meta.levelCn, '大检修（停工检修）', 'O19 大检修识别');
 ok(!r.j.warnings.some((w) => w.includes('旧口径')), 'O20 新口径不报旧口径 warning');
+r = run(['--equip-type', '离心泵', '--tag', 'P-9105', '--scope', '机械密封解体更换（小修）'], 'o-scope-old');
+ok(r.j.meta.levelCn === '日常维修' && r.j.warnings.some((w) => w.includes('旧口径') && w.includes('小修') && w.includes('日常维修')), 'O21 检修内容里写旧口径「小修」也归日常维修并 warning');
+// 「集中修复」里的「中修」、「运行车间」里的「行车」不是关键词
+r = run(['--equip-type', '离心泵', '--tag', 'P-101', '--scope', '机封泄漏集中修复（日常维修）'], 'o-jizhong');
+ok(r.j && r.j.meta.levelCn === '日常维修' && !r.j.warnings.some((w) => w.includes('旧口径')), 'O21a 检修内容「集中修复」不误报旧口径「中修」');
+eq(R.classifyLevel('机封泄漏集中修复', ''), null, 'O21b 「集中修复」不按旧口径「中修」归日常维修');
+eq(R.classifyLevel('中修', ''), 'routine', 'O21c 单独写「中修」仍按旧口径归日常维修');
+eq(R.classifyEquip('', '常减压运行车间进料泵'), 'pump', 'O21d 名称含「运行车间」不被「行车」判为起重机械');
+eq(R.classifyEquip('行车', ''), 'generic', 'O21e 「行车」仍判范围外');
+r = run(['--equip-type', '离心泵', '--tag', 'P-9106', '--scope', '机械密封解体更换（小修）', '--level', '大检修'], 'o-scope-old-level');
+ok(r.j.meta.levelCn === '大检修（停工检修）' && !r.j.warnings.some((w) => w.includes('旧口径')), 'O22 --level 用新口径时以参数为准，检修内容里的旧口径词不报 warning');
 
 // ============ P. 新增覆盖：加热炉 / 空冷器 / 仪表回路 ============
 r = run(['--equip-type', '管式加热炉', '--tag', 'F-9501', '--scope', '炉管更换与烧嘴检修（大检修）', '--duration', '20'], 'p-furnace');
@@ -402,6 +416,46 @@ r = run(['--equip-type', '压力变送器', '--tag', 'PT-9702', '--scope', '校�
 eq(stepOf(r.j, 'IN4').valueSource, 'spec', 'P15 仪表规程命中校验精度原文');
 ok(String(stepOf(r.j, 'IN4').valueText).includes('0.2%'), 'P16 校验精度为原文摘录');
 
+// ============ R. 引用须命中该项本身：壁厚、水平度、机封压缩量不得借用别的条款 ============
+// 换热器规程只有力矩、管板平面度公差、试压三条（同知识库 E-1201 规程）
+const SPEC_HX = wr('spec-hx.md', ['某厂换热器检修规程（样例）',
+  '4.1 管箱与浮头法兰螺栓紧固力矩按 420 N·m 执行，对角分四次紧固。',
+  '4.2 管板密封面平面度公差不大于 0.3 mm。',
+  '4.3 管程水压试验压力 2.5 MPa，壳程水压试验压力 1.8 MPa，保压 30 分钟。'].join('\n'));
+r = run(['--equip-type', '换热器', '--tag', 'E-9801', '--scope', '管束抽芯检修', '--spec', SPEC_HX, '--dismantle', '是'], 'r-hx');
+eq(stepOf(r.j, 'ST6').valueSource, 'tbc', 'R1 规程只有管板平面度公差 → 壁厚测定（ST6）不引用该条，标待查规程确认');
+eq(stepOf(r.j, 'ST6').valueKind, 'thickness', 'R2 ST6 数值类型为壁厚类（thickness），不归公差');
+eq(qcOf(r.j, 'QC-ST1').standardSource, 'tbc', 'R3 质控点壁厚测定（QC-ST1）不引用平面度公差条款');
+eq(acOf(r.j, 'AC-ST1').criterionSource, 'tbc', 'R4 验收「壁厚满足最小允许壁厚」不引用平面度公差条款');
+eq(acOf(r.j, 'AC-ST3').criterionSource, 'tbc', 'R5 验收「内件水平度」不引用平面度公差条款');
+eq(acOf(r.j, 'AC-ST3').valueKind, 'level', 'R6 AC-ST3 数值类型为水平度类（level）');
+ok(r.j.counts.toBeConfirmed >= 4 && ['ST6', 'QC-ST1', 'AC-ST1', 'AC-ST3'].every((id) => r.j.toBeConfirmed.some((t) => t.stepId === id)), 'R7 壁厚与水平度 4 处进 toBeConfirmed');
+eq(stepOf(r.j, 'ST11').valueSource, 'spec', 'R8 力矩照常引用规程原文');
+const SPEC_HX2 = wr('spec-hx2.md', ['某厂换热器检修规程（样例二）',
+  '5.1 壳体最小允许壁厚 10.5 mm，腐蚀裕量 3 mm。',
+  '5.2 塔盘安装水平度偏差不大于 3 mm。'].join('\n'));
+r = run(['--equip-type', '换热器', '--tag', 'E-9802', '--scope', '管束抽芯检修', '--spec', SPEC_HX2, '--dismantle', '是'], 'r-hx2');
+ok(stepOf(r.j, 'ST6').valueSource === 'spec' && /10\.5 mm/.test(stepOf(r.j, 'ST6').valueText), 'R9 规程写了最小允许壁厚 → ST6 引用该条原文');
+ok(acOf(r.j, 'AC-ST3').criterionSource === 'spec' && /水平度/.test(acOf(r.j, 'AC-ST3').criterion), 'R10 规程写了水平度 → AC-ST3 引用该条原文');
+// 空冷器翅片管壁厚同样不借用公差条款
+r = run(['--equip-type', '空冷器', '--tag', 'A-9801', '--scope', '管束检修', '--spec', SPEC_HX, '--dismantle', '是'], 'r-ac');
+ok(stepOf(r.j, 'AC4').valueSource === 'tbc' && qcOf(r.j, 'QC-AC1').standardSource === 'tbc', 'R11 空冷器翅片管壁厚（AC4、QC-AC1）不引用平面度公差条款');
+// 泵：规程有轴向窜量、没有机封压缩量 → 转子窜量与机封压缩量项不能算已有出处
+const SPEC_PU = wr('spec-pu.md', ['某厂离心泵检修规程（样例）',
+  '1.2 配合间隙：叶轮口环间隙 0.30~0.45 mm，滚动轴承游隙 0.02~0.04 mm，转子轴向窜量 0.08~0.12 mm。'].join('\n'));
+r = run(['--equip-type', '离心泵', '--tag', 'P-9801', '--scope', '机封解体更换', '--spec', SPEC_PU], 'r-pu');
+eq(qcOf(r.j, 'QC-PU4').standardSource, 'tbc', 'R12 规程无机封压缩量 → QC-PU4 标待查规程确认');
+eq(stepOf(r.j, 'PU10').valueSource, 'tbc', 'R13 规程无机封压缩量 → PU10 标待查规程确认');
+const tPu4 = r.j.toBeConfirmed.find((t) => t.stepId === 'QC-PU4') || {};
+ok(/机封压缩量/.test(tPu4.reason || '') && /转子轴向窜量/.test(tPu4.reason || '') && /第 2 行/.test(tPu4.reason || ''), 'R14 待确认原因写明缺「机封压缩量」，并注明已找到的轴向窜量条款行号');
+ok(/补齐转子轴向窜量、机封压缩量/.test(tPu4.action || ''), 'R14b 待确认措施写明要补齐的分项名称，不笼统写「配合间隙」');
+eq(stepOf(r.j, 'PU5').valueSource, 'spec', 'R15 口环间隙照常引用');
+const SPEC_PU2 = wr('spec-pu2.md', ['某厂离心泵检修规程（样例二）',
+  '1.2 转子轴向窜量 0.08~0.12 mm。',
+  '2.3 机械密封压缩量 3~4 mm。'].join('\n'));
+r = run(['--equip-type', '离心泵', '--tag', 'P-9802', '--scope', '机封解体更换', '--spec', SPEC_PU2], 'r-pu2');
+const q4 = qcOf(r.j, 'QC-PU4');
+ok(q4.standardSource === 'spec' && /0\.08~0\.12/.test(q4.standard) && /3~4 mm/.test(q4.standard) && /第 2、3 行/.test(q4.citation), 'R16 两项都有出处 → 合并引用两条原文并列出两处行号');
 
 // ============ Q. examples 样例（目录不存在则跳过） ============
 const EX = path.join(__dirname, '..', 'examples');

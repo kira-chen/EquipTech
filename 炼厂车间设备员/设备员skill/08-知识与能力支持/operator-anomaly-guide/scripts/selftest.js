@@ -183,6 +183,7 @@ ok(r.j.warnings.some((w) => /--no-touch/.test(w) && /巡检仪|测温枪/.test(w
 ok(/本卡不含手摸类观察点/.test(r.md), 'K13 md 每节注明不含手摸');
 ok(!/- \*\*摸\*\*/.test(r.md), 'K14 md 无「摸」小节');
 ok(!/摸到\//.test(r.md), 'K15 报告要素不再要求「摸到」');
+ok(!S.TOUCH_SIGN_RE.test(r.md.split('## 附')[0]), 'K15a --no-touch 时卡面（含报告示例句）不出现烫手/手感');
 eq(r.s.counts.observePoints, touchDefault - 3, 'K16 观察要点计数相应减少');
 eq(r.j.meta.noTouch, true, 'K17 meta.noTouch 为 true');
 eq(r.j.meta.touchQualifier, null, 'K18 no-touch 时限定语为 null');
@@ -237,6 +238,54 @@ ok(fs.existsSync(path.join(r.out, 'summary.json')), 'J3 summary.json 生成');
 ok(r.j.scopeRules.length >= 10, 'J4 JSON 含职责边界规则表');
 ok(r.j.reportPath.elements.length >= 5, 'J5 报告要素齐全');
 ok(r.j.emergency.length >= 5, 'J6 紧急条件齐全');
+
+// ============ N. 缺陷修复（2026-11-04 核查：拆检、单写堵漏、解除/屏蔽联锁、切除安全阀漏拦）============
+eq(S.checkAction('拆检').ruleId, 'S1', 'N1 「拆检」按拆检类拦截');
+eq(S.checkAction('拆保温检查').ruleId, 'S1', 'N2 「拆保温」按拆检类拦截');
+eq(S.checkAction('打卡子堵漏').ruleId, 'S8', 'N3 单写「堵漏」也按堵漏类拦截');
+eq(S.checkAction('解除联锁').ruleId, 'S6', 'N4 「解除联锁」不带强行/手动也拦截');
+eq(S.checkAction('屏蔽报警').ruleId, 'S6', 'N5 「屏蔽报警」拦截');
+eq(S.checkAction('摘除联锁').ruleId, 'S6', 'N6 「摘除联锁」拦截');
+eq(S.checkAction('投用联锁旁路').ruleId, 'S6', 'N7 「联锁旁路」拦截');
+eq(S.checkAction('关闭安全阀根部阀').ruleId, 'S6', 'N8 关闭/切除安全阀根部阀按保护屏蔽类拦截');
+ok(['更换润滑油', '盘车', '切换备泵', '检查接线盒外观', '处理泄漏前先报告', '确认联锁报警信息后上报', '观察安全阀有无起跳'].every((x) => S.checkAction(x).ok), 'N9 反例：加换油、盘车、切换备泵、观察类与上报类描述不误拦');
+eq(S.typeOf('加氢精制反应器'), '塔器容器', 'N10 「反应器」归塔器容器，不落到通用（与 training-material-generator 同源）');
+// O. 职责边界复核（2026-11-04 第二轮）：否定 / 疑问写法与「停用后……报警」不误拦；反向语序与口语写法不漏网
+ok(S.checkAction('确认联锁未旁路后上报').ok, 'O1 「确认联锁未旁路后上报」不误拦');
+ok(S.checkAction('泵停用后观察报警是否消失').ok, 'O2 「泵停用后观察报警是否消失」不误拦');
+ok(S.checkAction('检查联锁是否旁路').ok && S.checkAction('确认未摘掉联锁').ok && S.checkAction('确认无打旁路').ok, 'O3 「是否旁路」「未摘掉」「无打旁路」等否定或疑问写法不误拦');
+eq(S.checkAction('对泄漏法兰进行包扎').ruleId, 'S8', 'O4 「对泄漏法兰进行包扎」按堵漏类拦截');
+eq(S.checkAction('漏点用胶带包扎').ruleId, 'S8', 'O5 「漏点用胶带包扎」按堵漏类拦截');
+eq(S.checkAction('把保温拆掉检查').ruleId, 'S1', 'O6 「把保温拆掉检查」按拆检类拦截');
+eq(S.checkAction('摘掉联锁').ruleId, 'S6', 'O7 「摘掉联锁」拦截');
+eq(S.checkAction('打旁路').ruleId, 'S6', 'O8 「打旁路」拦截');
+eq(S.checkAction('先打旁路再处理').ruleId, 'S6', 'O9 「先打旁路再处理」拦截');
+
+// ============ Q. --ledger 与 --scope 同时给：按 scope 过滤清单 ============
+{
+  const LEDQ = mk('ledq.xlsx', {
+    '设备台账': [['位号', '设备名称', '设备类型', '区域'],
+      ['P-01', '进料泵', '离心泵', '一区'],
+      ['P-02', '回流泵', '离心泵', '一区'],
+      ['M-01', '鼓风机电机', '电机', '二区'],
+      ['E-01', '原油换热器', '换热器', '二区']],
+  });
+  r = run([...BASE, '--ledger', LEDQ, '--scope', '离心泵'], 'ledq1');
+  eq(r.s.ok, true, 'Q1 台账 + scope 可生成');
+  eq(r.s.counts.types, 1, 'Q2 按 scope 过滤后只剩离心泵一节');
+  eq(r.s.counts.equipment, 2, 'Q3 过滤后只剩 2 台泵');
+  ok(/P-01/.test(r.md) && !/M-01|E-01/.test(r.md), 'Q4 指引卡不列 scope 以外的位号');
+  ok(r.s.warnings.some((w) => /--scope/.test(w) && /保留 2 台/.test(w) && /剔除 2 台/.test(w)), 'Q5 warning 写明按 scope 过滤的保留 / 剔除台数');
+  r = run([...BASE, '--ledger', LEDQ, '--scope', '离心泵,压缩机'], 'ledq2');
+  eq(r.s.counts.types, 2, 'Q6 scope 中清单没有的类型仍成一节');
+  ok(r.s.warnings.some((w) => /清单中没有「压缩机」类设备/.test(w)), 'Q7 scope 中清单没有的类型 warning');
+  r = run([...BASE, '--ledger', LEDQ, '--scope', '二区'], 'ledq3');
+  eq(r.s.counts.equipment, 2, 'Q8 scope 写区域时按区域过滤清单');
+  ok(!r.s.warnings.some((w) => /不在覆盖范围内/.test(w) && /二区/.test(w)), 'Q9 用于过滤的区域不当成未覆盖设备类型');
+  r = run([...BASE, '--ledger', LEDQ, '--scope', '全部'], 'ledq4');
+  eq(r.s.counts.equipment, 4, 'Q10 scope「全部」不过滤清单');
+  eq(r.s.counts.types, 3, 'Q11 scope「全部」不额外加空的通用节');
+}
 
 console.log(`\n${'='.repeat(56)}`);
 console.log(`operator-anomaly-guide 自测：${pass} 通过，${fail} 失败`);

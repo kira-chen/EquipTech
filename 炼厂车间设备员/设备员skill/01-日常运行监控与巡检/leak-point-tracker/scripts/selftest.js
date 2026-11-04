@@ -569,6 +569,37 @@ eq(r.summary.counts.overdue, 1, '21.5 超期数只含真正未修的一条');
   ok(!fs.existsSync(path.join(path.dirname(base), 'lpt-out')), '22.3 不再写入输入同目录 lpt-out/');
 }
 
+// ================= 23. 本底值：仅登记、不扣除；有非空本底值时给提示 =================
+{
+  const BG_NOTE = '本底值仅登记，未从检测值中扣除；如厂内按扣除本底后的净值判定泄漏，请按厂内口径复核';
+  const HB = [...H, '本底值'];
+  const bgFile = mk('bg.xlsx', {
+    '检测记录': [
+      HB,
+      // 2100 − 本底 300 = 1800 < 2000：若扣本底就不算泄漏；口径不变，仍按 2100 认定泄漏
+      ['MFD-B01', 'P-1', '泵密封', '汽油', '气体', 2100, D(-2), '李', '', '未修复', '', '', '', '王', '', 300],
+      ['MFD-B02', 'V-2', '阀门', '瓦斯', '气体', 500, D(-2), '李', '', '', '', '', '', '', '', ''],
+    ],
+  });
+  r = run(bgFile, [], 'bg');
+  eq(r.summary.ok, true, '23.1 带本底值列可运行');
+  eq(find(r.lk.items, 'MFD-B01').isLeak, true, '23.2 本底值不参与判定：2100 仍认定泄漏（未扣本底 300）');
+  eq(find(r.lk.items, 'MFD-B01').value, 2100, '23.3 检测值原样，不减本底');
+  eq(find(r.lk.items, 'MFD-B01').bg, 300, '23.4 本底值登记留痕');
+  eq(r.summary.warnings.filter((w) => w.includes(BG_NOTE)).length, 1, '23.5 有非空本底值 → 一条 warning（不逐行刷屏）');
+  ok(r.summary.warnings.some((w) => w.includes(BG_NOTE) && /1 行/.test(w)), '23.6 warning 写明填了本底值的行数');
+  ok(r.md && r.md.includes(BG_NOTE), '23.7 报告口径处写明本底值未扣除、按厂内口径复核');
+  eq(r.summary.counts.backgroundFilled, 1, '23.8 counts.backgroundFilled 记填了本底值的行数');
+  // 本底值列全空 / 无本底值列：不提示
+  const bgEmpty = mk('bg-empty.xlsx', { '检测记录': [HB, ['MFD-B03', 'P-1', '泵密封', '汽油', '气体', 2100, D(-2), '李', '', '未修复', '', '', '', '王', '', '']] });
+  r = run(bgEmpty, [], 'bg-empty');
+  ok(!r.summary.warnings.some((w) => w.includes(BG_NOTE)), '23.9 本底值列全空不提示');
+  ok(r.md && !r.md.includes(BG_NOTE), '23.10 本底值列全空报告不出现该句');
+  eq(r.summary.counts.backgroundFilled, 0, '23.11 本底值列全空 backgroundFilled 为 0');
+  r = run(base, [], 'bg-none');
+  ok(!r.summary.warnings.some((w) => w.includes(BG_NOTE)) && !r.md.includes(BG_NOTE), '23.12 无本底值列不提示');
+}
+
 // ================= 输出 =================
 console.log(`\n${'='.repeat(56)}`);
 console.log(`leak-point-tracker 自测：${pass} 通过，${fail} 失败`);

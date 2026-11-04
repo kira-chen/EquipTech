@@ -22,15 +22,15 @@ node "<技能目录>/scripts/lube.js" \
 | `--lead-hours` | 否 | 运行小时周期的提前提醒小时数，默认 = `--lead-days` × 24（即 168 h）；须为非负数 |
 | `--equipment` | 否 | 限定设备范围，位号逗号分隔；范围外的行不参与判定并 warning |
 | `--price` | 否 | 油品单价表 xlsx（含「油品单价」工作表），用于消耗金额折算；不提供则不折算 |
-| `--run-hours` | 否 | 累计运行小时来源：`runtime-hours-tracker` 产出的 `runtime.json`（读 `byEquipment[].tag/cumHours`），或含「位号 / 累计运行小时」列的 xlsx；仅用于运行小时周期项，台账自带「累计运行小时」列时以台账为先 |
+| `--run-hours` | 否 | 累计运行小时来源：`runtime-hours-tracker` 产出的 `runtime.json`（读 `byEquipment[].tag/cumHours`），或含「位号 / 累计运行小时」列的 xlsx；仅用于运行小时周期项；台账「自上次加换油运行小时」或「累计运行小时」有值时以台账为先，台账累计与 `--run-hours` 不一致时 warning 提示核对；runtime.json 中某台 `periodHours` 为 null（累计只剩期初/上期值）或 `cumBasis` 为 `periodOnly` 时，用到该台累计会 warning 提示可能偏小 |
 | `--ref-standard` | 否 | 参考限值表 xlsx（含「参考限值」工作表：检测项、限值，可选 油品类型、标准号）。**显式提供时**，无厂内限值的油液分析项才按参考限值做"参考比对"，结果单列并标注"非厂内标准，仅供参考"，不计入 `oaAbnormal`。脚本不内置任何国标数值，参考值须由用户自行转录 |
-| `--oil-analysis` | 否 | 标志位，显式声明本次要出油液分析章节；缺「油液分析」表时 warning 提示 |
+| `--oil-analysis` | 否 | 不是开关：输入里有「油液分析」工作表时不论加不加都照常出油液分析章节；加了而缺表时多一条 warning 提示 |
 
 ### 产出
 
 | 文件 | 内容 |
 |---|---|
-| `lube.json` | `meta`（含 `declaration` 声明行）/`counts`/`wuding`（五定齐备率）/`overdue`/`dueSoon`/`normal`/`undetermined`/`consumption`/`oilAnalysis`（`abnormal`/`refChecked`/`noLimit`/`normal`）/`oilNameConflicts`/`warnings` |
+| `lube.json` | `meta`（含 `declaration` 声明行）/`counts`/`wuding`（五定齐备率）/`overdue`/`dueSoon`/`normal`/`undetermined`/`consumption`/`oilAnalysis`（`abnormal`/`refChecked`/`noLimit`/`normal`/`outOfLedger`）/`oilNameConflicts`/`warnings` |
 | `lube-report.md` | 八节报告（到期概览、五定齐备率、逾期、临期、无法判定、油品消耗、油液分析、情况说明），分析段留 `<!-- ANALYSIS_START/END -->` 占位，开头带声明行 |
 | `summary.json` | 末行摘要落盘（Windows 控制台乱码兜底） |
 
@@ -39,6 +39,7 @@ node "<技能目录>/scripts/lube.js" \
 - **周期或上次加换油日期缺失/无法解析**、**运行小时周期缺累计小时或缺上次加换油时小时数**、**累计小时小于上次小时数（矛盾）** → 该项进 `undetermined` 单列，**不按常见周期默认**。
 - **五定齐备率**：定点=润滑部位、定质=油品名称、定量=加油量、定期=润滑周期、定人=责任人，按列填写比例计算；台账无该列 → 齐备率 `null`（不按齐备处理）并 warning。三过滤（领油、转桶、加油）属现场作业要求，不从台账判定。
 - **油液分析无厂内限值**（或限值无法解析、检测值无法解析）→ 进 `oilAnalysis.noLimit`，只列数值不判异常，**不引用通用限值**；仅 `--ref-standard` 显式提供时进 `refChecked` 做参考比对并标注非厂内标准。
+- **台账外油样**：油液分析里位号不在本次润滑台账内的（全厂导出混入其他车间、或台账漏登），进 `oilAnalysis.outOfLedger` 单列（照样按厂内限值标出是否超限供核实），不计入 `oaAbnormal`/`oaNormal`/`oaNoLimit`，`counts.oaOutOfLedger` 计数，warning 一次点名。
 - **油品牌号归一**：去品牌词（长城/昆仑/壳牌/美孚等）、空格、横杠与标点后比对，用于疑似同一油品提示与单价匹配；统计与展示仍按原写法，**不自动合并**。
 - **消耗统计单位混用** → 按单位分别统计并 warning，**不做任何量纲换算**。
 - **数量/检测值无法解析** → `null`（显示「—」），**不按 0 计**；带单位数值（"12L" "78℃"）剥离单位取数值并提示核对。
@@ -64,4 +65,4 @@ seed 改变数值但不改变结论：主样例恒为 4 逾期、3 临期、4 �
 node scripts/selftest.js
 ```
 
-198 条断言，覆盖：到期分档、lead-days 窗口、四类未判定、油液无限值/限值不可解析/检测值不可解析、缺油液分析表、单位混用不换算、数量缺失不按 0、油品牌号品牌词归一与不自动合并、缺加换油记录表、单价折算有无匹配、合计行与别名列头、「半年/每班」可解析、带单位数值、空位号、设备范围、缺台账、参数校验、八节结构与声明行、SAP/EM 列名与设备编号不当位号、五定齐备率与缺列不按齐备、运行小时周期（逾期/临期/正常/三类未判定/`--lead-hours`/`--run-hours` 两种形态）、`--ref-standard` 参考比对单列不计异常、默认输出目录为临时目录、样例可再生。全绿退出 0。
+215 条断言，覆盖：到期分档、lead-days 窗口、四类未判定、油液无限值/限值不可解析/检测值不可解析/台账外位号单列不计数、缺油液分析表、单位混用不换算、数量缺失不按 0、油品牌号品牌词归一与不自动合并、缺加换油记录表、单价折算有无匹配、合计行与别名列头、「半年/每班」可解析、带单位数值、空位号、设备范围、缺台账、参数校验、八节结构与声明行、SAP/EM 列名与设备编号不当位号、五定齐备率与缺列不按齐备、运行小时周期（逾期/临期/正常/三类未判定/`--lead-hours`/`--run-hours` 两种形态、台账累计与 `--run-hours` 不一致提示、runtime.json 本期运行小时为空时提示累计偏小）、`--ref-standard` 参考比对单列不计异常、默认输出目录为临时目录、样例可再生。全绿退出 0。

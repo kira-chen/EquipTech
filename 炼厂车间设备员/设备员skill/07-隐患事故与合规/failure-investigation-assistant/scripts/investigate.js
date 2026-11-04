@@ -43,7 +43,8 @@ const ALIASES = C.mergeAliases({
   '参数名': ['参数名', '参数', '测点', '测点名称', '监测项目', '项目', '检测项', '测点号', '仪表位号', '点号', '点检项目'],
   '参数值': ['参数值', '数值', '测值', '测量值', '实测值', '读数', '值'],
   '单位': ['单位', '计量单位', '工程单位'],
-  '来源': ['来源', '数据来源', '系统', '记录来源'],
+  '来源': ['来源', '数据来源', '系统', '记录来源'], // 「系统」只应命中名为「系统」的列；「系统状态」由下面单列认领
+  '系统状态': ['系统状态'],
   '级别': ['级别', '报警级别', '等级', '优先级', '报警优先级'],
   '岗位': ['岗位', '记录岗位', '班组', '专业', '执行岗位', '操作员'],
   '检修日期': ['检修日期', '日期', '完工日期', '施工日期', '开始日期', '实际结束日期', '技术完成日期', '实际完工', '基本结束日期', '基本开始日期'],
@@ -140,7 +141,7 @@ function main() {
       const sheetName = `${base}/${def.key}`;
       if (def.kind === 'maint') {
         const recs = C.toRecords(rows, ['检修日期', '检修内容'], sheetName,
-          ['位号', '检修类别', '结论', '岗位', '来源', '工单号', '通知单号'], warnings, ALIASES);
+          ['位号', '检修类别', '结论', '岗位', '来源', '工单号', '通知单号', '系统状态'], warnings, ALIASES);
         for (const r of recs) {
           const d = C.normDate(r['检修日期']);
           if (r['检修日期'] && !d) warnings.push(`工作表「${sheetName}」第${r._row}行 检修日期「${C.str(r['检修日期'])}」无法解析，条目保留但无时间`);
@@ -159,9 +160,10 @@ function main() {
         continue;
       }
       const required = def.kind === 'param' ? ['时间', '参数名'] : ['时间', '内容'];
+      // 「系统状态」单列认领（全等匹配优先），免得「来源」的别名「系统」按前缀把 SAP 系统状态列当成来源
       const optional = def.kind === 'param'
-        ? ['位号', '参数值', '单位', '来源', '内容']
-        : ['位号', '来源', '级别', '岗位', '参数名', '参数值', '单位'];
+        ? ['位号', '参数值', '单位', '来源', '内容', '系统状态']
+        : ['位号', '来源', '级别', '岗位', '参数名', '参数值', '单位', '系统状态'];
       const recs = C.toRecords(rows, required, sheetName, optional, warnings, ALIASES);
       for (const r of recs) {
         const t = C.normDateTime(r['时间']);
@@ -251,6 +253,14 @@ function main() {
   // 口径：仅对**连续采样类**数据（运行参数）判缺口——操作/巡检/值班/报警属事件触发型，
   //       本就疏密不均，不按缺口论。同一来源相邻两条记录间隔 > gapMin 分钟即记为缺口；
   //       窗口起止与首末条之间的空档同样记为缺口。
+  //       窗口终点晚于当前时间（平台取数时 --after 常超过当前时刻）时，缺口只判到当前时间：
+  //       尚未到达的时段没有记录是正常的，不算缺口。
+  const nowMs = Date.now();
+  const gapEnd = Math.max(winStart, Math.min(winEnd, nowMs));
+  const gapEndCapped = gapEnd < winEnd;
+  if (gapEndCapped) {
+    warnings.push(`时间窗口终点 ${msToCn(winEnd)} 晚于当前时间 ${msToCn(nowMs)}，数据缺口只判到当前时间，尚未到达的时段不计缺口`);
+  }
   const dataGaps = [];
   const bySource = new Map();
   for (const e of timeline) {
@@ -263,8 +273,8 @@ function main() {
   if (!bySource.size) {
     dataGaps.push({
       source: '（无连续采样数据）', dataType: '运行参数',
-      from: msToCn(winStart), to: msToCn(winEnd),
-      minutes: Math.round((winEnd - winStart) / 60000), position: '整个时间窗口',
+      from: msToCn(winStart), to: msToCn(gapEnd),
+      minutes: Math.round((gapEnd - winStart) / 60000), position: gapEndCapped ? '整个时间窗口（判至当前时间）' : '整个时间窗口',
       note: '时间窗口内未提供运行参数数据，整窗记为缺口，未作插值或推测填补',
     });
     warnings.push('时间窗口内未提供运行参数（连续采样）数据，整窗记为数据缺口，不作任何推测填补');
@@ -285,9 +295,9 @@ function main() {
           note: '该区间无记录，缺口原样标注，未作插值或推测填补' });
       }
     }
-    if (winEnd - times[times.length - 1] > gapMs) {
-      dataGaps.push({ source, dataType, from: msToCn(times[times.length - 1]), to: msToCn(winEnd),
-        minutes: Math.round((winEnd - times[times.length - 1]) / 60000), position: '末条记录至窗口终点',
+    if (gapEnd - times[times.length - 1] > gapMs) {
+      dataGaps.push({ source, dataType, from: msToCn(times[times.length - 1]), to: msToCn(gapEnd),
+        minutes: Math.round((gapEnd - times[times.length - 1]) / 60000), position: gapEndCapped ? '末条记录至当前时间（窗口终点尚未到达）' : '末条记录至窗口终点',
         note: '该区间无记录，缺口原样标注，未作插值或推测填补' });
     }
   }
@@ -366,7 +376,7 @@ function main() {
     meta: {
       tag: a.tag, name: a.name || null, workshop: a.workshop || null,
       symptom: a.symptom, failureTime: evt.cn,
-      window: { before, after, start: msToCn(winStart), end: msToCn(winEnd), gapThresholdMinutes: gapMin, defaulted },
+      window: { before, after, start: msToCn(winStart), end: msToCn(winEnd), gapThresholdMinutes: gapMin, gapCheckedUntil: msToCn(gapEnd), defaulted },
       defaultsNote: R.DEFAULTS_NOTE,
       sources: foundSheets, generatedAt: C.localDateTime(),
       disclaimer: R.DISCLAIMER,
@@ -469,7 +479,7 @@ function main() {
   if (!dataGaps.length) L.push(`_时间窗口内连续采样数据（运行参数）记录间隔均未超过 ${gapMin} 分钟，未发现缺口。_\n`);
   else L.push(C.mdTable(['来源', '数据类型', '缺口起', '缺口止', '时长(分钟)', '位置', '处理'],
     dataGaps.map((x) => [x.source, x.dataType, x.from, x.to, x.minutes, x.position, '原样标注，未插值填补'])));
-  L.push(`> 缺口判定仅针对连续采样类数据（运行参数），阈值 ${gapMin} 分钟；操作、巡检、值班、报警属事件触发型记录，疏密不均不按缺口论。缺口区间一律原样标注，**不作插值、不作推测填补**。`);
+  L.push(`> 缺口判定仅针对连续采样类数据（运行参数），阈值 ${gapMin} 分钟${gapEndCapped ? `，窗口终点晚于当前时间，缺口只判到 ${msToCn(gapEnd)}` : ''}；操作、巡检、值班、报警属事件触发型记录，疏密不均不按缺口论。缺口区间一律原样标注，**不作插值、不作推测填补**。`);
   L.push('');
   L.push('### 5.2 各来源时间戳差异');
   L.push('');

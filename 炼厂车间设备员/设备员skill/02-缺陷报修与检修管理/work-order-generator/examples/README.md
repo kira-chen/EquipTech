@@ -32,3 +32,13 @@
 node scripts/make-sample.js --out examples            # seed=1
 node scripts/make-sample.js --out examples --seed 9   # 滴数、工作中心变化；草稿数、专业分布、边界命中不变
 ```
+
+## MCP 取数对照
+
+> 平台接入设备资产管理 MCP 时不上传附件：`get_notifications` → 目录 A（`--input`），`get_equipment_ledger` → 目录 B（`--ledger`），`get_failure_history`（输出表名「维修记录」）→ 目录 C（`--history`）。单条缺陷用 `--defect` 文字描述配 `--tag`，台账与维修记录按 `tag` 取；批量时三个工具都带 `workshop`。
+
+| # | 示例问题 | MCP 调用 | 运行参数 | 预期结果 |
+|---|---|---|---|---|
+| M1 | P-2101A 驱动端振动大、轴承箱异响，出通知单草稿并带台账和维修记录 | 设备资产管理 `get_equipment_ledger`（tag=P-2101A）→ 目录 B；`get_failure_history`（for_skill=work-order-generator，tag=P-2101A）→ 目录 C | `--defect "P-2101A 进料泵驱动端振动明显变大，轴承箱有异响" --tag P-2101A --applicant 常减压车间 --due <月底> --ledger <目录B> --history <目录C>` | 1 张草稿；带出设备编号 10002100、规格型号 OH2 150-400、安装位置 1#常减压装置机泵区、投用日期 2016-02-24；历史维修 2 条（更换机械密封、更换驱动端轴承复查对中），带原工单号；现象识别为振动、专业动设备；未给等级与优先级 → 优先级与通知单类型未判定，不按「3 中」默认 |
+| M2 | 同一条缺陷按 2 高报 | 同 M1 | M1 参数加 `--priority 2` | 优先级 2 高（来源「用户指定」），通知单类型按默认口径推为 M2 故障报告，无未判定项 |
+| M3 | 常减压车间未关闭通知单整理成草稿核对 | 设备资产管理 `get_notifications`（open_only=true，workshop=常减压车间）→ 目录 A；`get_equipment_ledger`（workshop=常减压车间）→ 目录 B；`get_failure_history`（for_skill=work-order-generator，workshop=常减压车间）→ 目录 C | `--input <目录A> --applicant 常减压车间 --workshop 常减压车间 --due <一周后> --ledger <目录B> --history <目录C>` | 草稿只含常减压车间设备，全部在台账中（notInLedger 0）；E-1201 管束内漏为 B 级 → 2 高、M2 故障报告、静设备；维修记录中未完工工单行（无维修日期和检修内容）不列入历史维修摘要并 warning；每张草稿都带「已有通知单号」（`counts.existingNotif` = 草稿数，CSV 单独一列，「通知单号(SAP生成)」仍留空），md 注明「系统已存在，勿重复创建」并 warning |

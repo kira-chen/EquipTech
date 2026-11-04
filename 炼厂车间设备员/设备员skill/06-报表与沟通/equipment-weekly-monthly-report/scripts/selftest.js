@@ -637,6 +637,95 @@ eq(gi(r.j.compare.prev, 'staticLeakRate').delta, null, 'N69 基准期无该指�
   ok((r2.j.dataGaps?.noDenominator || []).some((x) => x.metric === '备机完好率'), 'R5 列入分母缺失');
 }
 
+// ---- S. 只给工单台账、缺陷台账（MCP 导出常见情形）时，不把「工单台账」「缺陷台账」误当设备台账
+{
+  const SO = mk('orders-only.xlsx', {
+    '工单台账': [['工单号', '位号', '状态', '要求完成时间', '闭环时间'], ['W-1', 'P-1', 'CLSD', D(2), D(1)], ['W-2', 'P-2', 'REL', D(3), '']],
+    '缺陷台账': [['位号', '缺陷描述', '状态', '发现时间'], ['P-1', '渗漏', 'NOCO', D(0)]],
+  });
+  const r = run(SO, [], 'orders-only');
+  ok(!(r.s.sources || []).some((x) => /设备台账/.test(x)), 'S1 无设备台账时，工单台账/缺陷台账不被识别为设备台账');
+  ok(/未提供设备台账/.test((r.j && r.j.metrics.intactNote) || ''), 'S2 完好率说明为「未提供设备台账」而非「台账缺在用列」');
+  eq(r.j && r.j.metrics.orderDue, 2, 'S3 工单台账照常计入工单及时率');
+  const SL = mk('special-ledger.xlsx', { '特种设备台账': [['位号', '设备名称', '在用', '完好'], ['V-1', '容器', '在用', '完好']] });
+  const r2 = run(SL, [], 'special-ledger');
+  ok(!(r2.s.sources || []).some((x) => /设备台账/.test(x)), 'S4 特种设备台账不当作全车间设备台账');
+}
+
+// ---- T. 表名含「设备台账」「技术对象」先放行（「二作业部设备台账」不因含「作业」被排除）；润滑台账、巡检台账不是设备台账
+{
+  const T1 = mk('dept-ledger.xlsx', { '二作业部设备台账': [['位号', '设备名称', '在用', '完好'], ['P-1', '泵', '在用', '完好'], ['P-2', '泵', '在用', '待修']] });
+  const r = run(T1, [], 'dept-ledger');
+  eq(r.s.ok, true, 'T1 只给「二作业部设备台账」时脚本正常运行');
+  ok((r.s.sources || []).some((x) => /设备台账/.test(x)), 'T2 「二作业部设备台账」识别为设备台账');
+  eq(r.s.metrics && r.s.metrics.intactRate, 50, 'T3 完好率按该台账计算（1/2）');
+  const T2 = mk('dept-tech.xlsx', { '检修作业部技术对象': [['位号', '设备名称', '在用', '完好'], ['P-1', '泵', '在用', '完好']] });
+  const r2 = run(T2, [], 'dept-tech');
+  ok((r2.s.sources || []).some((x) => /设备台账/.test(x)), 'T4 表名含「技术对象」时放行');
+  const T3 = mk('lube-ledger.xlsx', {
+    '润滑台账': [['位号', '设备名称', '润滑点', '油品'], ['P-1', '泵', '轴承箱', 'L-TSA46']],
+    '巡检台账': [['位号', '设备名称', '在用', '完好'], ['P-1', '泵', '在用', '完好']],
+    '工单台账': [['工单号', '位号', '状态', '要求完成时间', '闭环时间'], ['W-1', 'P-1', 'CLSD', D(2), D(1)]],
+  });
+  const r3 = run(T3, [], 'lube-ledger');
+  ok(!(r3.s.sources || []).some((x) => /设备台账/.test(x)), 'T5 润滑台账、巡检台账不当作设备台账');
+  const T4 = mk('special-dept.xlsx', { '二作业部特种设备台账': [['位号', '设备名称', '在用', '完好'], ['V-1', '容器', '在用', '完好']] });
+  const r4 = run(T4, [], 'special-dept');
+  ok(!(r4.s.sources || []).some((x) => /设备台账/.test(x)), 'T6 「二作业部特种设备台账」仍不当作全车间设备台账');
+}
+
+// ---- T7. 「压力容器设备台账」「安全阀设备台账」等专项台账不当作全车间设备台账（R6）
+{
+  for (const [i, nm] of ['压力容器设备台账', '安全阀设备台账', '停工检修设备台账', '密封设备台账', '二作业部压力容器设备台账'].entries()) {
+    const T = mk(`special-ledger-${i}.xlsx`, { [nm]: [['位号', '设备名称', '在用', '完好'], ['V-1', '容器', '在用', '完好'], ['V-2', '容器', '在用', '待修']] });
+    const r = run(T, [], `special-ledger-${i}`);
+    ok(!(r.s.sources || []).some((x) => /设备台账/.test(x)) && !(r.s.metrics && r.s.metrics.intactRate !== null), `T7.${i + 1} 「${nm}」是专项台账，不当作全车间设备台账、不出完好率`);
+  }
+}
+
+// ---- U. 缺陷台账期末数按 --to 回推（v4-1）：发现日期晚于 --to 的不计；--to 之后才闭环的仍算期末未闭环
+{
+  const U1 = mk('defect-asof.xlsx', {
+    '缺陷台账': [['位号', '缺陷描述', '等级', '状态', '发现时间', '闭环时间'],
+      ['P-01', '期内发现未闭环', 'II 级', '未处理', D(0), ''],
+      ['P-02', '期末后发现A', 'II 级', '未处理', C.addDays(TO, 5), ''],
+      ['P-03', '期末后发现B', 'II 级', '处理中', C.addDays(TO, 6), ''],
+      ['P-04', '期末后才闭环', 'II 级', '已闭环', D(1), C.addDays(TO, 3)],
+      ['P-05', '期内闭环', 'II 级', '已闭环', D(2), D(3)],
+      ['P-06', '闭环缺日期', 'II 级', '已闭环', D(2), ''],
+      ['P-07', '缺发现日期', 'II 级', '未处理', '', ''],
+      ['P-08', '期末后发现待验收', 'II 级', '已完成', C.addDays(TO, 2), '']],
+  });
+  const r = run(U1, [], 'defect-asof');
+  eq(r.j.defects.openAtEnd, 3, 'U1 期末未闭环按 --to 回推：期内未闭环 + 期末后才闭环 + 缺发现日期 = 3（期末后发现的不计）');
+  eq(r.j.defects.pendingAcceptAtEnd, 0, 'U2 期末后发现的待验收缺陷不计入期末待验收');
+  eq(r.j.defects.foundAfterTo, 3, 'U3 发现日期晚于 --to 的 3 条单独计数');
+  ok(r.j.defects.asOfNote && /当前/.test(r.j.defects.asOfNote), 'U4 --to 早于今天时注明待验收为当前状态快照');
+  ok(r.j.warnings.some((w) => /缺「?闭环时间/.test(w) || /闭环日期/.test(w)), 'U5 已闭环但缺闭环日期的给 warning');
+  ok(r.j.warnings.some((w) => /发现(时间|日期)/.test(w) && /P-07|1 条/.test(w)), 'U6 缺发现日期的给 warning');
+  ok(/当前/.test(r.md.split('**缺陷（维修通知单）**')[1].split('\n')[0]), 'U7 md 缺陷行注明当前快照');
+  // 完好率是台账当前状态：--to 早于今天时注明
+  ok(r.j.metrics.intactSnapshotNote === undefined || r.j.metrics.intactSnapshotNote === null, 'U8 未提供设备台账时不写完好率快照说明');
+  const r2 = run(FULL, [], 'intact-snap');
+  ok(/当前/.test(r2.j.metrics.intactSnapshotNote || ''), 'U9 --to 早于今天且完好率来自台账时，注明是台账当前快照');
+  ok(/台账当前状态/.test(r2.md), 'U10 md 注明完好率为台账当前状态');
+  const r3 = run(FULL, ['--prev', path.join(r2.out, 'periodic.json')], 'cmp-snap');
+  ok(/快照/.test(r3.j.compare.prev.snapshotNote || ''), 'U11 环比基准期的完好率注明为基准报告生成时的快照');
+  ok(/快照/.test(r3.md.split('## ')[r3.md.split('## ').findIndex((x) => x.includes('环比与同比'))] || ''), 'U12 md 环比节注明基准期完好率为快照');
+}
+
+// ---- V. 超期工单责任方写工作中心（单位），不写责任人姓名；highlights 带 no / tag / unit 结构字段（v4-4）
+{
+  const V1 = mk('wc.xlsx', { '工单台账': [['工单号', '位号', '缺陷描述', '状态', '要求完成时间', '闭环时间', '工作中心', '责任人'],
+    ['20032936', 'P-2105A', '机封漏油', '已闭环', D(1), D(3), '检维修中心动设备班', '郑八'],
+    ['20032937', 'P-2106A', '对中', '已闭环', D(1), D(1), '检维修中心动设备班', '赵三']] });
+  const r = run(V1, [], 'wc');
+  const h = (r.j.highlights || []).find((x) => x.type === '超期工单');
+  ok(h && /责任方 检维修中心动设备班/.test(h.text) && !/郑八/.test(h.text), 'V1 超期工单重点事项责任方写工作中心，不写责任人姓名');
+  ok(h && h.unit === '检维修中心动设备班' && h.no === '20032936' && h.tag === 'P-2105A', 'V2 highlights 带 no / tag / unit 结构字段');
+  eq(r.j.orders.overdueList[0].workCenter, '检维修中心动设备班', 'V3 overdueList 带 workCenter');
+}
+
 console.log(`\n${'='.repeat(56)}`);
 console.log(`equipment-weekly-monthly-report 自测：${pass} 通过，${fail} 失败`);
 if (failures.length) { console.log('\n失败项：'); failures.forEach((f) => console.log('  ✗ ' + f)); }

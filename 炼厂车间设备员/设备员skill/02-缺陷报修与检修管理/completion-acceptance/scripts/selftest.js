@@ -138,6 +138,9 @@ r = run([...BASE, '--plan', planNoQc], 'plan-noqc');
 eq(r.json.counts.qcPoints, 0, '4.10 无控制点关键词时 qcPoints 为 0');
 ok(r.summary.warnings.some((w) => w.includes('未识别出质量控制点')), '4.11 **未识别出控制点时 warning 提醒人工核对**');
 ok(/未识别出质量控制点/.test(r.md), '4.12 md 说明未识别出控制点');
+eq(r.json.counts.qcGap, null, '4.12b **未识别出控制点时没做比对，qcGap 为 null，不写成 0 缺口**');
+ok(r.json.qcGap === null && r.json.qcMatched === null, '4.12c 未识别出控制点时 json 的 qcGap、qcMatched 为 null（不是空数组 []）');
+eq(r.json.counts.qcMatched, null, '4.12d 未识别出控制点时 counts.qcMatched 为 null');
 
 // 未提供方案 → qc* 为 null，不得倒推为 0 缺口
 r = run(BASE, 'noplan');
@@ -316,6 +319,11 @@ const pump = run([...BASE, '--trial-run', '--pressure-test'], 'pump').json;
 ok(['对中', '机械密封', '振动', '轴承温度', '盘车'].every((k) => pump.items.some((x) => x.item.includes(k))), '8.7 离心泵覆盖对中/机封/振动/轴承温度/盘车');
 const hex = run(['--tag', 'E-9', '--equip-type', '换热器', '--scope', '抽管束清洗、更换垫片、保温恢复', '--contractor', 'X', '--pressure-test'], 'hex').json;
 ok(['管束清洗', '水压试验', '保温'].every((k) => hex.items.some((x) => x.item.includes(k))), '8.8 换热器覆盖管束清洗/水压试验/保温恢复');
+// 通用规则已有「保温、防腐层恢复」，类型规则不得再出一条同义项（重复计数、回填时两项抢同一条记录）
+for (const t of ['离心泵', '换热器', '塔器', '阀门', '电机', '压缩机', '加热炉', '空冷器']) {
+  const it = run(['--tag', 'D-9', '--equip-type', t, '--scope', '解体检修、更换部件、防腐保温恢复', '--contractor', 'X', '--pressure-test', '--trial-run'], 'dup-' + t).json.items;
+  eq(it.filter((x) => /保温|防腐/.test(x.item) && /恢复/.test(x.item)).length, 1, `8.8b ${t}：保温/防腐恢复类验收项只出一条`);
+}
 const ves = run(['--tag', 'C-9', '--equip-type', '塔器', '--scope', '解体检修、更换塔盘、防腐', '--contractor', 'X', '--pressure-test'], 'ves').json;
 ok(['内件', '人孔', '气密', '防腐'].every((k) => ves.items.some((x) => x.item.includes(k))), '8.9 塔器覆盖内件/人孔封闭/气密试验/防腐层');
 ok(/工艺（操作）/.test(ves.items.find((x) => x.ruleId === 'VES-AS-02').owner), '8.9b 人孔封闭确认含工艺（操作）方');

@@ -40,3 +40,12 @@
 node scripts/make-sample.js --out examples            # seed=1
 node scripts/make-sample.js --out examples --seed 9   # 温度压力与负责人变化，结论不变
 ```
+
+## MCP 取数对照
+
+不上传附件；按 SKILL.md「数据获取（MCP）」取台账，csv 按原文件名放进单独目录作 `--ledger`。预期结果只写每天稳定的结论。
+
+| # | 示例问题 | MCP 调用 | 运行参数 | 预期结果 |
+|---|---|---|---|---|
+| M1 | E-1201 今天抽芯、抽堵盲板、法兰用火，带压高温，不进人 | 设备资产管理 `get_equipment_ledger`（tag=E-1201） | `--tag E-1201 --scope "换热器管束抽芯检修，抽堵盲板" --pressured 是 --hot 是 --no-entry --hotwork --ledger <目录>` | 台账补出柴油-原油换热器、换热器、柴油（中危）、常减压车间；关键条目 H3 盲板、Q3 置换分析；含 P1 泄压、P2 降温、Q6 可燃气分析、S2 消防措施；作业许可提示「用火作业、盲板抽堵作业」；无未判定 |
+| M2 | P-2101A 切泵后交出换驱动端轴承，不进人不用火，带压/高温未问工艺 | 设备资产管理 `get_equipment_ledger`（tag=P-2101A） | `--tag P-2101A --scope "驱动端轴承解体更换" --no-entry --no-hotwork --ledger <目录>` | 台账补出进料泵、柴油（中危）、常减压车间；关键条目 H3/Q3/E1（断电挂牌上锁）；含 M1/M2 机械隔离；P1 泄压、P2 降温为未判定；台账操作压力、温度只写「推断值，待确认」（可能带压、可能高温），不进入判定 |

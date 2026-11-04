@@ -182,6 +182,21 @@ ok(r.rot.warnings.some((w) => w.includes('无对应机组')), '8.3 台账无对�
 ok(r.rot.warnings.some((w) => w.includes('未自行猜测归属')), '8.4 warning 明示未自行猜测归属');
 ok(r.rot.warnings.some((w) => w.includes('无法归入切换/盘车/试运')), '8.5 作业类型无法归类 warning');
 eq(r.rot.records.outOfRange, 1, '8.6 区间外记录单独计数');
+// 记录表混入其他车间（全厂导出）：台账外位号多条时合并为一条 warning，列出位号与行号，不逐行刷屏
+const rateMix = mk('rate-mix.xlsx', {
+  '备用设备台账': [LED_HDR, ['P-01A', 'P-01B', '泵1', '常压', '3个月', '14天', '', back(120), back(2), '']],
+  '切换盘车记录': [REC_HDR,
+    [back(30), 'P-01A', '主备切换', '张班', ''],
+    [back(20), 'P-51A', '盘车', '张班', ''],
+    [back(13), 'P-51A', '盘车', '张班', ''],
+    [back(6), 'C-53B', '盘车', '张班', ''],
+  ],
+});
+r = run(rateMix, ['--from', back(180)], 'ratemix');
+const mixW = r.rot.warnings.filter((w) => w.includes('无对应机组'));
+eq(mixW.length, 1, '8.8 台账外位号多条记录合并为一条 warning');
+ok(mixW[0] && mixW[0].includes('P-51A') && mixW[0].includes('C-53B') && mixW[0].includes('3 条') && mixW[0].includes('未自行猜测归属'), '8.9 合并 warning 列出位号、条数并保留「未自行猜测归属」');
+eq(r.summary.counts.countedRecords, 1, '8.10 台账外记录仍不计入执行率');
 ok(r.rot.warnings.some((w) => w.includes('晚于台账上次切换日期')), '8.7 记录切换晚于台账上次切换日期 → warning 提示核对台账，到期仍按台账');
 eq(r.rot.switchOverdue[0].lastDate, back(120), '8.8 到期判定未被记录表倒推覆盖');
 

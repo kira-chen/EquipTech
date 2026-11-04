@@ -137,7 +137,6 @@ const TYPE_RULES = {
     { id: 'HEX-SE-01', cat: 'sealing', item: '管程水压试验', std: '按设计或方案规定的试验压力与保压时间执行，无泄漏、无压降超标', method: '水压试验并查记录', owner: '承修单位', when: (f, o) => o.pressureTest },
     { id: 'HEX-SE-02', cat: 'sealing', item: '壳程水压试验', std: '按设计或方案规定的试验压力与保压时间执行，无泄漏、无压降超标', method: '水压试验并查记录', owner: '承修单位', when: (f, o) => o.pressureTest },
     { id: 'HEX-SE-03', cat: 'sealing', item: '法兰、丝堵、放空排凝口密封', std: '投用升温升压后无渗漏，丝堵、放空排凝阀封闭到位', method: '投用后检查', owner: '车间' },
-    { id: 'HEX-AP-03', cat: 'appearance', item: '保温、防腐恢复', std: '保温层、保护层完整，防腐涂层按方案恢复', method: '目视检查', owner: '承修单位', when: (f) => f.anticorrosion || f.disassembly },
     { id: 'HEX-TR-01', cat: 'trial', item: '投用升温升压检查', std: '按规定升温升压速率投用，过程中无泄漏、无异常温差', method: '投用过程巡检', owner: '车间', when: (f, o) => o.trialRun },
     { id: 'HEX-RC-01', cat: 'records', item: '清洗记录、试压记录、堵管记录', std: '记录齐全并签字；涉及焊接的附焊接与检测记录', method: '查阅资料', owner: '车间/公司设备部门' },
   ],

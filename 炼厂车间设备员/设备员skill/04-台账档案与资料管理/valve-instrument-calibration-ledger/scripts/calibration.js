@@ -144,7 +144,7 @@ function main() {
     ['对象类别', '名称', '型号', '量程', '精度等级', '校验结论', '证书编号', '下次校验日期', '安装位置', '设备编号', '检验机构'], warnings, ALIASES);
 
   // ---- 不合格整改清单（可选）
-  const resolvedTags = new Map();   // 位号 → 整改记录
+  const resolvedTags = new Map();   // 位号 → [闭环整改记录]（同一位号可有多行，判定时在全部记录里配对本次不合格）
   let issuesProvided = false;
   if (a.issues) {
     if (!fs.existsSync(a.issues)) throw new Error(`不合格整改清单不存在: ${a.issues}`);
@@ -158,7 +158,8 @@ function main() {
         const tag = C.str(r['位号']);
         if (!tag) continue;
         if (isResolved(r['整改状态'])) {
-          resolvedTags.set(tag, { status: C.str(r['整改状态']), doneAt: C.normDate(r['整改完成日期']), cert: C.str(r['证书编号']) });
+          if (!resolvedTags.has(tag)) resolvedTags.set(tag, []);
+          resolvedTags.get(tag).push({ status: C.str(r['整改状态']), doneAt: C.normDate(r['整改完成日期']), cert: C.str(r['证书编号']) });
         }
       }
     }
@@ -168,6 +169,8 @@ function main() {
 
   // ---- 逐条判定
   const items = [];
+  const staleOf = new Map();        // 记录 → 最晚的旧整改完成日期（只用于范围内 warning，不进 JSON）
+  const unknownCatOf = new Map();   // 记录 → 类别无法识别的 warning 前半句（过滤后按是否在范围内补全）
   const certSeen = new Map();       // 证书编号 → [位号]
   for (const r of recs) {
     const tag = C.str(r['位号']);
@@ -176,7 +179,8 @@ function main() {
     const rawCat = C.str(r['对象类别']);
     const name = C.str(r['名称']);
     const category = classifyCategory(rawCat, name);
-    if (category === null) warnings.push(`${r._sheet} 第${r._row}行 位号「${tag}」对象类别「${rawCat || '空'}」无法识别，已归入待确认`);
+    // 类别无法识别的 warning 在类别过滤后发出：在统计范围内才写「已归入待确认」，默认范围外的只说明未纳入
+    const unknownCat = category === null ? `${r._sheet} 第${r._row}行 位号「${tag}」对象类别「${rawCat || '空'}」无法识别` : null;
 
     const periodDetail = C.parsePeriodDetail(r['校验周期']);
     const periodDays = periodDetail ? periodDetail.days : null;
@@ -202,7 +206,7 @@ function main() {
     let nextMismatch = null;
     if (calcNext && ledgerNext && calcNext !== ledgerNext) {
       nextMismatch = { ledger: ledgerNext, calc: calcNext, diffDays: C.diffDays(ledgerNext, calcNext) };
-      warnings.push(`${r._sheet} 第${r._row}行 位号「${tag}」台账下次校验日期 ${ledgerNext} 与按周期计算值 ${calcNext} 不一致（相差 ${nextMismatch.diffDays} 天），两者并列，请核实`);
+      // warning 在类别过滤后只对统计范围内的记录发出，与附一、counts.nextMismatch 一致
     }
 
     // 判定状态：待确认优先于到期计算；不合格未整改不参与到期计算
@@ -211,7 +215,17 @@ function main() {
     if (!lastDate) missing.push('上次校验日期');
     if (category === null) missing.push('对象类别');
 
-    const fixed = res.code === 'fail' ? resolvedTags.get(tag) || null : null;
+    // 整改完成日期早于本次（不合格）校验日期的是上一次不合格的旧记录，不能证明本次不合格已整改。
+    // 同一位号多行时在全部闭环记录里找能配对的（完成日期 ≥ 本次校验日期，或未填完成日期），有日期的取最晚一条；
+    // 全部都是旧记录才判未整改，warning 在类别过滤后只对统计范围内的记录发出
+    let fixed = null, staleFix = null;
+    if (res.code === 'fail' && resolvedTags.has(tag)) {
+      const list = resolvedTags.get(tag);
+      const valid = list.filter((x) => !x.doneAt || !lastDate || x.doneAt >= lastDate);
+      const dated = valid.filter((x) => x.doneAt).sort((x, y) => (x.doneAt < y.doneAt ? 1 : x.doneAt > y.doneAt ? -1 : 0));
+      fixed = dated[0] || valid[0] || null;
+      if (!fixed) staleFix = list.map((x) => x.doneAt).sort().pop();
+    }
     const unresolved = res.code === 'fail' && !fixed;
 
     let state, daysLeft = null, overdueDays = null;
@@ -240,6 +254,8 @@ function main() {
       ownership: category === null ? null : (INSTRUMENT_SCOPE.includes(category) ? '计量（仪表）专业归口，本表仅作台账提醒' : '车间设备员归口'),
       sheet: r._sheet, row: r._row,
     });
+    if (staleFix) staleOf.set(items[items.length - 1], staleFix);
+    if (unknownCat) unknownCatOf.set(items[items.length - 1], unknownCat);
   }
 
   if (!items.length) warnings.push(`工作表「${sheetName}」未解析出任何有效台账记录`);
@@ -265,6 +281,15 @@ function main() {
         : `已按 --category ${categoryArg} 过滤，${excluded} 条其他类别记录未纳入`);
     }
     if (!scope.length) warnings.push(`按 --category「${categoryArg}」过滤后无匹配记录，报表为空`);
+  }
+  const inScope = new Set(scope);
+  for (const [x, msg] of unknownCatOf) {
+    warnings.push(inScope.has(x) ? `${msg}，已归入待确认`
+      : `${msg}，不在本次统计范围（${categoryDefaulted ? '默认只统计安全阀' : `--category ${categoryArg}`}），未纳入报表；需要时加 --category 全部，届时归入待确认`);
+  }
+  for (const x of scope) {
+    if (staleOf.has(x)) warnings.push(`${x.sheet} 第${x.row}行 位号「${x.tag}」整改清单的整改完成日期 ${staleOf.get(x)} 早于本次不合格校验日期 ${x.lastDate}，属旧整改记录，不据此判为已整改`);
+    if (x.nextMismatch) warnings.push(`${x.sheet} 第${x.row}行 位号「${x.tag}」台账下次校验日期 ${x.nextMismatch.ledger} 与按周期计算值 ${x.nextMismatch.calc} 不一致（相差 ${x.nextMismatch.diffDays} 天），两者并列，请核实`);
   }
   const instrumentInScope = scope.some((x) => x.category && INSTRUMENT_SCOPE.includes(x.category));
 

@@ -44,7 +44,14 @@ const ALIASES = C.mergeAliases({
   '密封点编号': ['密封点编号', '漏点编号', '泄漏点编号', '密封点号', '漏点号'],
   '隐患描述': ['隐患描述', '隐患内容', '隐患', '问题描述', '描述'],
   '隐患等级': ['隐患等级', '等级', '级别', '隐患级别'],
-  '整改期限': ['整改期限', '期限', '整改完成期限', '要求整改完成日期', '计划完成', '截止日期'],
+  '整改期限': ['整改期限', '期限', '整改完成期限', '要求整改完成日期', '要求整改期限', '计划完成', '截止日期'],
+  // 隐患台账专用（HSE 平台导出）：整改状态、隐患编号、验收情况 / 验收人 / 验收日期（三列独立读取，别名与 hazard-closure-tracker 同源）
+  '整改状态': ['整改状态', '状态', '处理状态', '当前状态'],
+  '隐患编号': ['隐患编号', '隐患编码', '隐患号'],
+  '验收情况': ['验收情况', '验收结论', '验收结果', '复查情况', '是否验收'],
+  '验收人': ['验收人', '验收负责人', '复查人', '确认人'],
+  '验收日期': ['验收日期', '验收时间', '复查日期', '销号日期'],
+  '作业地点': ['作业地点', '作业区域', '作业位置', '作业部位', '区域'],
 });
 // 「描述」在 SAP 技术对象导出里是设备描述，但缺陷/隐患/事件表里的「描述」应归内容列；设备名称只认设备描述/名称。
 ALIASES['设备名称'] = ALIASES['设备名称'].filter((x) => x !== '描述');
@@ -83,6 +90,38 @@ function isClosed(status) {
 }
 const isPendingAccept = (s) => C.normSapStatus(s) === '待验收';
 const isCancelled = (s) => C.normSapStatus(s) === '已取消';
+
+// ---- 隐患台账整改状态 / 验收情况词表：与 hazard-closure-tracker scripts/hazard.js 的 ST_DONE / ST_DOING / ST_NONE / ACC_YES / ACC_NO 同源，
+//      两边改词表须同步（技能各自独立打包，不跨技能 require）。
+const HZ_ST_DONE = ['已整改', '已完成', '整改完毕', '已闭环', '已销号', '完成', '整改完成', '已处理'];
+const HZ_ST_DOING = ['整改中', '进行中', '实施中', '在改', '部分完成', '整改进行', '处理中'];
+const HZ_ST_NONE = ['未整改', '未开始', '待整改', '未处理', '未实施'];
+const HZ_ACC_YES = ['已验收', '验收合格', '合格', '通过', '验收通过', '符合', '是', '已销号', '已确认'];
+const HZ_ACC_NO = ['未验收', '不合格', '未通过', '否', '待验收', '未复查'];
+const blankCell = (s) => s === '' || s === '—' || s === '-' || s === '/';
+// 判定顺序与 hazard.js classifyStatus 完全一致：完成词开头 → 已整改；否定写法 → 未整改；再认整改中、已整改、未整改
+const HZ_ST_DONE_HEAD = /^(已整改|已完成|整改完毕|整改完成|已处理|已闭环|已销号)/;
+const HZ_ST_NEG = /(未|没|没有|尚未|暂未|还未|还没)[^，。；、,;已]{0,3}(整改|完成|处理|闭环|销号)|不(整改|完成|处理)/;
+function hazardStatus(v) {
+  const s = C.str(v).replace(/\s/g, '');
+  if (blankCell(s)) return null;
+  if (HZ_ST_DONE_HEAD.test(s)) return 'done';
+  if (HZ_ST_NEG.test(s)) return 'none';
+  if (HZ_ST_DOING.some((k) => s.includes(k))) return 'doing';
+  if (HZ_ST_DONE.some((k) => s.includes(k))) return 'done';
+  if (HZ_ST_NONE.some((k) => s.includes(k))) return 'none';
+  return 'unknown';
+}
+/** 整改状态是否为完成态（与 hazard.js 同口径） */
+const hazardDone = (v) => hazardStatus(v) === 'done';
+/** 验收情况：明确否定 → false；明确通过 → true；空或无法归类 → null（按无验收记录，就严） */
+function hazardAccept(v) {
+  const s = C.str(v).replace(/\s/g, '');
+  if (blankCell(s)) return null;
+  if (HZ_ACC_NO.some((k) => s.includes(k))) return false;
+  if (HZ_ACC_YES.some((k) => s.includes(k))) return true;
+  return null;
+}
 
 /** 隐患等级：只认 重大/一般；其余原样返回并标未映射 */
 function hazardLevel(v) {
@@ -180,7 +219,9 @@ function main() {
       orders = { _rows: recs.map((r) => ({ no: C.str(r['工单号']), tag: C.str(r['位号']), status: C.str(r['状态']), due: C.normDate(r['要求完成时间']), owner: C.str(r['责任人']) || C.str(r['工作中心']), desc: C.str(r['缺陷描述']) })) };
       sources.push(`${got.name}→工单台账`);
     }
-    const sPmt = C.pickSheet(book, '作业票', '作业许可', '许可证', '作业许可证');
+    // 「作业清单」只认表名以它开头（作业票系统导出），「检修作业清单」等是检修项目表，不当作业票
+    const sPmt = C.pickSheet(book, '作业票', '作业许可', '许可证', '作业许可证')
+      || (() => { const k = Object.keys(book).find((x) => /^作业清单/.test(String(x).replace(/[\s表]/g, ''))); return k ? book[k] : null; })();
     if (sPmt && !permitRows) {
       permitRows = C.toRecords(sPmt, ['许可证编号'], `${got.name}/作业票`, ['作业类别', '作业级别', '作业地点', '位号', '作业单位', '状态', '属地监护人'], warnings, ALIASES);
       sources.push(`${got.name}→作业票`);
@@ -193,8 +234,18 @@ function main() {
     }
     const sHaz = C.pickSheet(book, '隐患台账', '隐患');
     if (sHaz && !hazardData) {
-      const recs = C.toRecords(sHaz, ['隐患描述'], `${got.name}/隐患台账`, ['隐患等级', '状态', '整改期限', '责任人', '位号', '通知单号'], warnings, ALIASES);
-      hazardData = { _rows: recs.map((r) => ({ no: C.str(r['通知单号']), desc: C.str(r['隐患描述']), level: C.str(r['隐患等级']), status: C.str(r['状态']), deadline: C.normDate(r['整改期限']), owner: C.str(r['责任人']), tag: C.str(r['位号']) })) };
+      const recs = C.toRecords(sHaz, ['隐患描述'], `${got.name}/隐患台账`, ['隐患编号', '隐患等级', '整改状态', '整改期限', '责任人', '位号', '通知单号', '验收情况', '验收人', '验收日期'], warnings, ALIASES);
+      hazardData = { _rows: recs.map((r) => {
+        const verified = C.str(r['验收情况']);
+        const accepted = hazardAccept(verified);
+        if (verified && accepted === null) warnings.push(`隐患台账 第${r._row}行 验收情况「${verified}」无法归类，按无验收记录处理`);
+        const acceptor = C.str(r['验收人']);
+        const acceptDate = C.normDate(r['验收日期']);
+        if (r['验收日期'] && !acceptDate) warnings.push(`隐患台账 第${r._row}行 验收日期「${C.str(r['验收日期'])}」无法解析`);
+        // 有验收记录 = 验收情况判通过，或填了验收人/验收日期；验收情况明确为否定写法时，填了人/日期也不算通过（与 hazard.js 同）
+        const hasAcceptRecord = accepted === true || (accepted !== false && (!!acceptor || !!acceptDate));
+        return { no: C.str(r['隐患编号']) || C.str(r['通知单号']), desc: C.str(r['隐患描述']), level: C.str(r['隐患等级']), status: C.str(r['整改状态']), deadline: C.normDate(r['整改期限']), owner: C.str(r['责任人']), tag: C.str(r['位号']), verified, acceptor, acceptDate, hasAcceptRecord };
+      }) };
       sources.push(`${got.name}→隐患台账`);
     }
     const sEvt = C.pickSheet(book, '异常事件', '事件');
@@ -215,8 +266,13 @@ function main() {
   if (status) {
     const c = status.counts || {};
     let byState = status.byState || null;
+    if (!byState && c.sixTier && typeof c.sixTier === 'object') {
+      // 新版 inspection-data-digest：六档计数在 counts.sixTier（按巡检记录与台账使用状态归档）
+      byState = {};
+      for (const k of SIX_STATES) byState[k] = c.sixTier[k] ?? 0;
+    }
     if (!byState) {
-      // 上游 status.json 只有 normal/abnormal/unknown 三档：normal → 运行，abnormal → 异常，其余 → 未判定；备用/检修/停用需巡检表「状态」列
+      // 旧版上游 status.json 只有 normal/abnormal/unknown 三档：normal → 运行，abnormal → 异常，其余 → 未判定；备用/检修/停用需巡检表「状态」列
       byState = { '运行': c.normal ?? null, '备用': null, '检修': null, '停用': null, '异常': c.abnormal ?? null, '未判定': c.unknown ?? null };
       warnings.push('巡检汇总来自上游 JSON，仅含正常/异常/未判定三档；备用/检修/停用台数需巡检表「状态」列，已置为未提供');
     }
@@ -234,6 +290,14 @@ function main() {
     specialSec = { total: list.length, abnormal: list.filter((x) => x.state === '异常').length, source: '特护设备表', list };
   } else if (status && status._special && status._special.length) {
     specialSec = { total: status._special.length, abnormal: status._special.filter((x) => x.state === '异常').length, source: '巡检汇总（重要度含特护）', list: status._special };
+  } else if (status && Array.isArray(status.byEquipment) && status.byEquipment.some((x) => x && x.special)) {
+    // inspection-data-digest 的 status.json：byEquipment[].special 标特护，stateCn 为六档显示
+    const desc = {};
+    for (const x of status.abnormal || []) if (x && x.tag) desc[x.tag] = [desc[x.tag], x.desc].filter(Boolean).join('；');
+    const list = status.byEquipment.filter((x) => x && x.special).map((x) => ({
+      tag: C.str(x.tag), name: C.str(x.name), state: x.stateCn || (x.state === 'abnormal' ? '异常' : x.state === 'normal' ? '运行' : '未判定'), params: '', desc: desc[x.tag] || '',
+    }));
+    specialSec = { total: list.length, abnormal: list.filter((x) => x.state === '异常').length, source: '巡检汇总 JSON（特护标记）', list };
   }
   if (status) delete status._special;
 
@@ -351,7 +415,13 @@ function main() {
       };
     } else {
       const rows = hazardData._rows;
-      const open = rows.filter((r) => !isClosed(r.status));
+      // 完成态（已整改/已完成/已闭环/已销号/已处理等，判定同 hazard.js）：有验收记录 → 已闭环；无验收记录 → 已整改未验收，单列，不计闭环、不判超期。
+      // 不走通用 isClosed：隐患「已闭环」也要有验收记录才计闭环，且「尚未闭环」不能因含「闭环」被当成已闭环
+      const rectified = (r) => hazardDone(r.status);
+      const verifiedOk = (r) => r.hasAcceptRecord;
+      const closedRows = rows.filter((r) => rectified(r) && verifiedOk(r));
+      const unverified = rows.filter((r) => !closedRows.includes(r) && rectified(r));
+      const open = rows.filter((r) => !closedRows.includes(r) && !rectified(r));
       const overdue = open.filter((r) => r.deadline && C.diffDays(date, r.deadline) > 0);
       const noDeadline = open.filter((r) => !r.deadline).length;
       const lv = rows.map((r) => ({ r, h: hazardLevel(r.level) }));
@@ -359,8 +429,8 @@ function main() {
       const unmapped = lv.filter((x) => x.h.level === null && C.str(x.r.level)).length;
       if (unmapped) warnings.push(`隐患台账 ${unmapped} 条隐患等级不是「重大/一般」，未映射（A/B/C 级在多数厂是管理层级），按原文展示`);
       hazardSec = {
-        source: '隐患台账表', total: rows.length, overdue: overdue.length, dueSoon: null, inProgress: open.length - overdue.length,
-        closed: rows.length - open.length, major: major.length, unverified: null, undetermined: noDeadline, closureRate: null,
+        source: '隐患台账表', total: rows.length, overdue: overdue.length, dueSoon: null, inProgress: open.length - overdue.length - noDeadline,
+        closed: closedRows.length, major: major.length, unverified: unverified.length, undetermined: noDeadline, closureRate: null,
         overdueList: overdue.map((r) => ({ no: r.no, desc: r.desc, level: hazardLevel(r.level).cn, owner: r.owner, deadline: r.deadline, days: C.diffDays(date, r.deadline) })),
         majorList: major.map((r) => ({ no: r.no, desc: r.desc, status: r.status, deadline: r.deadline })),
       };
@@ -521,6 +591,7 @@ function main() {
     L.push(C.mdTable(['指标', '数量'], [
       ['隐患总数', C.fmt(hazardSec.total, 0)], ['重大隐患', C.fmt(hazardSec.major, 0)], ['整改中', C.fmt(hazardSec.inProgress, 0)],
       ['超期未整改', C.fmt(hazardSec.overdue, 0)], ['临期', C.fmt(hazardSec.dueSoon, 0)], ['已闭环', C.fmt(hazardSec.closed, 0)],
+      ['已整改未验收', C.fmt(hazardSec.unverified, 0)],
       ['未判定（无整改期限等）', C.fmt(hazardSec.undetermined, 0)],
       ['闭环率', hazardSec.closureRate === null ? '—' : `${hazardSec.closureRate}%`],
     ]));

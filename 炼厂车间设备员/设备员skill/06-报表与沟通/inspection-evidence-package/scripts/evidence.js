@@ -177,6 +177,55 @@ function monthEnd(y, m) {
   return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
+/**
+ * 目录里的 csv / xlsx 是否只有表头、没有数据行（如业务系统按检查期查询无记录时导出的空表）。
+ * 空表不是证据：对应检查项按未找到对应材料处理。
+ *  - 0 字节文件直接判空（任何格式）。
+ *  - 表头识别沿用 common.js toRecords 的口径：只在前 10 个非空行里找表头；表头取其中第一行有 ≥2 个非空单元格的行
+ *    （「常减压车间巡检记录导出」这类单格标题行跳过），找不到则取第一个非空行。表头之后没有非空行 → 空表。
+ *  - 读不了的 xlsx（损坏、不是有效 xlsx）返回 'unreadable'：单独 warning，不作为证据。
+ * 返回 'zero'（0 字节，任何文件类型）| 'empty' | 'unreadable' | null。
+ */
+function headerOnly(rows) {
+  const nonEmpty = rows.filter((r) => (r || []).some((c) => C.str(c)));
+  if (!nonEmpty.length) return true;
+  const head = nonEmpty.slice(0, 10);
+  let h = head.findIndex((r) => r.filter((c) => C.str(c)).length >= 2);
+  if (h < 0) h = 0;
+  return nonEmpty.length <= h + 1;
+}
+function splitCsvLine(line) {
+  const out = []; let cur = '', q = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (q) { if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; } else if (ch === '"') q = false; else cur += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ',') { out.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+function tableState(full) {
+  let size = null;
+  try { size = fs.statSync(full).size; } catch (e) { /* 读不到大小按非空处理 */ }
+  if (size === 0) return 'zero';
+  if (/\.csv$/i.test(full)) {
+    try {
+      const rows = fs.readFileSync(full, 'utf8').replace(/^\uFEFF/, '').split(/\r?\n/).map(splitCsvLine);
+      return headerOnly(rows) ? 'empty' : null;
+    } catch (e) { return null; }
+  }
+  if (/\.xlsx$/i.test(full)) {
+    let book;
+    try { book = readXlsx(full); } catch (e) { return 'unreadable'; }
+    const sheets = Object.values(book || {});
+    if (!sheets.length) return 'empty';
+    return sheets.every((rows) => headerOnly(rows || [])) ? 'empty' : null;
+  }
+  return null;
+}
+
 /** 目录递归扫描 或 xlsx 资料清单 */
 function collectMaterials(p) {
   if (!fs.existsSync(p)) throw new Error(`台账与记录目录/清单不存在: ${p}`);
@@ -190,7 +239,10 @@ function collectMaterials(p) {
         const full = path.join(d, e.name);
         const r = rel ? `${rel}/${e.name}` : e.name;
         if (e.isDirectory()) walk(full, r, depth + 1);
-        else out.push({ name: e.name, location: r, declaredType: '', note: '', period: periodFromName(r), src: '目录扫描' });
+        else {
+          const ts = tableState(full);
+          out.push({ name: e.name, location: r, declaredType: '', note: '', period: periodFromName(r), src: '目录扫描', empty: ts === 'empty' || ts === 'zero', zeroByte: ts === 'zero', unreadable: ts === 'unreadable' });
+        }
       }
     };
     walk(p, '', 0);
@@ -257,6 +309,13 @@ function main() {
   const materials = collectMaterials(a.materials);
 
   const matCats = materials.map((m) => S.fileCategories(`${m.name} ${m.declaredType}`));
+  const emptyMaterials = materials.filter((m) => m.empty);
+  for (const m of emptyMaterials) {
+    if (m.zeroByte) warnings.push(`材料「${m.location}」是空文件（0 字节），没有内容，不作为证据；对应检查项按未找到对应材料处理，请确认文件是否导出或拷贝完整`);
+    else warnings.push(`材料「${m.location}」只有表头、没有数据行（如系统按检查期查询无记录），不作为证据；对应检查项按未找到对应材料处理`);
+  }
+  const unreadableMaterials = materials.filter((m) => m.unreadable);
+  for (const m of unreadableMaterials) warnings.push(`材料「${m.location}」无法读取（xlsx 文件损坏或不是有效的 xlsx），不作为证据；对应检查项按未找到对应材料处理，请重新导出或另存后再比对`);
 
   // ---- 逐检查项比对
   const items = [], ready = [], missing = [], partialCoverage = [], unknownPeriod = [];
@@ -269,6 +328,7 @@ function main() {
     const hits = [];
     for (let i = 0; i < materials.length; i++) {
       const m = materials[i];
+      if (m.empty || m.unreadable) continue;
       const r = S.matchItem(searchText, `${m.name} ${m.declaredType} ${m.location}`, cats, matCats[i]);
       if (r.matched) { hits.push({ idx: i, basis: r.basis }); usedIdx.add(i); }
     }
@@ -338,6 +398,7 @@ function main() {
   for (let i = 0; i < materials.length; i++) {
     if (usedIdx.has(i)) continue;
     const m = materials[i];
+    if (m.empty || m.unreadable) continue;
     unmatched.push({
       name: m.name, location: m.location, declaredType: m.declaredType || null,
       periodFrom: (m.period && m.period.from) || null, periodTo: (m.period && m.period.to) || null,
@@ -352,7 +413,7 @@ function main() {
   const counts = {
     items: items.length, ready: ready.length, missing: missing.length,
     partialCoverage: partialCoverage.length, unknownPeriod: unknownPeriod.length, unmatched: unmatched.length,
-    materials: materials.length,
+    materials: materials.length, emptyFiles: emptyMaterials.length, unreadableFiles: unreadableMaterials.length,
   };
 
   // ---- 产出
@@ -368,7 +429,7 @@ function main() {
     materials: materials.map((m) => ({
       name: m.name, location: m.location, declaredType: m.declaredType || null,
       periodFrom: (m.period && m.period.from) || null, periodTo: (m.period && m.period.to) || null,
-      periodBasis: (m.period && m.period.basis) || null, src: m.src,
+      periodBasis: (m.period && m.period.basis) || null, src: m.src, empty: !!m.empty, zeroByte: !!m.zeroByte, unreadable: !!m.unreadable,
     })),
     warnings,
   };
@@ -475,6 +536,15 @@ function main() {
   L.push(C.mdTable(['文件名', '存放位置', '标注类型', '时间范围', '说明'],
     unmatched.map((x) => [x.name, x.location, x.declaredType || '—',
       x.periodFrom || x.periodTo ? `${x.periodFrom || '不详'} ~ ${x.periodTo || '不详'}` : '—', x.note])));
+  if (emptyMaterials.length) {
+    const zeroM = emptyMaterials.filter((m) => m.zeroByte), headM = emptyMaterials.filter((m) => !m.zeroByte);
+    if (zeroM.length) { L.push(`> 以下 ${zeroM.length} 份材料是空文件（0 字节），没有内容，不作为证据，也不列入未对应材料：${zeroM.map((m) => m.location).join('、')}。`); L.push(''); }
+    if (headM.length) { L.push(`> 以下 ${headM.length} 份材料只有表头、没有数据行，不作为证据，也不列入未对应材料：${headM.map((m) => m.location).join('、')}。`); L.push(''); }
+  }
+  if (unreadableMaterials.length) {
+    L.push(`> 以下 ${unreadableMaterials.length} 份材料无法读取（xlsx 损坏或不是有效 xlsx），不作为证据，也不列入未对应材料，请重新导出：${unreadableMaterials.map((m) => m.location).join('、')}。`);
+    L.push('');
+  }
   L.push('## 七、归集包目录建议');
   L.push('');
   if (!ready.length && !partialCoverage.length && !unknownPeriod.length) L.push('_暂无可归集的材料。_\n');

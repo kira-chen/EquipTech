@@ -387,6 +387,7 @@ function main() {
     // 位号 → 机组（主备任一位号都能映射到所属机组）
     const tagToPair = new Map();
     for (const p of pairs) { tagToPair.set(p.ledgerMainTag, p); tagToPair.set(p.ledgerStandbyTag, p); }
+    const unmatched = new Map();      // 台账外位号 → 行号（全厂导出混入其他车间时合并成一条 warning）
     for (const r of recs) {
       const tag = C.str(recHasTag ? r['位号'] : r['设备编号']);
       if (!tag) { warnings.push(`工作表「切换盘车记录」第${r._row}行 位号为空，已跳过`); skipped++; continue; }
@@ -399,7 +400,7 @@ function main() {
         warnings.push(`工作表「切换盘车记录」第${r._row}行 ${tag} 作业类型「${C.str(r['作业类型']) || '（空）'}」无法归入切换/盘车/试运，该条不计入执行率`);
       }
       const p = tagToPair.get(tag) || null;
-      if (!p) warnings.push(`工作表「切换盘车记录」第${r._row}行 位号「${tag}」在备用设备台账中无对应机组，该条不计入执行率（未自行猜测归属）`);
+      if (!p) { if (!unmatched.has(tag)) unmatched.set(tag, []); unmatched.get(tag).push(r._row); }
       const inWindow = d !== null && C.diffDays(d, windowFrom) >= 0 && C.diffDays(date, d) >= 0;
       if (d !== null && !inWindow) outOfRange++;
       list.push({
@@ -409,6 +410,13 @@ function main() {
         counted: !!(p && kind && inWindow),
         sheet: '切换盘车记录', row: r._row,
       });
+    }
+    if (unmatched.size) {
+      const n = [...unmatched.values()].reduce((x, v) => x + v.length, 0);
+      const detail = [...unmatched].map(([t, rows]) => `${t}（${rows.length <= 3 ? `第${rows.join('、')}行` : `${rows.length} 条，第${rows[0]}行起`}）`).join('、');
+      const [t1, rows1] = [...unmatched][0];
+      warnings.push(n === 1 ? `工作表「切换盘车记录」第${rows1[0]}行 位号「${t1}」在备用设备台账中无对应机组，该条不计入执行率（未自行猜测归属）`
+        : `工作表「切换盘车记录」中 ${n} 条记录的位号在备用设备台账中无对应机组，不计入执行率（未自行猜测归属；记录表含其他车间设备时属正常）：${detail}`);
     }
     records = { total: list.length, skipped, unknownKind, outOfRange, items: list };
 

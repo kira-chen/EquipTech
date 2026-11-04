@@ -13,7 +13,7 @@
 | 4 | 验收记录是 EM 系统导出的，列名不一样 | `sample-acceptance-record-em.xlsx` | `--tag P-1101B --equip-type 离心泵 --scope "解体检修，更换机械密封与轴承，重新对中" --contractor 检修一队 --records sample-acceptance-record-em.xlsx --repair-type 小修` | 「验收项目 / 验收结论 / 问题描述」列名识别，标题行与合计行跳过；回填 3 项、1 项不合格；「小修」映射为「日常维修」并 warning |
 | 5 | 换热器抽管束清洗完了要验收，方案是 Excel | `sample-plan-hex.xlsx` | `--tag E-1201 --equip-type 换热器 --scope "抽管束化学清洗、更换法兰垫片、保温恢复" --contractor 检修三队 --plan sample-plan-hex.xlsx --pressure-test` | xlsx 方案可读，控制点 4 个全部对应，`qcGap` 为 0；验收项含管束清洗、管程/壳程水压试验、保温恢复 |
 | 6 | 循环氢压缩机大检修完工，方案是 Word，帮我出验收清单并对方案控制点 | `sample-plan-compressor.docx` | `--tag K-3101 --equip-type 循环氢压缩机 --scope "解体大修，更换轴承、干气密封，对中" --contractor 检修公司 --plan sample-plan-compressor.docx --trial-run --pressure-test --repair-type 大检修` | docx 直接读取；归类压缩机/机组（CMP-），验收项含间隙、对中、干气密封、联锁、轴位移；控制点 5 个全部对应；应附资料含联锁保护试验记录；公司设备部门签字栏标「大检修必签」；warning 提示机组验收由公司设备部门牵头 |
-| 7 | 方案里没写质量控制点，还能比对吗 | `sample-plan-no-qc.txt` | `--tag V-1301 --equip-type 容器 --scope "清罐、防腐层修补、人孔垫片更换" --contractor 检修四队 --plan sample-plan-no-qc.txt` | `qcPoints` 为 0 并 warning「未识别出质量控制点」，报告写明需人工核对，**不报成「无缺口」** |
+| 7 | 方案里没写质量控制点，还能比对吗 | `sample-plan-no-qc.txt` | `--tag V-1301 --equip-type 容器 --scope "清罐、防腐层修补、人孔垫片更换" --contractor 检修四队 --plan sample-plan-no-qc.txt` | `qcPoints` 为 0 并 warning「未识别出质量控制点」，`qcMatched`、`qcGap` 为 `null`（未比对），报告写明需人工核对，**不报成「无缺口」** |
 | 8 | 是台离心式除尘器，八类里都不是 | 无 | `--tag X-3101 --equip-type 离心式除尘器 --scope "解体大修，更换滤芯" --contractor 检修二队 --trial-run` | `typeCovered=false`，只出通用框架 + 3 条「待技术人员补充」占位项，md 开头醒目提示；验收标准中**无任何经验数值** |
 
 ## 关键验证点
@@ -35,3 +35,12 @@
 node scripts/make-sample.js --out examples            # 默认 seed=1
 node scripts/make-sample.js --out examples --seed 7   # 数值变化，结论不变
 ```
+
+## MCP 取数对照
+
+不上传附件；按 SKILL.md「数据获取（MCP）」读台账、工单字段填参数。预期结果只写每天稳定的结论。
+
+| # | 示例问题 | MCP 调用 | 运行参数 | 预期结果 |
+|---|---|---|---|---|
+| M1 | E-1201 抽芯检修工单还在施工，明早完工，先准备验收清单 | 设备资产管理 `get_equipment_ledger`（tag=E-1201）、`get_work_orders`（tag=E-1201） | `--tag E-1201 --equip-type 换热器 --name 柴油-原油换热器 --workshop 常减压车间 --special-equipment --scope "管束抽芯检修，管程壳程试压，更换法兰垫片" --contractor 检维修中心静设备班 --repair-type 日常维修 --pressure-test`（台账「设备代码」不为空 → `--special-equipment`；工单为 PM01 施工中，无实际结束日期，不传 `--finished-at`） | 归类换热器；检修分级日常维修；验收项含管束回装与定位、管程水压试验、壳程水压试验、特种设备相关资料；应附资料含试压记录、特种设备检验报告、安全阀校验证书；未提供方案时 `qcPoints` 为 null 并 warning |
+| M2 | P-2101A 换驱动端轴承、重新对中，日常维修，要试运，先出验收清单 | 设备资产管理 `get_equipment_ledger`（tag=P-2101A） | `--tag P-2101A --equip-type 离心泵 --name 进料泵 --workshop 常减压车间 --scope "解体检修，更换驱动端轴承，联轴器对中" --contractor 检维修中心动设备班 --repair-type 日常维修 --trial-run` | 归类离心泵；台账「设备代码」为空，不按特种设备；验收项含对中、轴承间隙与润滑、负荷试运振动值、负荷试运轴承温度；应附资料含对中记录、试运记录，不含特种设备资料；未指定试压有 warning |

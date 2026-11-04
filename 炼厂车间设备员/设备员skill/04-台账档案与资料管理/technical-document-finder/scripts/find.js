@@ -3,7 +3,7 @@
 /**
  * 技术资料检索与问答脚本（仅 Node.js 内置模块）—— 中石化炼化厂车间设备员口径
  * 用法：node scripts/find.js --docs <资料目录或文件> --tag <位号> [--query <查询内容>] [--out <dir>]
- * 可选：--ledger <设备台账xlsx> --doc-type <图纸|说明书|规程|技术协议|检验报告> --context <字数> --all-matches --max-files <N>
+ * 可选：--ledger <设备台账 xlsx 或 CSV 目录>--doc-type <图纸|说明书|规程|技术协议|检验报告> --context <字数> --all-matches --max-files <N>
  * 产出：<out>/matches.json、matches.md、summary.json
  *
  * 硬口径：
@@ -72,6 +72,36 @@ const norm = (v) => C.str(v).toLowerCase();
 
 /** 位号归一：去掉分隔符与空白，便于 P-1101A / P1101A / P_1101A 互相匹配 */
 function tagKey(v) { return norm(v).replace(/[\s\-_·./]/g, ''); }
+
+/**
+ * 位号（或设备编号）是否出现在一段文字 / 文件名中：字符之间允许 `- _ · . /` 与空白，大小写不敏感；
+ * 前面不能紧挨字母或数字（查 V-1101 不命中 PSV-1101、LV-1101），后面不能紧跟数字（查 V-1101 不命中 V-11011）。
+ * 以字母结尾的位号还认「P-2101A/B」「P-2101A、B」这类 A/B 简写（查 P-2101B 能命中，查 P-2101C 不命中）。
+ */
+const TAG_SEP = '[\\s\\-_·./]*';
+const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const tagReCache = new Map();
+function tagRes(v) {
+  const k = tagKey(v);
+  if (tagReCache.has(k)) return tagReCache.get(k);
+  const body = (s) => [...s].map(reEsc).join(TAG_SEP);
+  const res = { main: k ? new RegExp(`(?<![a-z0-9])${body(k)}(?!\\d)`) : null, ab: null, letter: null };
+  const m = k.match(/^(.*\d)([a-z])$/);
+  if (m) { res.ab = new RegExp(`(?<![a-z0-9])${body(m[1])}${TAG_SEP}([a-z](?:\\s*[/／、，,&＆]\\s*[a-z])+)(?![a-z0-9])`, 'g'); res.letter = m[2]; }
+  tagReCache.set(k, res);
+  return res;
+}
+function tagInText(text, v) {
+  const t = norm(text);
+  const r = tagRes(v);
+  if (!r.main) return false;
+  if (r.main.test(t)) return true;
+  if (!r.ab) return false;
+  r.ab.lastIndex = 0;
+  let m;
+  while ((m = r.ab.exec(t))) { if (m[1].split(/[^a-z]+/).includes(r.letter)) return true; }
+  return false;
+}
 
 /** 资料类型判定：判不出来返回 null，不默认归到某一类 */
 function guessDocType(name) {
@@ -292,9 +322,8 @@ function main() {
   const passages = [];        // 命中段落
 
   const relateByName = (base) => {
-    const bk = tagKey(base);
     for (const c of tagClues) {
-      if (isTagKind(c.kind)) { if (bk.includes(tagKey(c.value))) return { by: `文件名含${c.kind}`, clue: c.value }; }
+      if (isTagKind(c.kind)) { if (tagInText(base, c.value)) return { by: `文件名含${c.kind}`, clue: c.value }; }
       else if (norm(base).includes(norm(c.value))) return { by: `文件名含${c.kind}`, clue: c.value };
     }
     return null;
@@ -327,7 +356,7 @@ function main() {
     let rel = relateByName(base);
     const inContent = [];
     for (const c of tagClues) {
-      const hit = paras.find((p) => (isTagKind(c.kind) ? tagKey(p.text).includes(tagKey(c.value)) : norm(p.text).includes(norm(c.value))));
+      const hit = paras.find((p) => (isTagKind(c.kind) ? tagInText(p.text, c.value) :norm(p.text).includes(norm(c.value))));
       if (hit) inContent.push({ clue: c.value, kind: c.kind, no: hit.no });
     }
     if (!rel && inContent.length) rel = { by: `内容中出现${inContent[0].kind}`, clue: inContent[0].clue, at: `第${inContent[0].no}段` };
@@ -431,8 +460,13 @@ function main() {
     for (const [unit, m] of byUnit) {
       const distinct = [...m.entries()];
       if (distinct.length < 2) continue;                   // 同一单位下只有一个取值 → 不算冲突
-      const srcFiles = new Set(distinct.flatMap(([, srcs]) => srcs.map((x) => x.file)));
-      if (srcFiles.size < 2) continue;                     // 同一文件内的多个取值不算版本冲突
+      // 按文件归集取值：只有两份资料各有对方没有的取值时才算冲突。
+      // 同一文件内的多个取值不算；一份资料的取值被另一份完全包含也不算（规程只写径向 0.05mm、说明书写径向 0.05mm + 轴向 0.08mm）
+      const byFile = new Map();
+      for (const [v, srcs] of distinct) for (const x of srcs) { if (!byFile.has(x.file)) byFile.set(x.file, new Set()); byFile.get(x.file).add(v); }
+      const sets = [...byFile.values()];
+      const covers = (a, b) => [...b].every((v) => a.has(v));
+      if (!sets.some((a, i) => sets.some((b, j) => j > i && !covers(a, b) && !covers(b, a)))) continue;
       conflicts.push({
         keyword: k, unit,
         values: distinct.map(([v, srcs]) => ({ value: v, sources: srcs })),

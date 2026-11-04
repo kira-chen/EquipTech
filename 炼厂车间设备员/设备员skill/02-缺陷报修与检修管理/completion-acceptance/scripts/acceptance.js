@@ -142,7 +142,7 @@ function main() {
     qcPoints = R.extractQcPoints(text);
     if (!qcPoints.length) {
       warnings.push(`检修方案「${path.basename(a.plan)}」中未识别出质量控制点条目（未匹配到「质量控制点/控制点/见证点/停止点」等关键词），无法比对，请人工核对方案质量控制点是否都有对应验收项`);
-      qcMatched = []; qcGap = [];
+      qcMatched = null; qcGap = null;   // 没识别出控制点就没做比对：缺口未知，不写成 0（空数组）
     } else {
       const m = R.matchQcPoints(qcPoints, items);
       qcMatched = m.matched; qcGap = m.gap;

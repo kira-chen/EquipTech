@@ -36,6 +36,18 @@ const BASE = ['--applicant', '加氢车间', '--due', '2026-12-31'];
 // ============ A. 规则引擎单元测试 ============
 eq(D.classifyPhenomenon('机封处持续滴漏'), 'leak', 'A1 现象识别-泄漏');
 eq(D.classifyPhenomenon('指示不准，与现场表偏差大'), 'instrument', 'A2 现象识别-仪表异常');
+eq(D.classifyPhenomenon('V-1101 排凝阀关不严，还在漏'), 'leak', 'A2b 单字「漏」识别为泄漏（与 defect-intake-grading 同口径）');
+eq(D.classifyPhenomenon('巡检漏检两次'), 'other', 'A2c 「漏检」不当泄漏');
+eq(D.classifyPhenomenon('P-201 泵振动大，巡检遗漏未及时发现'), 'vibration', 'A2d 「遗漏」不当泄漏');
+eq(D.classifyPhenomenon('检修后漏装联轴器防护罩'), 'other', 'A2e 「漏装」不当泄漏');
+eq(D.classifyPhenomenon('出口法兰又漏了'), 'leak', 'A2f 「又漏了」识别为泄漏');
+eq(D.classifyPhenomenon('法兰发现漏点，有油迹'), 'leak', 'A2g 「漏点」仍为泄漏');
+eq(D.classifyPhenomenon('疏水阀漏汽'), 'leak', 'A2h 「漏汽」仍为泄漏');
+eq(D.classifyPhenomenon('P-201 泵振动大，存在漏检'), 'vibration', 'A2i 「存在漏检」不算泄漏');
+eq(D.classifyPhenomenon('P-2105A 轴承温度偏高'), 'temperature', 'A2j 「温度偏高」识别为温升（与 defect-intake-grading 同口径）');
+eq(D.classifyPhenomenon('出口温度持续上升'), 'temperature', 'A2k 「温度持续上升」识别为温升');
+eq(D.classifyPhenomenon('轴承箱 91℃，比同类泵高约 15℃'), 'temperature', 'A2l 「高约 15℃」识别为温升');
+eq(D.classifyPhenomenon('出口压力偏高'), 'other', 'A2m 「压力偏高」不算温升');
 eq(D.disciplineOf('P-2101A', '进料泵', ''), '动设备', 'A3 专业归属-动设备');
 eq(D.disciplineOf('E-2201', '换热器', ''), '静设备', 'A4 专业归属-静设备');
 eq(D.disciplineOf('I-2501', '压力变送器', ''), '仪表', 'A5 专业归属-仪表');
@@ -209,6 +221,17 @@ ok(r.j.orders.every((o) => o.historyNote === '未提供历史维修记录'), 'E1
 const histCn = mk('histcn.xlsx', { '维修记录': [['工单号', '位号', '维修日期', '维修内容', '承修单位'], ['GD-1', 'P-01', '2025-03-12', '更换机械密封', '检修一班']] });
 r = run(['--defect', dj, '--history', histCn, ...BASE], 'histcn');
 eq(r.j.orders[0].history[0].vendor, '检修一班', 'E16 中文列名历史记录仍可读');
+// 未完工工单（无维修日期、无维修内容，只有工单号）不当历史维修记录展示
+const histOpen = mk('histopen.xlsx', {
+  '维修记录': [
+    ['工单号', '位号', '实际结束日期', '检修内容', '承修单位'],
+    ['20000001', 'P-01', '2026-02-06', '更换驱动端轴承', '动设备班'],
+    ['20000002', 'P-01', '', '', '动设备班'],
+  ],
+});
+r = run(['--defect', dj, '--history', histOpen, ...BASE], 'histopen');
+ok(r.j.orders[0].history.length === 1 && r.j.orders[0].history.every((h) => h.date && h.content), 'E17 无维修日期且无维修内容的行（未完工工单）不列入历史维修摘要');
+ok(r.j.warnings.some((w) => w.includes('未完工') && w.includes('1 行')), 'E18 跳过未完工工单行时 warning 说明行数');
 
 // ============ F. 不再编工单号 / 已废参数 ============
 r = run(['--defect', dj, '--prefix', 'WX', ...BASE], 'prefix');
@@ -340,6 +363,33 @@ ok(r.j.warnings.some((w) => w.includes('投用日期') && w.includes('无法解�
 const ledOnlyNo = mk('ledonlyno.xlsx', { '设备台账': [['设备编号', '设备名称'], ['10000101', '泵1']] });
 r = run(['--defect', dj, '--ledger', ledOnlyNo, ...BASE], 'onlyno');
 ok(r.j.warnings.some((w) => w.includes('缺少列: 位号')), 'K11 「设备编号」不再被当作位号，台账缺位号列 warning');
+
+// ============ M. 输入已带通知单号：原样带出「已有通知单号」，注明系统已存在 ============
+{
+  const ex = mk('m-exist.xlsx', {
+    '通知单': [['通知单号', '通知单类型', '位号', '设备名称', '描述', '缺陷等级', '优先级', '发现时间'],
+      ['10046716', 'M2', 'P-2108', '缓蚀剂注入泵', 'P-2108 出口压力不足', 'B', '2', '2026-11-14 09:05'],
+      ['', 'M2', 'P-2109', '回流泵', 'P-2109 机封滴漏', 'C', '3', '2026-11-14 10:05']],
+  });
+  r = run(['--input', ex, ...BASE], 'm-exist');
+  const o1 = ((r.j && r.j.orders) || [])[0] || {}, o2 = ((r.j && r.j.orders) || [])[1] || {};
+  eq(o1.existingNotifNo, '10046716', 'M1 输入「通知单号」原样带到 existingNotifNo');
+  eq(o2.existingNotifNo, null, 'M2 通知单号为空的行 existingNotifNo 为 null');
+  const head = r.csv ? r.csv.replace(/^\uFEFF/, '').split('\r\n')[0] : '';
+  const row1 = r.csv ? r.csv.split('\r\n')[1] : '';
+  ok(/"已有通知单号"/.test(head) && /"10046716"/.test(row1), 'M3 CSV 单独一列「已有通知单号」并原样写入');
+  ok(r.csv && r.csv.split('\r\n')[1].startsWith('"1","",'), 'M4 「通知单号(SAP生成)」列仍留空，不把已有号填进去');
+  ok(r.md && /10046716/.test(r.md) && /系统已存在，勿重复创建/.test(r.md), 'M5 md 注明「系统已存在，勿重复创建」');
+  eq(r.j && r.j.counts.existingNotif, 1, 'M6 counts.existingNotif 计 1');
+  ok(r.j && r.j.warnings.some((w) => /10046716/.test(w) && /勿重复创建/.test(w)), 'M7 有已存在通知单时给 warning');
+  // 上游 defects.json 带 sourceNoKind=notification 时同样带出；sourceNoKind=defect（缺陷编号）不算已有通知单
+  const dj2 = mkjson('m-defects.json', { counts: { byLevel: {} }, defects: [
+    { no: 'QX-1', tag: 'P-2108', desc: '出口压力不足', level: 'B', levelCn: 'B 级（严重）', sourceNo: '10046716', sourceNoKind: 'notification' },
+    { no: 'QX-2', tag: 'P-2109', desc: '机封滴漏', level: 'C', levelCn: 'C 级（一般）', sourceNo: 'QX-0901', sourceNoKind: 'defect' }] });
+  r = run(['--defect', dj2, ...BASE], 'm-defects');
+  const os2 = (r.j && r.j.orders) || [];
+  ok(os2.length === 2 && os2[0].existingNotifNo === '10046716' && os2[1].existingNotifNo === null, 'M8 defects.json 的 sourceNo（通知单号）带出，缺陷编号不当已有通知单号');
+}
 
 // ============ L. examples 样例预期计数 ============
 const EX = path.join(__dirname, '..', 'examples');

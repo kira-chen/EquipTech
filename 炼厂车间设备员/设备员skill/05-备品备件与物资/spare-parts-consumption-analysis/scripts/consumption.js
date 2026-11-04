@@ -218,6 +218,8 @@ function main() {
 
   // ---- 基期来源：--prev 接上期 consumption.json；或 --prev 接上期出库 xlsx（需 --prev-from/--prev-to）；或只给 --prev-from/--prev-to 在同一导出里切基期
   let anomalies = null, compare = null;
+  let newInPeriod = null; // 基期没有该编码（或该编码基期全部单位数量为 0）、本期新出现的备件：无倍数可算，单列提示（不计入异常）
+  let unitMismatch = null; // 基期有该编码的消耗、只是单位不同：两期不可比，单列提示（不算新出现，也不计入异常）
   let prevSource = null;
   const pf = a['prev-from'] !== undefined ? C.normDate(a['prev-from']) : null;
   const pt = a['prev-to'] !== undefined ? C.normDate(a['prev-to']) : null;
@@ -251,12 +253,26 @@ function main() {
     if (prevDays === null) warnings.push('上期数据缺少统计区间信息，异常增长按原始数量比对，未做区间长度归一');
     else if (normalized) warnings.push(`本期 ${curDays} 天、上期 ${prevDays} 天，异常增长已按日均归一后比对`);
     anomalies = [];
+    newInPeriod = [];
+    unitMismatch = [];
+    const prevHasData = prevByPart.size > 0; // 基期整段无记录时没有可比基期，不把本期全部备件列为新出现
     for (const cur of byPart) {
       const p = prevByPart.get(cur.key);
-      if (!p) continue;
-      // 只在两期同单位可比时判断
+      // 只在两期同单位可比时判断。基期无同单位消耗、本期有消耗时：基期该编码别的单位有消耗 → unitMismatch（两期单位不同、不可比）；
+      // 基期完全没有该编码，或该编码基期全部单位数量都为 0 → newInPeriod
+      const prevUnitsWithQty = p ? (p.byUnit || []).filter((x) => x.qty > 0) : [];
       for (const cu of cur.byUnit) {
-        const pu = (p.byUnit || []).find((x) => x.unit === cu.unit);
+        const pu = p ? (p.byUnit || []).find((x) => x.unit === cu.unit) : null;
+        if ((!pu || pu.qty === 0) && prevHasData && cu.qty > 0) {
+          if (prevUnitsWithQty.length) {
+            unitMismatch.push({ code: cur.key, label: cur.label, unit: cu.unit, current: cu.qty,
+              prevUnits: prevUnitsWithQty.map((x) => ({ unit: x.unit, qty: x.qty })),
+              note: `两期单位不同、不可比（本期按「${cu.unit}」，基期按「${prevUnitsWithQty.map((x) => x.unit).join('、')}」），未换算、不计算增长倍数；请按同一计量单位核对后再比` });
+          } else {
+            newInPeriod.push({ code: cur.key, label: cur.label, unit: cu.unit, current: cu.qty,
+              note: '基期无该备件消耗，本期新出现，无增长倍数可算；建议核实是否与某次检修、重复故障或统计口径变化相关；本技能不断言原因' });
+          }
+        }
         if (!pu || pu.qty === 0) continue;
         const curRate = normalized ? cu.qty / curDays : cu.qty;
         const prevRate = normalized ? pu.qty / prevDays : pu.qty;
@@ -275,6 +291,9 @@ function main() {
       }
     }
     anomalies.sort((x, y) => y.ratio - x.ratio);
+    newInPeriod.sort((x, y) => x.code.localeCompare(y.code));
+    unitMismatch.sort((x, y) => x.code.localeCompare(y.code));
+    if (unitMismatch.length) warnings.push(`${unitMismatch.length} 项备件两期单位不同、不可比（${unitMismatch.map((x) => x.code).join('、')}），未换算，不计入异常增长也不算本期新出现`);
     compare = { prevPeriod: prev.meta ? `${prev.meta.from} ~ ${prev.meta.to}` : null, prevSource,
       prevDays, currentDays: curDays, normalized,
       prevRecords: prev.counts ? prev.counts.records : null, currentRecords: items.length };
@@ -293,6 +312,8 @@ function main() {
     unattributed: unattributed.length, unknownQty: unknownQtyTotal,
     units: unitSet.length,
     anomalies: anomalies === null ? null : anomalies.length,
+    newInPeriod: newInPeriod === null ? null : newInPeriod.length,
+    unitMismatch: unitMismatch === null ? null : unitMismatch.length,
     amount: totalAmt.amount, unpriced: (priceMap || amountFromColumn) ? totalAmt.unpriced : null,
     reversals: items.filter((x) => x.mvt && MVT_REVERSAL.test(x.mvt)).length,
   };
@@ -303,7 +324,7 @@ function main() {
     meta: { workshop: a.workshop, from, to, by, topN, anomalyRatio: ratio,
       generatedAt: C.localDateTime(), priceProvided: !!priceMap, amountFromColumn, amountSource, mvtColumn: cur.hasMvt,
       ledgerProvided: !!equipMap, prevProvided: !!prev, prevSource },
-    counts, byEquipment, byPart, byMonth, byType, topConsumers, anomalies, compare,
+    counts, byEquipment, byPart, byMonth, byType, topConsumers, anomalies, newInPeriod, unitMismatch, compare,
     unattributed: unattributed.map((x) => ({ code: x.code, name: x.name, qty: x.qty, unit: x.unit,
       date: x.date, dept: x.dept, purpose: x.purpose, row: x._row })),
     warnings,
@@ -362,6 +383,20 @@ function main() {
         : [x.label, x.unit, C.fmt(x.current), C.fmt(x.previous), x.ratio]))));
     if (norm) { L.push(`> 两期统计区间长度不同（本期 ${compare.currentDays} 天 / 上期 ${compare.prevDays} 天），倍数按日均归一后计算。`); L.push(''); }
     L.push('> 异常增长仅为统计结果，**建议核实是否与某次检修、重复故障或统计口径变化相关；本技能不断言原因**。');
+    L.push('');
+  }
+  if (newInPeriod && newInPeriod.length) {
+    L.push(`基期无消耗、本期新出现的备件（${newInPeriod.length} 项，无增长倍数可算，不计入异常增长）：`);
+    L.push('');
+    L.push(C.mdTable(['备件', '单位', '本期', '基期'], newInPeriod.map((x) => [x.label, x.unit, C.fmt(x.current), '无消耗'])));
+    L.push('> 仅为统计结果，建议核实是否与某次检修、重复故障或统计口径变化相关；本技能不断言原因。');
+    L.push('');
+  }
+  if (unitMismatch && unitMismatch.length) {
+    L.push(`两期单位不同、不可比的备件（${unitMismatch.length} 项，未换算，不计入异常增长，也不算本期新出现）：`);
+    L.push('');
+    L.push(C.mdTable(['备件', '本期单位', '本期', '基期'], unitMismatch.map((x) => [x.label, x.unit, C.fmt(x.current), x.prevUnits.map((u) => `${C.fmt(u.qty)} ${u.unit}`).join('、')])));
+    L.push('> 请按同一计量单位核对两期数据后再作比较。');
     L.push('');
   }
   L.push(`## ${byType ? '八' : '七'}、未归属消耗`);

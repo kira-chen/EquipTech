@@ -387,6 +387,53 @@ r = run(sap, ['--ledger', sapLed], 'sap-ledger');
 eq(r.summary.counts.missed, 1, '21.5 SAP 列名台账识别漏检');
 ok(r.status.missed[0].special === true, '21.6 台账特护标记进漏检清单');
 
+// ---- 23. 特护单列：重要度 A/关键 不等于特护；「特护标记」列为准；台账特护补到异常清单
+const spRec = mk('special-rec.xlsx', {
+  '巡检记录': [
+    ['位号', '检查项', '检查结果', '巡检时间'],
+    ['P-81', '振动', '异常', `${DATE} 08:00`],
+    ['P-82', '振动', '正常', `${DATE} 08:00`],
+    ['P-83', '振动', '正常', `${DATE} 08:00`],
+  ],
+  '点检数据': [
+    ['设备位号', '点检结果', 'ABC标识', '点检时间'],
+    ['P-84', '正常', 'A', `${DATE} 09:00`],
+  ],
+});
+const spLed = mk('special-led.xlsx', {
+  '设备台账': [
+    ['位号', '设备名称', '重要度', '特护标记'],
+    ['P-81', '泵81', 'B', '是'],
+    ['P-82', '泵82', 'A', '否'],
+    ['P-83', '泵83', '关键', '否'],
+    ['P-84', '泵84', 'A', '否'],
+    ['K-85', '机85', 'A', '否'],
+    ['K-86', '机86', 'A', '是'],
+  ],
+});
+r = run(spRec, ['--ledger', spLed], 'special-col');
+eq(r.summary.counts.special, 1, '23.1 重要度 A/关键 且特护标记为否不计特护，只有 P-81 计特护');
+ok(r.status.byEquipment.filter((x) => x.special).map((x) => x.tag).join() === 'P-81', '23.2 特护标记「是」的 B 类设备标特护，A 类与记录表 ABC标识 A 不标');
+eq(r.summary.counts.specialAbnormal, 1, '23.3 台账才有的特护标记补到异常清单（specialAbnormal 计入）');
+ok(r.status.abnormal[0] && r.status.abnormal[0].tag === 'P-81' && r.status.abnormal[0].special === true, '23.4 异常清单中该特护设备 special=true');
+ok(/【注意】特护设备异常 1 台/.test(r.md), '23.5 台账特护设备异常时报告出现【注意】上报提示');
+ok(r.status.missed.find((x) => x.tag === 'K-85').special === false && r.status.missed.find((x) => x.tag === 'K-86').special === true, '23.6 漏检清单特护按特护标记列，A 类不算');
+eq(r.status.missed[0].tag, 'K-86', '23.7 漏检清单特护置顶');
+// 表头恰好是「特护」：不被共享别名「重要度」（含「特护」）抢走
+{
+  const rec1 = mk('sp-hdr-rec.xlsx', { '巡检记录': [['位号', '检查项', '检查结果', '巡检时间'], ['P-81', '振动', '异常', `${DATE} 08:00`], ['P-82', '振动', '正常', `${DATE} 08:00`]] });
+  const led1 = mk('sp-hdr-led.xlsx', { '设备台账': [['位号', '设备名称', '特护', '是否需巡检'], ['P-81', '泵81', '是', '是'], ['P-82', '泵82', '否', '是'], ['K-85', '机85', '是', '是']] });
+  r = run(rec1, ['--ledger', led1], 'sp-hdr-led');
+  const b81 = ((r.status && r.status.byEquipment) || []).find((x) => x.tag === 'P-81') || {};
+  eq(b81.special, true, '23.8 台账表头为「特护」、值「是」→ P-81 标特护');
+  eq(((r.status && r.status.missed) || []).find((x) => x.tag === 'K-85') && r.status.missed.find((x) => x.tag === 'K-85').special, true, '23.9 台账表头为「特护」→ 漏检的 K-85 标特护');
+  eq(r.summary.counts.specialAbnormal, 1, '23.10 台账「特护」列的特护设备异常计入 specialAbnormal');
+  const rec2 = mk('sp-hdr-rec2.xlsx', { '巡检记录': [['位号', '检查项', '检查结果', '巡检时间', '特护'], ['P-81', '振动', '异常', `${DATE} 08:00`, '是']] });
+  r = run(rec2, [], 'sp-hdr-rec2');
+  eq(r.summary.counts.special, 1, '23.11 记录表表头为「特护」、值「是」→ 计特护');
+  ok(/【注意】特护设备异常 1 台/.test(r.md || ''), '23.12 记录表「特护」列的特护设备异常出现【注意】提示');
+}
+
 // ---- 22. 声明行、无 emoji、默认输出目录
 r = run(base, [], 'decl');
 ok(/本材料由脚本汇总、模型成文，仅供设备员复核参考/.test(r.md), '22.1 声明行写入 md');
@@ -394,6 +441,28 @@ ok(!/[✅⚠🚨]/.test(r.md), '22.2 md 不含 emoji');
 ok(/os\.tmpdir\(\)/.test(fs.readFileSync(DIGEST, 'utf8')), '22.3 默认输出目录为系统临时目录');
 ok(!/'备注'/.test(fs.readFileSync(DIGEST, 'utf8').split('ALIASES')[1].split('});')[0]), '22.4 别名表不含「备注」');
 ok(/mergeAliases/.test(fs.readFileSync(DIGEST, 'utf8')), '22.5 ALIASES 经 mergeAliases 合并');
+
+// ---- 24. 同一设备一项「待查」、其余正常、无异常项：整机判未判定，不判正常（第三轮 v1-1）
+const mixU = mk('mix-unknown.xlsx', {
+  '巡检明细': [
+    ['位号', '设备名称', '检查项', '检查结果', '是否报警', '检查时间', '检查人'],
+    ['E-31', '冷却器', '法兰泄漏', '待查', '否', `${DATE} 08:45`, '冯'],
+    ['E-31', '冷却器', '进出口温度', '正常', '否', `${DATE} 08:45`, '冯'],
+    ['E-32', '冷却器', '法兰泄漏', '待查', '否', `${DATE} 08:45`, '冯'],
+    ['E-32', '冷却器', '进出口温度', '异常', '是', `${DATE} 08:45`, '冯'],
+    ['E-33', '冷却器', '法兰泄漏', '正常', '否', `${DATE} 08:45`, '冯'],
+  ],
+});
+r = run(mixU, [], 'mix-unknown');
+const e31 = ((r.status && r.status.byEquipment) || []).find((x) => x.tag === 'E-31') || {};
+eq(e31.state, 'unknown', '24.1 一项待查 + 一项正常、无异常项 → 整机未判定');
+eq(e31.stateCn, '未判定', '24.2 中文状态为未判定');
+ok(((r.status && r.status.unknownState) || []).some((x) => x.tag === 'E-31' && x.reason.includes('法兰泄漏') && x.reason.includes('待查')), '24.3 未判定清单写明哪一项待查');
+ok(((r.status && r.status.abnormal) || []).some((x) => x.tag === 'E-32'), '24.4 有异常项时仍判异常（异常优先于未判定）');
+eq((r.summary.counts || {}).normal, 1, '24.5 正常只计 E-33（E-31 不计正常）');
+eq((r.summary.counts || {}).unknown, 1, '24.6 未判定计 E-31');
+ok(((r.summary && r.summary.warnings) || []).some((w) => w.includes('E-31') && w.includes('待查')), '24.7 warning 点名部分检查项未判定的设备');
+ok(/E-31/.test(((r.md || '').split('## 五、未判定项')[1] || '').split('\n## ')[0]), '24.8 报告「五、未判定项」一节列出 E-31');
 
 // ---- 输出
 console.log(`\n${'='.repeat(56)}`);

@@ -17,6 +17,11 @@
 | 　未闭环工单 | {{counts.bySource.未闭环工单}} |
 | 　周期性检修项 | {{counts.bySource.周期性检修项}} |
 | 　隐患整改项 | {{counts.bySource.隐患整改项}} |
+{{#meta.includeCyclic}}
+| 　　其中周期项已超期 | {{counts.cyclicOverdue}} |
+| 　　其中周期项下次到期日算不出 | {{counts.cyclicDueUnknown}} |
+| 周期外周期项（本期不申报） | {{counts.cyclicOutOfPeriod}} |
+{{/meta.includeCyclic}}
 | 需停机项 | {{counts.needShutdown}} |
 | 停机与否未填 | {{counts.shutdownUnknown}} |
 | 备件缺口项 | {{counts.spareGap}} |
@@ -92,6 +97,14 @@
  四、与上期遗留项的衔接及需公司设备管理部门（机动部/设备部）协调事项
  数量一律引用 demands.json，申报理由须引用来源记录原文要点，不得夸大紧急程度。）
 <!-- ANALYSIS_END -->
+
+{{#meta.includeCyclic}}
+## 附：周期外周期项（本期不申报）
+
+{{table:cyclicOutOfPeriod}}
+
+【注意】以上周期项下次到期日晚于申报周期末（{{meta.periodEnd}}），未列入本期申报清单，到期所在月份再申报。
+{{/meta.includeCyclic}}
 
 ## 附：数据提示
 

@@ -60,7 +60,7 @@ ok(S.itemCategories('是否建立一机一档').includes('equipmentFile'), 'A24 
 eq(S.matchItem('是否建立一机一档', '设备台账2026.xlsx').matched, false, 'A25 设备台账不冒充一机一档（不同类不充数）');
 ok(S.itemCategories('用火作业是否办理作业许可').includes('permit'), 'A26 「用火作业」归作业票类（中石化正式名称）');
 eq(S.matchItem('用火作业是否办票', '动火作业票汇总2026-09.xlsx').matched, true, 'A27 旧写法「动火」材料仍可与「用火」检查项匹配');
-eq(S.CATEGORIES.length, 25, 'A28 资料类别共 25 类');
+eq(S.CATEGORIES.length, 26, 'A28 资料类别共 26 类（缺陷与故障、隐患排查治理分两类）');
 
 /* ==================== B. 基础：齐全 / 缺失 / 覆盖不全 ==================== */
 const CHK = mkx('chk.xlsx', {
@@ -340,8 +340,8 @@ eq(r.j.items.find((x) => /压力容器/.test(x.text)).status, 'partial', 'M7 检
 // #10 文件名与清单都没有日期（如 MCP 导出）→ 期限未知，单列，不算覆盖不全也不算齐全
 const MCPDIR = path.join(work, 'mcpdir');
 fs.mkdirSync(MCPDIR, { recursive: true });
-fs.writeFileSync(path.join(MCPDIR, '设备台账.csv'), 'x');
-fs.writeFileSync(path.join(MCPDIR, '巡检记录.csv'), 'x');
+fs.writeFileSync(path.join(MCPDIR, '设备台账.csv'), '列\nx\n'); // 有一行数据（只有表头的空导出另见 O 组）
+fs.writeFileSync(path.join(MCPDIR, '巡检记录.csv'), '列\nx\n');
 r = run([...BASE, '--notice', CHK2, '--materials', MCPDIR, '--date-range', PERIOD], 'mcpdir');
 eq(r.s.ok, true, 'M8 无日期材料目录可运行');
 eq(r.s.counts.unknownPeriod, 2, 'M9 无日期材料的检查项计入「期限未知」');
@@ -387,6 +387,98 @@ const CHK3 = mkx('chk3.xlsx', { '检查表': [['序号', '检查项'], ['1', '�
 r = run([...BASE, '--notice', CHK3, '--materials', MCPDIR, '--date-range', PERIOD], 'gap-unknown');
 ok(r.s.counts.missing >= 1 && r.s.counts.unknownPeriod >= 1, 'M28 场景同时有缺口与期限未知');
 ok(/缺口明细见第三节，期限未知明细见第五节/.test(r.md), 'M29 提示行写明期限未知明细在第五节，不只指向第三节');
+
+/* ==================== N. MCP 导出文件名与缺陷/隐患分类（2026-11-04） ==================== */
+ok(S.fileCategories('通知单.csv').includes('defect'), 'N1 「通知单」（SAP PM 维修通知单）归缺陷与故障类');
+ok(S.fileCategories('作业清单.csv').includes('permit'), 'N2 「作业清单」（作业票系统导出）归作业票类');
+ok(S.fileCategories('故障记录.csv').includes('maintenance'), 'N3 「故障记录」（含检修做法）同时算检修记录');
+ok(!S.fileCategories('停电通知单.docx').includes('defect') && !S.fileCategories('检修作业清单.xlsx').includes('permit'), 'N4 反例：停电通知单、检修作业清单不归类');
+eq(S.matchItem('隐患排查治理台账是否建立', '故障记录.csv').matched, false, 'N5 故障记录不冒充隐患排查治理台账');
+eq(S.matchItem('设备故障与检修记录', '隐患台账.csv').matched, false, 'N6 隐患台账不冒充设备故障与检修记录');
+eq(S.matchItem('设备缺陷是否登记并闭环整改', '通知单.csv').matched, true, 'N7 通知单对应设备缺陷检查项');
+const MCP2 = path.join(work, 'mcp2');
+fs.mkdirSync(MCP2, { recursive: true });
+for (const n of ['设备台账', '故障记录', '通知单', '作业清单', '隐患台账']) fs.writeFileSync(path.join(MCP2, `${n}.csv`), '列\nx\n');
+const CHK_MCP = mkx('chk-mcp.xlsx', { '检查表': [['序号', '检查项'], ['1', '设备缺陷是否登记'], ['2', '隐患排查治理台账'], ['3', '作业票是否规范'], ['4', '设备故障与检修记录'], ['5', '设备台账是否建立']] });
+r = run([...BASE, '--notice', CHK_MCP, '--materials', MCP2], 'mcp2');
+const iv = (n) => ((r.j.items.find((i) => Number(i.no) === n) || {}).evidence || []).map((e) => e.name);
+ok(iv(3).includes('作业清单.csv') && iv(1).includes('通知单.csv'), 'N8 MCP 导出的作业清单、通知单对应到作业票、缺陷检查项');
+ok(iv(2).length === 1 && iv(2)[0] === '隐患台账.csv', 'N9 隐患检查项只对应隐患台账');
+ok(!iv(4).includes('隐患台账.csv') && iv(4).includes('故障记录.csv'), 'N10 故障与检修记录检查项不收隐患台账');
+eq(r.s.counts.unmatched, 0, 'N11 MCP 导出文件不落入未对应材料');
+
+/* ==================== O. 特种设备台账不充设备台账；只有表头的空导出不作证据（2026-11-04） ==================== */
+ok(!S.fileCategories('特种设备台账.csv').includes('ledger'), 'O1 特种设备台账不归设备台账类（只是特种设备的专项台账）');
+ok(S.fileCategories('特种设备台账.csv').includes('specialEquipment'), 'O2 特种设备台账仍归特种设备管理资料');
+eq(S.matchItem('设备台账是否建立并与现场一致', '特种设备台账.csv').matched, false, 'O3 设备台账检查项不收特种设备台账');
+ok(S.fileCategories('常减压车间设备台账.xlsx').includes('ledger'), 'O4 普通设备台账照常归类');
+const EMP = path.join(work, 'emptydir');
+fs.mkdirSync(EMP, { recursive: true });
+fs.writeFileSync(path.join(EMP, '巡检记录.csv'), '\uFEFF位号,检查项目,检查结果,巡检时间\r\n');
+fs.writeFileSync(path.join(EMP, '设备台账.csv'), '位号,设备名称\nP-1,泵\n');
+fs.writeFileSync(path.join(EMP, '校验台账.csv'), '');
+const CHK_EMP = mkx('chk-emp.xlsx', { '检查表': [['序号', '检查项'], ['1', '日常巡检记录是否完整'], ['2', '设备台账是否建立'], ['3', '安全阀是否按期校验']] });
+r = run([...BASE, '--notice', CHK_EMP, '--materials', EMP], 'empty-export');
+const st = (n) => (r.j.items.find((i) => Number(i.no) === n) || {}).status;
+eq(st(1), 'missing', 'O5 只有表头的巡检记录.csv 不作证据，巡检检查项判未找到对应材料');
+eq(st(2), 'ready', 'O6 有数据行的设备台账.csv 照常作证据');
+eq(st(3), 'missing', 'O7 0 字节的校验台账.csv 不作证据');
+ok(r.s.warnings.some((w) => /巡检记录\.csv/.test(w) && /没有数据行/.test(w)), 'O8 空导出逐个 warning');
+eq(r.s.counts.emptyFiles, 2, 'O9 counts.emptyFiles 计空文件数');
+ok((r.j.materials.find((m) => m.name === '巡检记录.csv') || {}).empty === true, 'O10 materials[].empty 标记');
+ok(!r.j.unmatched.some((u) => u.name === '巡检记录.csv'), 'O11 空文件不进未对应材料（单独说明）');
+ok(/没有数据行/.test(r.md), 'O12 md 说明空文件');
+
+/* ==================== P. 判空补漏、特种设备排除收窄、「用火」不误伤（2026-11-04 复核） ==================== */
+// 「标题行 + 表头」的导出也是空表；0 字节 xlsx 判空；读不了的 xlsx 单独 warning，不作证据
+const EMP2 = path.join(work, 'emptydir2');
+fs.mkdirSync(EMP2, { recursive: true });
+fs.writeFileSync(path.join(EMP2, '巡检记录.csv'), '常减压车间巡检记录导出\n位号,检查项目,检查结果,巡检时间\n');
+fs.writeFileSync(path.join(EMP2, '安全阀校验台账.xlsx'), '');
+fs.writeFileSync(path.join(EMP2, '设备台账（含特种设备）.csv'), '位号,设备名称\nP-1,泵\n');
+fs.writeFileSync(path.join(EMP2, '润滑记录.xlsx'), 'not-a-zip');
+mkx(path.join('emptydir2', '计量器具检定台账.xlsx'), { '检定台账': [['某厂计量器具检定台账'], [], ['器具名称', '检定日期', '有效期'], ['压力表', '2026-07-01', '2027-07-01']] });
+mkx(path.join('emptydir2', '应急演练记录.xlsx'), { '演练记录': [['应急演练记录导出'], ['演练名称', '演练日期', '参加人数']] });
+const CHK_EMP2 = mkx('chk-emp2.xlsx', { '检查表': [['序号', '检查项'], ['1', '日常巡检记录是否完整'], ['2', '设备台账是否建立'], ['3', '安全阀是否按期校验'], ['4', '设备润滑记录是否齐全'], ['5', '计量器具是否按期检定'], ['6', '应急演练是否按计划开展']] });
+r = run([...BASE, '--notice', CHK_EMP2, '--materials', EMP2], 'empty-export2');
+const st2 = (n) => (r.j.items.find((i) => Number(i.no) === n) || {}).status;
+eq(st2(1), 'missing', 'P1 「标题行 + 表头」无数据行的巡检记录.csv 判空，不作证据');
+eq(st2(2), 'ready', 'P2 「设备台账（含特种设备）.csv」仍归设备台账，照常作证据');
+ok(!((r.j.items.find((i) => Number(i.no) === 3) || {}).evidence || []).some((e) => e.name === '安全阀校验台账.xlsx'), 'P3 0 字节的安全阀校验台账.xlsx 判空，不作证据');
+eq((r.j.materials.find((m) => m.name === '安全阀校验台账.xlsx') || {}).empty, true, 'P4 0 字节 xlsx 标 empty');
+eq(st2(4), 'missing', 'P5 读不了的润滑记录.xlsx 不作证据');
+ok(r.s.warnings.some((w) => /润滑记录\.xlsx/.test(w) && /无法读取/.test(w)), 'P6 读不了的 xlsx 单独 warning');
+eq((r.j.materials.find((m) => m.name === '润滑记录.xlsx') || {}).unreadable, true, 'P7 materials[].unreadable 标记');
+ok(!r.j.unmatched.some((u) => u.name === '润滑记录.xlsx'), 'P8 读不了的文件不进未对应材料');
+eq(r.s.counts.unreadableFiles, 1, 'P9 counts.unreadableFiles 计读不了的文件数');
+eq(st2(5), 'ready', 'P10 xlsx「标题行 + 空行 + 表头 + 数据行」不判空');
+eq(st2(6), 'missing', 'P11 xlsx「标题行 + 表头」无数据行判空');
+eq(r.s.counts.emptyFiles, 3, 'P12 counts.emptyFiles 计 3 份空文件（标题+表头 csv、0 字节 xlsx、标题+表头 xlsx）');
+ok(/无法读取/.test(r.md), 'P13 md 说明读不了的文件');
+// fileNot 只排除特种设备专项台账写法
+ok(S.fileCategories('设备台账（含特种设备）.csv').includes('ledger'), 'P14 「设备台账（含特种设备）」归设备台账类');
+ok(!S.fileCategories('二作业部特种设备台账.xlsx').includes('ledger') && !S.fileCategories('特种设备使用台账.xlsx').includes('ledger') && !S.fileCategories('特种设备清单.xlsx').includes('ledger'), 'P15 特种设备台账 / 使用台账 / 以「特种设备」开头的仍不归设备台账');
+// 「用火」不误伤
+ok(!S.fileCategories('备用火炬运行记录.xlsx').includes('permit') && !S.fileCategories('加热炉备用火嘴更换记录.xlsx').includes('permit'), 'P16 「备用火炬 / 备用火嘴」不归作业票');
+ok(!S.itemCategories('是否使用火炬系统处理事故排放气').includes('permit'), 'P17 「使用火炬」检查项不归作业票');
+ok(S.fileCategories('用火作业票台账.xlsx').includes('permit') && S.itemCategories('用火监护人是否全程在场').includes('permit'), 'P18 「用火作业票」「用火监护」仍归作业票');
+
+/* ==================== Q. 0 字节文件单独提示「空文件（0 字节）」，不说「只有表头」（R11） ==================== */
+{
+  const EMP3 = path.join(work, 'emptydir3');
+  fs.mkdirSync(EMP3, { recursive: true });
+  fs.writeFileSync(path.join(EMP3, '压力容器定期检验报告2026.pdf'), '');
+  fs.writeFileSync(path.join(EMP3, '巡检记录.csv'), '位号,检查项目,检查结果,巡检时间\n');
+  const CHK3 = mkx('chk-emp3.xlsx', { '检查表': [['序号', '检查项'], ['1', '压力容器是否按期定期检验'], ['2', '日常巡检记录是否完整']] });
+  const r3 = run([...BASE, '--notice', CHK3, '--materials', EMP3], 'empty-export3');
+  const wPdf = r3.s.warnings.filter((w) => /压力容器定期检验报告2026\.pdf/.test(w));
+  ok(wPdf.length === 1 && /空文件（0 字节）/.test(wPdf[0]) && !/只有表头/.test(wPdf[0]), `Q1 0 字节 pdf 的 warning 写「空文件（0 字节）」，不写「只有表头」（实际 ${wPdf.join(' | ')}）`);
+  ok(r3.s.warnings.some((w) => /巡检记录\.csv/.test(w) && /只有表头/.test(w)), 'Q2 只有表头的 csv 仍提示「只有表头」');
+  eq((r3.j.materials.find((m) => m.name === '压力容器定期检验报告2026.pdf') || {}).zeroByte, true, 'Q3 materials[].zeroByte 标记 0 字节文件');
+  eq(r3.s.counts.emptyFiles, 2, 'Q4 0 字节文件与只有表头的文件都计入 counts.emptyFiles');
+  ok(/空文件（0 字节）/.test(r3.md) && /只有表头/.test(r3.md), 'Q5 md 分别说明 0 字节文件与只有表头的文件');
+  eq((r3.j.items.find((i) => Number(i.no) === 1) || {}).status, 'missing', 'Q6 0 字节的检验报告不作证据');
+}
 
 /* ==================== 输出 ==================== */
 console.log(`\n${'='.repeat(56)}`);

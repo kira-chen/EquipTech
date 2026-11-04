@@ -29,7 +29,7 @@ node "<技能目录>/scripts/evidence.js" \
 
 | 文件 | 内容 |
 |---|---|
-| `evidence.json` | items、ready、missing、partialCoverage、unknownPeriod、unmatched、materials、counts（含 `unknownPeriod`）、meta.statement |
+| `evidence.json` | items、ready、missing、partialCoverage、unknownPeriod、unmatched、materials（含 `empty` 空表标记、`unreadable` 读不了标记）、counts（含 `unknownPeriod`、`emptyFiles`、`unreadableFiles`）、meta.statement |
 | `evidence.md` | 八节报告（第五节为期限未知项）；有缺口或期限未知时开头带醒目提示；末尾固定声明行；分析段留占位 |
 | `资料清单.xlsx` | 五个工作表：资料对照、缺口清单、期限未知、未对应材料、声明 |
 | `summary.json` | 末行摘要落盘（Windows 控制台乱码兜底） |
@@ -47,6 +47,7 @@ node "<技能目录>/scripts/evidence.js" \
 2. **缺失绝不充数**：`missing` 项的 `evidence` 恒为空数组，报告中不出现任何「可用 XX 替代」式表述。
 3. **覆盖不全不按齐全处理**：材料部分覆盖、无交集，进 `partialCoverage`。
 3a. **期限未知单列**（2026-11-03 起）：检查项对应的材料**全都**没有可用日期（资料清单未填起止日期、文件名也推不出，如 MCP 导出文件），状态为 `unknownPeriod`「期限未知」，进 `unknownPeriod` 数组与 `counts.unknownPeriod`，md 第五节单列并说明缺起始日期、截止日期；**不计入资料齐全，也不计入覆盖不全**。同一检查项既有日期不覆盖的材料又有无日期材料时，按已知日期判覆盖不全，覆盖说明里点出无日期材料份数。
+3b. **空表不是证据**（2026-11-04 起）：材料目录里的 csv / xlsx 只有表头、没有数据行（含「标题行 + 表头」的导出；表头按前 10 个非空行里第一行有 ≥2 个非空单元格的行识别）时不参与比对，warning 逐个列出，`counts.emptyFiles` 计数，md 第六节末尾注明，不进未对应材料。任何类型的 0 字节文件同样不作证据，warning 和 md 单独写「空文件（0 字节）」，不说「只有表头」，`materials[].zeroByte` 标记，也计入 `counts.emptyFiles`。读不了的 xlsx 单独 warning「无法读取」，同样不作证据，`counts.unreadableFiles` 计数。
 3b. **位号段不当年份**：推断文件名日期前先抹掉位号段（字母 1~3 位 + 连字符 + 数字，如 `E-1201`、`V-1101`、`P-2101A`），「E-1201-2026年测厚报告」推为 2026 年，不读成 1201~2026 年。
 4. **声明行**：`evidence.md` 末尾固定写入
    `本清单基于所提供材料比对生成，资料的真实性、完整性由车间负责；缺失资料应如实说明，不得事后补编记录。`
@@ -64,8 +65,8 @@ S.matchItem('特种作业人员是否持证上岗', '设备台账.xlsx');  // �
 S.coverage({from:'2026-07-01',to:'2026-09-30'}, null, null); // → 'unknown'
 ```
 
-口径见 `references/evidence-rules.md`，两者同源。资料类别 25 类（2026-10-26 补 变更管理 MOC / 安全仪表与联锁 SIS / 特护设备 / 润滑五定三过滤 / LDAR / 一机一档，作业票类补「用火」「作业许可」）。匹配从严：只认「同一具体资料类别」与
-「具体特征词直接命中」两种依据，泛词（设备/记录/台账/车间/资料）一律不构成匹配。与 `regulation-compliance-check` 的 compliance-spec.js（25 类）不是同一张表，差异见 evidence-rules.md 第八节。
+口径见 `references/evidence-rules.md`，两者同源。资料类别 26 类（2026-11-04 缺陷与故障、隐患排查治理分为两类，并补系统导出文件名别名「通知单」「作业清单」「故障记录」；2026-10-26 补 变更管理 MOC / 安全仪表与联锁 SIS / 特护设备 / 润滑五定三过滤 / LDAR / 一机一档，作业票类补「用火」「作业许可」）。匹配从严：只认「同一具体资料类别」与
+「具体特征词直接命中」两种依据，泛词（设备/记录/台账/车间/资料）一律不构成匹配。与 `regulation-compliance-check` 的 compliance-spec.js（26 类）不是同一张表，差异见 evidence-rules.md 第八节。
 
 ## docx2text.js —— docx 文字层导出（排障用）
 
@@ -92,7 +93,7 @@ seed 改变文件编号与措辞，但结论不变：主样例配检查期 `2026
 node scripts/selftest.js
 ```
 
-168 条断言，覆盖：规则表单元测试（含 25 类与 MOC / 联锁 / 特护 / 润滑 / LDAR / 一机一档 / 用火 的归类与不充数）、缺失绝不充数、缺口醒目不淡化（「【注意】」、无 emoji）、覆盖不全与期限未知
-（部分/无交集/时间不详/日期无法解析/有日期与无日期混合）、文件名位号段不当年份、无日期材料目录（MCP 导出）判期限未知、单端日期按文件名推断与推不出不猜、未指定检查期、正反对照（有无缺口）、声明行、
+215 条断言，覆盖：规则表单元测试（含 26 类与 MOC / 联锁 / 特护 / 润滑 / LDAR / 一机一档 / 用火 的归类与不充数，特种设备台账不充设备台账、「设备台账（含特种设备）」照常归类、「备用火炬 / 使用火炬」不归作业票）、只有表头的空导出不作证据（含「标题行 + 表头」、0 字节 xlsx；0 字节 pdf 单独提示「空文件（0 字节）」）、读不了的 xlsx 单独 warning 不作证据、缺失绝不充数、缺口醒目不淡化（「【注意】」、无 emoji）、覆盖不全与期限未知
+（部分/无交集/时间不详/日期无法解析/有日期与无日期混合）、文件名位号段不当年份、无日期材料目录（MCP 导出）判期限未知、MCP 导出文件名归类与缺陷/隐患不互相充数、单端日期按文件名推断与推不出不猜、未指定检查期、正反对照（有无缺口）、声明行、
 不判合规、未对应材料不强行对应、md/目录/合计行/别名表头/空行解析、参数校验（含 PDF 前置提示）、产出结构完整性。
 全绿退出 0。

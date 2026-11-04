@@ -45,3 +45,13 @@
 node scripts/make-sample.js --out examples            # 默认 seed=1
 node scripts/make-sample.js --out examples --seed 7   # 上次巡检日期变化，结论不变
 ```
+
+## MCP 取数对照
+
+平台接入业务系统 MCP 时不用附件：按 SKILL.md「数据获取（MCP）」调用三个工具，csv 全部放进同一个空目录作 `--input`，`--date` 用当天。演示数据每天按剧本刷新，预期结果只列每天稳定的结论。
+
+| # | 示例问题 | MCP 调用 | 运行参数 | 预期结果 |
+|---|---|---|---|---|
+| M1 | 常减压车间今天白班巡检任务，特护放前面，标出漏检 | 设备资产管理 `get_equipment_ledger`（workshop=常减压车间，for_skill=inspection-task-dispatch）+ 点检巡检App `get_inspection_standards` + `get_last_inspection`（workshop=常减压车间）→ 同一目录 | `--input <目录> --workshop 常减压车间 --date <今天> --shift 白班` | 特护设备（P-2105A/B、P-2106A/B、C-3101A/B、T-1201、T-1301 等）全部 P1；逾期含漏检的 P-3102B（振动、润滑油位）和 E-3201（法兰泄漏、进出口温度），P2；不需巡检的 W-1101、W-1201、W-3201、Q-2101 进 `excluded`；无周期待确认、无无标准设备；warning 提示每班周期项未给 `--time` 按本班到期。逢周检、月检项到期而上次未检的日子（如 T-3201、V-3101、V-3201、E-3101、P-2108），逾期清单另有这些设备，如有则照列，不写死“只有” |
+| M2 | 同上，8 点接班，每班项按小时判逾期 | 同 M1 | 同 M1 加 `--time 08:00` | 今早已检的每班项不再进清单；P-3102B 的轴承温度、密封泄漏按小时判逾期，`overdueHours` 有值；无班次级周期 warning；特护设备仍为 P1。特护 T-1201、T-1301 的每班项（外观及保温、安全附件）如今早未检则也按小时判逾期，有的日子今早已检就不进清单；周检项到期的日子同 M1 另有逾期设备 |
+| M3 | 加氢车间今天白班要检什么，有没有逾期 | 设备资产管理 `get_equipment_ledger`（workshop=加氢车间，for_skill=inspection-task-dispatch）+ `get_inspection_standards` + `get_last_inspection`（workshop=加氢车间）→ 同一目录 | `--input <目录> --workshop 加氢车间 --date <今天> --shift 白班` | 无逾期项；特护 C-5302A/B、P-5101A/B、R-5101、E-5101 等为 P1；W-5101、Q-5301 进 `excluded` |

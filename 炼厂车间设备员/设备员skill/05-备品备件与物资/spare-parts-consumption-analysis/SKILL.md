@@ -25,6 +25,20 @@ metadata:
 - 必填信息：车间名称、统计区间（起止日期）。
 - 环境：可执行 Node.js ≥ 18，脚本仅用内置模块，无需 npm 安装。**若环境无法执行 node（无 Bash 工具或 `node --version` 失败），明确告知用户并终止，不得手工统计消耗。**
 
+## 数据获取（MCP）
+
+平台接入了业务系统 MCP 服务时，按下表调用工具取数，不再请用户上传导出文件；未接入时按操作步骤请用户提供系统导出文件。工具全部只读，不在业务系统里创建或修改任何单据。
+
+| 服务 | 工具 | 参数 | 交给脚本 |
+|---|---|---|---|
+| 备件库存MRO | `get_material_movements` | `workshop`：车间（必带）；`start_date`：统计起始日，与 `--from` 相同（如近 90 天）；要和基期比时取基期起始日，与 `--prev-from` 相同 | `--input` |
+
+取数后：
+
+1. 工具返回下载链接（60 分钟内有效，过期重新调用）。csv 按原文件名放进新建的空目录，不改文件名，不与其他技能的文件混放；把目录作为“交给脚本”一列的参数值。
+2. `workshop` 必须带：脚本的 `--workshop` 只写入报告标题、不筛选记录，不带会把其他车间的领用混进本车间统计。工具最多返回近 12 个月。
+3. 和上一期比：一次取到基期起始日，用 `--prev-from`/`--prev-to` 在同一导出里切基期（基期不得与本期重叠）。
+
 ## 操作步骤
 1. **确认统计区间与维度** —— 车间、起止日期、统计维度、是否折算金额、基期怎么取；**既无本位币金额列也无单价表时不折算金额，不得使用估计单价**。
 2. **运行脚本** —— 技能目录以平台实际加载路径为准（Windows 路径加双引号）：
@@ -36,7 +50,7 @@ metadata:
    - 领用设备位号为空：归入 `unattributed`（未归属）单列一节，**绝不平摊到其他设备，也不得排除后当作完整统计**。
    - 单位不一致（个/套/台混用）：warning 并按单位分别统计，**不得强行换算**。
    - 有「本位币金额」列直接取用（冲销按负数），不再乘单价；单价表只补金额列为空的记录。
-3. **读取 consumption.json** —— 从 `<输出目录>/consumption.json` 获取：`byEquipment`（按设备：消耗项数、数量、金额、占比）、`byPart`（按备件品类）、`byMonth`（时间分布）、`byType`（有台账时）、`topConsumers`（消耗排行）、`anomalies`（异常增长项：本期与基期对比、增长倍数）、`unattributed`、`compare`（基期来源与区间）、`counts`（含 `reversals` 冲销条数）、`meta.amountSource`。
+3. **读取 consumption.json** —— 从 `<输出目录>/consumption.json` 获取：`byEquipment`（按设备：消耗项数、数量、金额、占比）、`byPart`（按备件品类）、`byMonth`（时间分布）、`byType`（有台账时）、`topConsumers`（消耗排行）、`anomalies`（异常增长项：本期与基期对比、增长倍数）、`newInPeriod`（基期无消耗、本期新出现的备件，无倍数，不计入异常）、`unitMismatch`（基期有消耗但两期单位不同、不可比，不算新出现）、`unattributed`、`compare`（基期来源与区间）、`counts`（含 `reversals` 冲销条数）、`meta.amountSource`。
 4. **撰写"消耗分析"** —— 读 `references/analysis-rules.md` 的表述口径，撰写 250~400 字，按"总体情况 → 消耗集中的设备与备件 → 异常增长项与可能关联（仅提示需核实的方向）→ 未归属消耗 → 建议跟进事项"结构，替换 `consumption.md` 中 `<!-- ANALYSIS_START -->` 与 `<!-- ANALYSIS_END -->` 之间的占位文字。**数量、金额、倍数一律引用 consumption.json；异常增长只提示"建议核实是否与某次检修或重复故障相关"，不得断言原因。**
 5. **交付前自检** —— 对照 `references/checklist.md` 逐项检查；通过后交付 `consumption.md`、`consumption.json` 与 `消耗统计表.xlsx`。消耗异常设备建议接 `repeat-failure-detector` 做重复故障核查。
 

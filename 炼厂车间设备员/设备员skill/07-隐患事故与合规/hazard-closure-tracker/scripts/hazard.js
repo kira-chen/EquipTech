@@ -68,6 +68,9 @@ function classifyLevel(v) {
   if (LEVEL_GENERAL.some((k) => up.includes(k.toUpperCase()))) return 'general';
   return 'unknown';   // 有填写但无法归类（含 一级/A 级 等层级写法），进 undetermined，不按一般处理
 }
+/** 五定字段是否未落实：空、或「—」「/」「无」「待定」「未落实」等占位写法 */
+const FIX_BLANK = /^(—+|-+|\/|／|无|暂无|待定|未定|未落实|待落实)$/;
+function isBlankFix(v) { const s = C.str(v).replace(/\s/g, ''); return s === '' || FIX_BLANK.test(s); }
 function isTierLike(v) { return LEVEL_TIER_HINT.test(C.str(v).replace(/\s/g, '')); }
 const LEVEL_CN = { major: '重大隐患', general: '一般隐患', unknown: '等级无法识别', null: '等级缺失' };
 
@@ -75,11 +78,18 @@ const LEVEL_CN = { major: '重大隐患', general: '一般隐患', unknown: '等
 const ST_DONE = ['已整改', '已完成', '整改完毕', '已闭环', '已销号', '完成', '整改完成', '已处理'];
 const ST_DOING = ['整改中', '进行中', '实施中', '在改', '部分完成', '整改进行', '处理中'];
 const ST_NONE = ['未整改', '未开始', '待整改', '未处理', '未实施'];
+// 以完成词开头的（已整改未销号 / 已完成整改，未闭环）按已整改，未销号、未验收交给验收判定
+const ST_DONE_HEAD = /^(已整改|已完成|整改完毕|整改完成|已处理|已闭环|已销号)/;
+// 否定写法（整改未完成 / 尚未整改完 / 没处理）先于完成态判定，否则会因含「完成」「整改」被当成已整改；
+// 「不」只认紧贴动词（不整改），「不符合项整改完成」「不需整改」不算否定
+const ST_NEG = /(未|没|没有|尚未|暂未|还未|还没)[^，。；、,;已]{0,3}(整改|完成|处理|闭环|销号)|不(整改|完成|处理)/;
 function classifyStatus(v) {
   const s = C.str(v).replace(/\s/g, '');
   if (s === '' || s === '—' || s === '-' || s === '/') return null;
-  if (ST_DONE.some((k) => s.includes(k))) return 'done';
+  if (ST_DONE_HEAD.test(s)) return 'done';
+  if (ST_NEG.test(s)) return 'none';
   if (ST_DOING.some((k) => s.includes(k))) return 'doing';
+  if (ST_DONE.some((k) => s.includes(k))) return 'done';
   if (ST_NONE.some((k) => s.includes(k))) return 'none';
   return 'unknown';
 }
@@ -174,14 +184,17 @@ function main() {
   // ---- 逐条判定
   const items = [];
   const seenNo = new Map();
+  let duplicateNo = 0;
   for (const r of recs) {
     const no = C.str(r['隐患编号']);
     const desc = C.str(r['隐患描述']);
     if (!no && !desc) { warnings.push(`工作表「隐患台账」第${r._row}行 隐患编号与描述均为空，已跳过`); continue; }
     if (!no) warnings.push(`工作表「隐患台账」第${r._row}行 隐患编号为空，按描述跟踪`);
     if (no) {
-      if (seenNo.has(no)) warnings.push(`工作表「隐患台账」第${r._row}行 隐患编号「${no}」与第${seenNo.get(no)}行重复，两条均保留并单独跟踪`);
-      else seenNo.set(no, r._row);
+      if (seenNo.has(no)) {
+        duplicateNo++;
+        warnings.push(`工作表「隐患台账」第${r._row}行 隐患编号「${no}」与第${seenNo.get(no)}行重复，两条均保留并单独跟踪`);
+      } else seenNo.set(no, r._row);
     }
 
     const rawLevel = C.str(r['等级']);
@@ -207,8 +220,9 @@ function main() {
     const acceptDate = C.normDate(r['验收日期']);
     if (r['验收日期'] && !acceptDate) warnings.push(`工作表「隐患台账」第${r._row}行 验收日期「${C.str(r['验收日期'])}」无法解析`);
     const doneDate = C.normDate(r['整改完成日期']);
-    // 有验收记录 = 验收情况判为合格、或填了验收人/验收日期
-    const hasAcceptRecord = accepted === true || !!acceptor || !!acceptDate;
+    // 有验收记录 = 验收情况判为合格、或填了验收人/验收日期；
+    // 但验收情况明确为「不合格/未通过/待验收」等否定写法时，即使填了验收人/日期也不算验收通过（就严）
+    const hasAcceptRecord = accepted === true || (accepted !== false && (!!acceptor || !!acceptDate));
 
     // ---- 期限推定：台账期限优先；无期限时按等级 + 发现日期推
     let deadline = deadlineRaw, deadlineBasis = null, undetReason = null;
@@ -249,7 +263,12 @@ function main() {
 
     // ---- 归桶：闭环判定最严
     if (status === 'done' && hasAcceptRecord) it.bucket = 'closed';
-    else if (status === 'done') { it.bucket = 'unverified'; it.unverifiedReason = '整改状态为「已整改」但无验收记录（验收情况、验收人、验收日期均为空或未通过）'; }
+    else if (status === 'done') {
+      it.bucket = 'unverified';
+      it.unverifiedReason = accepted === false
+        ? `整改状态为「已整改」但验收情况为「${rawAccept}」，无验收记录（验收未通过或尚未验收）`
+        : '整改状态为「已整改」但无验收记录（验收情况、验收人、验收日期均为空或未通过）';
+    }
     else if (status === null || status === 'unknown') { it.bucket = 'undetermined'; it.undetReason = it.undetReason || (status === null ? '整改状态未填，无法判定闭环情况' : `整改状态「${rawStatus}」无法归类`); }
     else if (undetReason) { it.bucket = 'undetermined'; }                        // 未整改但期限无法确定
     else if (it.overdueDays !== null) it.bucket = 'overdue';
@@ -260,13 +279,14 @@ function main() {
     if (it.bucket === 'undetermined' && !it.undetReason) it.undetReason = undetReason || '判定依据不足';
 
     // ---- 五定核对（未闭环项）：定整改方案、定资金、定责任人、定期限、定应急措施；缺哪项列哪项，脚本不补
+    //      「—」「/」「无」「待定」「未落实」等占位写法按未落实处理（「不需要」是明确结论，算已落实）
     it.fiveFixedMissing = [];
     if (it.bucket !== 'closed') {
-      if (!it.measure) it.fiveFixedMissing.push('整改方案');
-      if (!it.fund) it.fiveFixedMissing.push('资金');
-      if (!it.owner) it.fiveFixedMissing.push('责任人');
+      if (isBlankFix(it.measure)) it.fiveFixedMissing.push('整改方案');
+      if (isBlankFix(it.fund)) it.fiveFixedMissing.push('资金');
+      if (isBlankFix(it.owner)) it.fiveFixedMissing.push('责任人');
       if (!it.deadline) it.fiveFixedMissing.push('期限');
-      if (!it.emergency) it.fiveFixedMissing.push('应急措施');
+      if (isBlankFix(it.emergency)) it.fiveFixedMissing.push('应急措施');
     }
 
     items.push(it);
@@ -347,7 +367,7 @@ function main() {
   const counts = {
     total, overdue: overdue.length, dueSoon: dueSoon.length, inProgress: inProgress.length,
     closed: closed.length, unverified: unverified.length, undetermined: undetermined.length,
-    major: majorHazards.length, conflicts: conflicts.length, fiveFixedIncomplete: fiveFixedIncomplete.length, duplicateNo: recs.length - seenNo.size - (recs.length - items.length),
+    major: majorHazards.length, conflicts: conflicts.length, fiveFixedIncomplete: fiveFixedIncomplete.length, duplicateNo,
   };
   const metrics = { closureRate, avgClosureDays, byLevel, byUnit, bySource, dueSoonDays: DUE_SOON_DAYS, rules: { major: rules.major, general: rules.general }, rulesSource };
 
@@ -542,7 +562,7 @@ function main() {
   S.push('');
   const groups = new Map();
   for (const x of needPush) {
-    const k = x.owner || '（未填责任人）';
+    const k = isBlankFix(x.owner) ? '（未填责任人）' : x.owner;   // 「待定 / 无 / —」等占位写法与空白同组，不当人名
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(x);
   }

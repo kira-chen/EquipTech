@@ -204,7 +204,8 @@ function main() {
   if (!a.workshop) throw new Error('缺少 --workshop');
   if (!a.date) throw new Error('缺少 --date');
   const date = C.normDate(a.date);
-  if (!date) throw new Error(`--date 「${a.date}」不是有效日期，应为 YYYY-MM-DD`);
+  // normDate 只校验月 1~12、日 1~31，2 月 30 日等不存在的日期会被 Date 顺延到下月，这里按日历严格校验
+  if (!date || new Date(date + 'T00:00:00Z').toISOString().slice(0, 10) !== date) throw new Error(`--date 「${a.date}」不是有效日期，应为 YYYY-MM-DD`);
   let leadDays = 90;
   if (a['lead-days'] !== undefined) {
     const n = Number(a['lead-days']);
@@ -233,6 +234,7 @@ function main() {
 
   const items = [];
   let filteredOut = 0;
+  const filteredTags = new Set(); // 被 --category 过滤掉的位号（在台账中，只是不在本次统计范围）
   for (const r of recs) {
     const tag = C.str(r['位号']);
     if (!tag) { warnings.push(`${r._sheet} 第${r._row}行 位号为空，已跳过`); continue; }
@@ -242,7 +244,7 @@ function main() {
     if (tankSuspect) warnings.push(`${r._sheet} 第${r._row}行 设备类别「${rawCat}」待核实：常压储罐不是特种设备，若为压力储罐请在台账写明「压力容器」`);
     else if (!category && rawCat) warnings.push(`${r._sheet} 第${r._row}行 设备类别「${rawCat}」无法识别为六类特种设备之一（按设备品种中文写法：压力容器/压力管道/锅炉/安全阀/起重机械/场内机动车辆）`);
     if (!category && !rawCat) warnings.push(`${r._sheet} 第${r._row}行 设备类别为空`);
-    if (filterCat && category !== filterCat) { filteredOut++; continue; }
+    if (filterCat && category !== filterCat) { filteredOut++; filteredTags.add(tag); continue; }
 
     const rawGrade = C.str(r['安全状况等级']);
     const grade = normGrade(r['安全状况等级']);
@@ -403,11 +405,14 @@ function main() {
       const ir = C.toRecords(irows, ['位号', '整改项'], '整改项', ['设备名称', '要求完成日期', '整改状态', '责任人', '设备类别'], warnings, ALIASES);
       openIssues = [];
       const known = new Set(items.map((x) => x.tag));
+      let issuesFiltered = 0;
       for (const r of ir) {
         const tag = C.str(r['位号']);
         if (!tag) { warnings.push(`${r._sheet} 第${r._row}行 位号为空，已跳过`); continue; }
         const st = C.str(r['整改状态']);
         if (st && /^(已完成|完成|已整改|已闭环|闭环|关闭|是)$/.test(st)) continue;
+        // 设备在台账中、只是被 --category 排除：不计入本次统计，也不报「不在台账」
+        if (!known.has(tag) && filteredTags.has(tag)) { issuesFiltered++; continue; }
         const due = C.normDate(r['要求完成日期']);
         if (C.str(r['要求完成日期']) && !due) warnings.push(`${r._sheet} 第${r._row}行 要求完成日期「${C.str(r['要求完成日期'])}」无法解析`);
         const od = due ? C.diffDays(date, due) : null;
@@ -419,6 +424,7 @@ function main() {
           inLedger: known.has(tag), sheet: r._sheet, row: r._row,
         });
       }
+      if (issuesFiltered) warnings.push(`已按 --category ${filterCat} 过滤，其他类别设备的 ${issuesFiltered} 项未闭环整改项未纳入本次统计`);
       openIssues.sort((x, y) => (y.overdueDays || 0) - (x.overdueDays || 0) || x.tag.localeCompare(y.tag, 'zh'));
     }
   } else {

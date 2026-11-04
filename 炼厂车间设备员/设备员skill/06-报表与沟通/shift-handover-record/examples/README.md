@@ -15,6 +15,16 @@
 | 6 | 连着两次交接都没处理，第三次还能看到最早那条吗 | 用第 2 步产出的 `handover.json` 作为下一次 `--prev`，连做两次（可换 `--type 休假交接` / `调岗交接`） | `--prev <上次 handover.json>` | 第三次仍列出 P-1105A，来源仍为最初的「2026-09-20 值班交接」，原始期限未变，`carryTimes` 累加 |
 | 7 | 把交接记录里没做完的事直接进我的待办 | 第 2 步产出的 `handover.json` | 交 `worklog-todo-manager --input handover.json` | 按 `meta.skill` 识别为「工作交接」来源，pending 逐条纳入待办，期限原样 |
 
+## MCP 取数对照
+
+两个工具都要填 workshop（导出表没有车间列，不填会混入其他车间的缺陷和在修设备，并带进下游待办）。「本次记录」csv 放目录 A 作 `--input`，「在修设备」csv 放目录 B 作 `--inrepair`。预期结果只列每天都稳定的剧本结论。
+
+| # | 示例问题 | MCP 调用 | 运行参数 | 预期结果 |
+|---|---|---|---|---|
+| M1 | 常减压车间今天 8:30 值班交接 | 设备资产管理 `get_notifications`（workshop=常减压车间，for_skill=shift-handover-record）→ 目录 A；`get_work_orders`（同上）→ 目录 B | `--input <A> --inrepair <B> --workshop 常减压车间 --type 值班交接 --time <今天>T08:30:00+08:00 --by 赵三 --to 吴七` | 本次记录与在修设备只有常减压车间位号（不含 P-5201A、E-5101 等加氢车间设备）；E-1201 同时在未完成事项与在修设备中；未给 `--prev`，warning 提示无法核对遗留事项 |
+| M2 | 加氢车间今天 17:00 休假交接 | 同 M1，workshop=加氢车间 | `--workshop 加氢车间 --type 休假交接 --time <今天>T17:00:00+08:00 --by 郑八` | 只有加氢车间位号，无 E-1201 |
+| M3 | 次日 8:30 再交接，结转并转待办 | 同 M1 | M1 参数改 `--time <明天>T08:30:00+08:00 --by 吴七 --prev <M1 的 handover.json>`；产出再交 `worklog-todo-manager --input <handover.json>` | E-1201 结转为「上次交接遗留，本次已跟进但未闭环」，来源记回 M1 那次交接；待办来源 1 个，条数等于 `pending` 条数 |
+
 ## 关键验证点
 
 1. **无对应记录必结转**：P-1105A 在本次记录中完全没有出现，必须原样结转并标注「上次交接遗留，本次未处理」，保留最初来源与原始要求完成时间。

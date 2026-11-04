@@ -158,6 +158,11 @@ function main() {
   const dualGuard = recs.hasCol('属地监护人') || recs.hasCol('作业单位监护人');
 
   const works = [];
+  // 检测日窗口 [D 00:00, D+1 00:00)：有效期判定、重叠分钟与并行时段都截到这一天
+  const day0 = R.toMinutes(`${date} 00:00`), day1 = day0 + 1440;
+  const clipText = (dt, isEnd) => { const m = R.toMinutes(dt); return m === null ? dt : minToText(isEnd ? Math.min(m, day1) : Math.max(m, day0)); };
+  /** 截到检测日的时段（只用于重叠判定与并行时段，作业清单仍显示作业票原始起止时间） */
+  const inDay = (w) => ({ start: w.start ? clipText(w.start, false) : null, end: w.end ? clipText(w.end, true) : null });
   const skipped = [];
   for (const r of recs) {
     const id = C.str(r['作业编号']);
@@ -165,7 +170,13 @@ function main() {
     const typeText = `${C.str(r['作业类型'])} ${C.str(r['作业内容描述'])}`;
     const types = R.classifyTypes(typeText);
     const start = C.normDateTime(r['开始时间']);
-    const end = C.normDateTime(r['结束时间']);
+    let end = C.normDateTime(r['结束时间']);
+    // 结束时间只写日期（无时分、Excel 日期序列号无小数）时按当日 24:00 处理，即次日 00:00；不得补成当日 00:00 而把当天的作业跳过
+    if (end && endDateOnly(r['结束时间'])) {
+      const nd = C.addDays(end.slice(0, 10), 1);
+      warnings.push(`作业「${id}」结束时间只写日期「${end.slice(0, 10)}」，按当日 24:00（${nd} 00:00）处理，请核实作业票实际结束时刻`);
+      end = `${nd} 00:00`;
+    }
     if (r['开始时间'] && !start) warnings.push(`工作表「作业清单」第${r._row}行 开始时间「${C.str(r['开始时间'])}」无法解析`);
     if (r['结束时间'] && !end) warnings.push(`工作表「作业清单」第${r._row}行 结束时间「${C.str(r['结束时间'])}」无法解析`);
     if (!start) warnings.push(`作业「${id}」开始时间缺失或无法解析，与其他作业的时段关系将标为未判定`);
@@ -173,9 +184,10 @@ function main() {
     if (start && end && R.toMinutes(end) <= R.toMinutes(start)) {
       warnings.push(`作业「${id}」结束时间不晚于开始时间（${start} → ${end}），请核实作业票时段`);
     }
-    if (start && start.slice(0, 10) !== date && end && end.slice(0, 10) !== date) {
-      warnings.push(`作业「${id}」起止时间（${start} → ${end}）均不在检测日期 ${date}，已跳过`);
-      skipped.push({ id, start, end, reason: `起止时间均不在检测日期 ${date}` });
+    // 有效期不覆盖检测日（结束不晚于检测日 00:00，或开始不早于次日 00:00）才跳过；前一天开、后一天结束的多日票检测日全天有效，照常参与判定
+    if (start && end && R.toMinutes(start) !== null && R.toMinutes(end) !== null && (R.toMinutes(end) <= day0 || R.toMinutes(start) >= day1)) {
+      warnings.push(`作业「${id}」起止时间（${start} → ${end}）不在检测日期 ${date}、有效期也不覆盖该日，已跳过`);
+      skipped.push({ id, start, end, reason: `起止时间不在检测日期 ${date}、有效期不覆盖该日` });
       continue;
     }
 
@@ -216,7 +228,7 @@ function main() {
       row: r._row,
     });
   }
-  if (!works.length) throw new Error('作业清单中没有可检测的作业记录（作业编号均为空，或起止时间均不在检测日期）');
+  if (!works.length) throw new Error('作业清单中没有可检测的作业记录（作业编号均为空，或有效期均不覆盖检测日期）');
 
   if (floorDerived.length) warnings.push(`${floorDerived.length} 项作业的标高按「层」写法折算（层高按 ${FLOOR_HEIGHT} 米，--floor-height 可调）：${floorDerived.map((x) => `${x.id}「${x.raw}」→ ${x.elev} 米`).join('；')}，为推断值，待确认`);
   const dupIds = works.map((w) => w.id).filter((x, i, arr) => arr.indexOf(x) !== i);
@@ -227,7 +239,7 @@ function main() {
   for (let i = 0; i < works.length; i++) {
     for (let j = i + 1; j < works.length; j++) {
       const A = works[i], B = works[j];
-      const ov = R.timeOverlap(A, B, windowMin);
+      const ov = R.timeOverlap(inDay(A), inDay(B), windowMin);
       const rel = R.spatialRelation(A, B);
       const pairLabel = `${A.id} × ${B.id}`;
 
@@ -302,6 +314,7 @@ function main() {
 
   // ---- 资源冲突：同一资源被多项同时段作业占用
   const resourceConflicts = [];
+  const craneSkipped = new Map();
   for (const f of R.RESOURCE_FIELDS) {
     if (!ruleEnabled(f.ruleId)) continue;
     const byVal = new Map();
@@ -309,6 +322,8 @@ function main() {
       const v = w[f.key];
       if (!v) continue;
       for (const one of v.split(/[、，,;；\/]/).map((x) => x.trim()).filter(Boolean)) {
+        // Z2 只比对起重类设备（或吊装作业所用设备），普通机具同名不算同一台起重设备
+        if (f.key === 'craneId' && !R.craneEligible(w, one)) { craneSkipped.set(one, (craneSkipped.get(one) || 0) + 1); continue; }
         if (!byVal.has(one)) byVal.set(one, []);
         byVal.get(one).push(w);
       }
@@ -319,7 +334,7 @@ function main() {
       let anyUndet = false;
       for (let i = 0; i < list.length; i++) {
         for (let j = i + 1; j < list.length; j++) {
-          const ov = R.timeOverlap(list[i], list[j], windowMin);
+          const ov = R.timeOverlap(inDay(list[i]), inDay(list[j]), windowMin);
           if (ov.overlap === null) { anyUndet = true; continue; }
           if (ov.overlap) pairs.push({ pair: [list[i].id, list[j].id], overlapMinutes: ov.minutes, overlapReason: ov.reason });
         }
@@ -345,18 +360,22 @@ function main() {
     }
   }
 
+  const craneShared = [...craneSkipped].filter(([, n]) => n >= 2).map(([v]) => v);
+  if (craneShared.length) warnings.push(`使用设备「${craneShared.join('」「')}」不属于起重设备、所在作业也不是吊装作业，同名不按同一台起重设备判 Z2；如确需协调机具，请人工核对`);
+
   // ---- 排序：严重度高者在前
   const bySev = (x, y) => (R.SEV_ORDER[y.severity] || 0) - (R.SEV_ORDER[x.severity] || 0) || String(x.pairLabel || x.resource).localeCompare(String(y.pairLabel || y.resource), 'zh');
   spatialConflicts.sort(bySev);
   riskConflicts.sort(bySev);
   resourceConflicts.sort(bySev);
 
-  // ---- 时段重叠视图（timeline）
+  // ---- 时段重叠视图（timeline）：start/end 为作业票原始起止，startMin/endMin 与并行时段截到检测日
   const timeline = works
-    .map((w) => ({
+    .map((w) => ({ w, d: inDay(w) }))
+    .map(({ w, d }) => ({
       id: w.id, typeCn: w.typeCn, area: w.area || null, elev: w.elev,
       start: w.start, end: w.end, unit: w.unit || null, guard: w.guard || null,
-      startMin: R.toMinutes(w.start), endMin: R.toMinutes(w.end),
+      startMin: R.toMinutes(d.start), endMin: R.toMinutes(d.end), dayStart: d.start, dayEnd: d.end,
       concurrent: [],
       timeUndetermined: !w.start || !w.end,
     }))
@@ -365,7 +384,7 @@ function main() {
     for (const o of timeline) {
       if (o.id === t.id) continue;
       const ov = R.timeOverlap(
-        { start: t.start, end: t.end }, { start: o.start, end: o.end }, windowMin);
+        { start: t.dayStart, end: t.dayEnd }, { start: o.dayStart, end: o.dayEnd }, windowMin);
       if (ov.overlap === true) t.concurrent.push(o.id);
     }
   }
@@ -534,6 +553,12 @@ function briefOf(w) {
     craneId: w.craneId || null, circuit: w.circuit || null, fireCover: w.fireCover || null,
     row: w.row,
   };
+}
+/** 原始单元格只有日期、没有时分 */
+function endDateOnly(v) {
+  if (v === null || v === undefined || v === '') return false;
+  if (typeof v === 'number') return v % 1 === 0;
+  return !/\d{1,2}:\d{2}/.test(String(v));
 }
 function minToText(m) {
   const d = new Date(m * 60000);

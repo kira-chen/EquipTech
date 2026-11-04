@@ -28,3 +28,13 @@
 node scripts/make-sample.js --out examples            # 默认 seed=1
 node scripts/make-sample.js --out examples --seed 7   # 票号/时间/人名变化，计数不变
 ```
+
+## MCP 取数对照
+
+> 平台接入作业票系统 MCP 时不上传附件。`get_permit_document` 返回 `<许可证编号>.docx` 与 `<许可证编号>.permit.json`，下载到同一个新建目录。docx 由源技能 `docx2text.js` 抽文本后由平台模型按源技能抽取规则生成 permit.json；下表核验时以工具附带的真值 permit.json 代替模型抽取结果。预检基准时间取当前时间，过了票面结束时间会多出有效期类不符合项，下表只列与时刻无关的结论。
+
+| # | 示例问题 | MCP 调用 | 运行参数 | 预期结果 |
+|---|---|---|---|---|
+| M1 | 今天 E-1201 抽芯检修那张一级用火票，从作业票系统调出来预检 | 作业票系统 `get_permits`（workshop=常减压车间）→ `get_permit_document`（permit_no=当天 E-1201 用火作业票，YH-<当天日期>-…） | `check-dependency.js` → 源技能 `docx2text.js --input <票号>.docx` → 抽取 permit.json → 源技能 `precheck.js --input permit.json --out <dir>` → `merge-report.js --result <dir>/result.json --object <票号>` | 依赖可用；docx 文本含票号与 E-1201；字段表 type 原值「动火」、加注「用火作业」、级别一级；必须整改含 HW-019「受限空间内动火，未关联受限空间作业票」（票面勾选了受限空间内动火）；未判定 0；车间侧三项全部「未核实」；merge-report 无 warning |
+| M2 | E-1201 管束抽芯的吊装票，提交审批前自查 | 作业票系统 `get_permits`（workshop=常减压车间）→ `get_permit_document`（permit_no=当天 E-1201 吊装作业票，DZ-<当天日期>-…） | 同 M1 | type「吊装」加注「吊装作业」、级别三级；必须整改含 G-014（作业人员资质证书编号未填写）与 LF-007（缺少持证起重机械操作人员）；未判定 0；车间侧三项全部「未核实」 |
+| M3 | P-3101A 今天的临时用电票能否调出来预检 | 作业票系统 `get_permits`（workshop=常减压车间）→ `get_permit_document`（permit_no=当天 P-3101A 临时用电作业票，LD-<当天日期>-…） | 不运行脚本 | 工具报错「临时用电作业 暂无 Word 版式」；按 SKILL.md 请用户上传票面，不预检、不自行判定 |

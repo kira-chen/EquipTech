@@ -25,10 +25,13 @@ function normRepairType(v) {
 // 通用资料（所有检修类型）：检修方案、作业票、检修记录、验收单为必备
 const COMMON = [
   { key: 'plan', name: '检修方案', patterns: /方案|施工方案|检修方案|作业指导书|抢修方案/, mandatory: true },
-  { key: 'permit', name: '作业许可（作业票）', patterns: /作业票|作业证|作业许可|用火|动火票|受限空间|高处作业|吊装作业|临时用电|盲板|动土|断路/, mandatory: true },
+  // 作业票为必备：只认「作业票/作业证/作业许可/许可证」字样，或作业票系统的许可证编号命名（YH 用火、SX 受限空间、GC 高处、DZ 吊装、LD 临时用电、DT 动土、DL 断路、MB 盲板抽堵）；
+  // 不认裸「用火/盲板/受限空间」——盲板台账、用火分析单不是作业票，误归会掩盖作业票缺失
+  { key: 'permit', name: '作业许可（作业票）', patterns: /作业票|作业证|作业许可|许可证|动火票|用火票|(?<![A-Za-z])(YH|DH|SX|GC|DZ|LD|DT|DL|MB)-?\d{6,}/, mandatory: true },
   { key: 'handover', name: '设备交出单', patterns: /交出单|交出|设备交出/, mandatory: false },
   { key: 'record', name: '检修记录卡', patterns: /检修记录|施工记录|作业记录|检修日志|记录卡/, mandatory: true },
-  { key: 'acceptance', name: '验收单', patterns: /验收|验收单|竣工验收|完工验收/, mandatory: true },
+  // 「质量验收记录（H/W 点见证）」是过程质量记录，不顶完工验收单；但带「验收单/完工验收/竣工验收」字样的（如「检修质量验收单」）仍是验收单
+  { key: 'acceptance', name: '验收单', patterns: /验收单|完工验收|竣工验收|(?<!质量)验收/, mandatory: true },
   { key: 'photo', name: '检修照片', patterns: /照片|图片|影像|现场记录|\.(jpe?g|png)$/i, mandatory: false },
 ];
 
@@ -58,7 +61,7 @@ const BY_TYPE = {
 const BY_SCOPE = [
   { key: 'material', name: '材质证明书', patterns: /材质|质保书|合格证|材质证明|质量证明/, mandatory: false, when: 'material' },
   { key: 'weld', name: '焊接记录与焊工资质', patterns: /焊接|焊工|焊缝|WPS|PQR/, mandatory: false, when: 'weld' },
-  { key: 'ndt', name: '无损检测报告', patterns: /无损|探伤|NDT|RT|UT|MT|PT|射线|超声/, mandatory: false, when: 'ndt' },
+  { key: 'ndt', name: '无损检测报告', patterns: /无损|探伤|NDT|(?<![A-Za-z])(RT|UT|MT|PT)(?![A-Za-z])|射线|超声/, mandatory: false, when: 'ndt' },
   { key: 'pressure', name: '试压记录', patterns: /试压|压力试验|水压|气密|强度试验/, mandatory: false, when: 'pressure' },
   { key: 'trial', name: '试运记录', patterns: /试运|试车|运转|空负荷|负荷试运/, mandatory: false, when: 'trial' },
 ];
@@ -68,7 +71,7 @@ const SPECIAL_EQUIPMENT = [
   { key: 'seInspect', name: '特种设备检验报告', patterns: /检验报告|定期检验|检验结论/, mandatory: true },
   { key: 'seMaterial', name: '承压件材质证明书', patterns: /材质|质保书|材质证明|质量证明书/, mandatory: true },
   { key: 'seWeld', name: '焊工资质证明与焊接记录', patterns: /焊工|焊接记录|焊工资质|持证/, mandatory: true },
-  { key: 'seNdt', name: '无损检测报告', patterns: /无损|探伤|NDT|RT|UT|MT|PT/, mandatory: true },
+  { key: 'seNdt', name: '无损检测报告', patterns: /无损|探伤|NDT|(?<![A-Za-z])(RT|UT|MT|PT)(?![A-Za-z])/, mandatory: true },
   { key: 'sePressure', name: '耐压试验记录', patterns: /试压|耐压|压力试验|水压试验/, mandatory: true },
 ];
 

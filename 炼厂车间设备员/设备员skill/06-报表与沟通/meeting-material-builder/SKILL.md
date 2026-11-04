@@ -25,6 +25,21 @@ metadata:
 - 必填信息：会议名称与类型、汇报时长、听众层级（车间 / 分厂 / 公司）。可选：厂内层级名称与详略档位（`--audience-spec`）、时间权重（`--weights`）、议题要求、上次会议遗留事项、需协调事项、是否一律去位号（`--hide-tags`）。
 - 环境：可执行 Node.js ≥ 18（用于从数据文件提取要点）。**若环境无法执行 node（无 Bash 工具或 `node --version` 失败），明确告知用户并终止，不得基于文字手工拼稿或自行提取数字。**
 
+## 数据获取（MCP）
+
+本技能不直接调用 MCP，读上游技能产出的 JSON。平台接入了业务系统 MCP 服务时，先按各上游技能 SKILL.md「数据获取（MCP）」一节取数并运行，再把产出用逗号拼接后交给本技能 `--input`：
+
+- work-order-tracker 的 orders.json
+- hazard-closure-tracker 的 hazard.json
+- inspection-data-digest 的 status.json
+- defect-intake-grading 的 defects.json
+- equipment-daily-report 的 daily.json
+- equipment-weekly-monthly-report 的 periodic.json
+
+用户只要其中几项时，只运行对应的上游技能。
+
+上游取数时每个工具都要填 `workshop`（车间名）：业务系统导出表里没有车间列，上游脚本的 `--workshop` 只写标题、不筛选，不填会把别的车间的设备和单据汇进本车间的会议材料。
+
 ## 操作步骤
 1. **确认会议要素** —— 会议类型、时长、听众层级、议题要求。**听众层级决定详略：车间级可含具体位号与细节，分厂级含关键位号，公司级只讲结论、指标与需决策事项并去位号。不确定时必须确认，不得按最详细处理。**
 2. **提取汇报要点** —— 技能目录以平台实际加载路径为准（Windows 路径加双引号）：
@@ -35,6 +50,8 @@ metadata:
    读取末行 JSON 摘要（同时写入 `<out>/summary.json`）：`ok` 必须为 `true`，`ok:false` 时把 `error` 告知用户并终止；`warnings` 非空时逐条告知用户（数据文件无法识别/议题无对应数据/时长与内容量不匹配等）。脚本用法详见 `scripts/README.md`。
    - 议题在数据中无对应内容：列入 `noData` 并在稿中写"该议题暂无数据支撑，需补充"，**绝不编造内容填充**。
    - `periodic.json` 中"需按厂内口径复算"的指标会进问题项，汇报时写"未计算"，不得补数。
+   - 责任方写单位、不点人名：`periodic.json` 超期工单有工作中心的写工作中心；只有责任人姓名的（旧版 periodic.json、检修计划责任人）脚本已去掉人名并 warning，成稿不得补回姓名。
+   - 公司层级（或 `--hide-tags`）时，`--need-decision`、`--pending` 里的位号、工单号同样去掉，成稿保持去位号后的写法。
 3. **读取 outline.json** —— 从 `<输出目录>/outline.json` 获取：`keyPoints`（按议题组织的要点及数据来源）、`metrics`（关键指标，带来源）、`issues`、`needDecision`、`pending`、`noData`、`timeAllocation`（含权重与来源）、`slides`（逐页标题与要点，供 pptx 技能/工具转换）。
 4. **撰写汇报稿** —— 按 `references/meeting-rules.md` 中对应听众层级的表述口径成文。结构：开场（一句话结论）→ 关键指标 → 主要工作 → 存在问题 → 需协调决策事项 → 下步打算。**每个数字后标注来源报表；存在问题部分只陈述事实与影响，不做责任归因；需决策事项必须写清"请求决策的具体内容与可选方案"。**
 5. **交付前自检** —— 对照 `references/checklist.md` 逐项检查；通过后交付 `汇报稿.md` 与 `要点提纲.md`。用户需要 PPT 时：**把 `outline.json` 的 `slides` 交给 pptx 相关技能或工具转换，不得手写 pptx XML。**

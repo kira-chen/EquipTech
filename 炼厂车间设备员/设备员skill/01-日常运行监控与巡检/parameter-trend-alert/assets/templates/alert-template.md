@@ -17,13 +17,14 @@
 | 趋势恶化 | {{counts.deteriorating}} |
 | 趋势稳定 | {{counts.stable}} |
 | 数据不足（<3 期） | {{counts.insufficientData}} |
+| 停运中（不判定） | {{counts.stopped}} |
 | 数值无法解析的采集点 | {{counts.invalidPoints}} |
 | 采集时间重复 | {{counts.duplicateTimes}} |
 
 ## 二、已越限
 
 {{table:overLimit}}
-（列：tag（pointTag）| name | param | unit | lastValue | lastTime | limitLevelText | limitValue | exceedBy）
+（列：tag（pointTag）| name | param | unit | lastValue | lastTime | limitLevelText（停运设备后标「（停运中）/（疑似停运）」）| limitValue | exceedBy）
 
 ## 三、趋势恶化
 
@@ -42,12 +43,20 @@
 {{table:insufficientData}}
 （列：tag（pointTag）| name | param | periodsUsed | lastValue | lastTime | note）
 
+### 停运中（不判定）
+
+（仅 `stopped` 非空时出现）
+{{table:stopped}}
+（列：tag（pointTag）| name | param | unit | lastValue | lastTime | runState（停运中/疑似停运）| runStateBasis）
+
 ### 数据质量明细
 
 {{table:items[].invalidPoints}}
 {{table:items[].duplicateTimes}}
 
 ## 六、趋势研判与建议
+
+（`counts.excludedStoppedPoints` > 0 时脚本在此写说明行：已剔除停机期 {{counts.excludedStoppedPoints}} 个点……）
 
 <!-- ANALYSIS_START -->
 （模型撰写 200~400 字）

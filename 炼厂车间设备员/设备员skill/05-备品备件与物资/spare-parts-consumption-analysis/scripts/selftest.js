@@ -112,6 +112,13 @@ ok(/本技能不断言原因/.test(r.md), 'F6 md 声明不断言原因');
 ok(!/因为|由于|说明.*故障|表明/.test((r.md.match(/## [六七]、异常增长项[\s\S]*?##/) || [''])[0]), 'F7 异常节无归因表述');
 // B-01 本期4套 上期4套，不应异常
 ok(!r.j.anomalies.some((x) => x.code === 'B-01'), 'F8 持平的备件不报异常');
+// 基期没有消耗、本期新出现的备件（C-01 润滑油、D-01 螺栓）：无倍数可算，单列提示，不静默漏掉、也不计入异常
+const newCodes = ((r.j && r.j.newInPeriod) || []).map((x) => x.code).sort().join(',');
+eq(newCodes, 'C-01,D-01', 'F16 基期无消耗、本期新出现的备件单列 newInPeriod');
+ok(((r.j && r.j.newInPeriod) || []).some((x) => x.code === 'C-01' && x.unit === 'L' && x.current === 20), 'F17 newInPeriod 带单位与本期数量');
+ok(!r.j.anomalies.some((x) => x.code === 'C-01'), 'F18 本期新出现的备件不计入异常增长（无倍数）');
+ok(/基期无消耗、本期新出现/.test(r.md || ''), 'F19 md 异常节列出基期无消耗、本期新出现的备件');
+eq(r.s.counts.newInPeriod, 2, 'F20 counts.newInPeriod 计数');
 
 // 上期只有 1 个月 → 归一后倍数应下降
 pr = run(['--input', PREV_SRC, '--workshop', '测试车间', '--from', '2026-04-01', '--to', '2026-04-30'], 'prev1m');
@@ -125,6 +132,7 @@ ok(!a01n || a01n.currentPerDay !== null, 'F12 归一时输出日均值');
 // 未提供上期 → null 不是 0
 r = run(['--input', OUT, ...BASE], 'noprev');
 eq(r.s.counts.anomalies, null, 'F13 未提供上期时异常为 null 不是 0');
+eq(r.s.counts.newInPeriod, null, 'F13b 未提供上期时 newInPeriod 为 null 不是 0');
 ok(/不做异常增长识别/.test(r.md), 'F14 md 说明未做异常识别');
 // 阈值可调
 r = run(['--input', OUT, ...BASE, '--prev', path.join(run(['--input', PREV_SRC, '--workshop', 'X', '--from', '2026-04-01', '--to', '2026-06-30'], 'prevb').out, 'consumption.json'), '--anomaly-ratio', '10'], 'highratio');
@@ -231,6 +239,7 @@ r = run(['--input', OUT, ...BASE, '--prev-from', '2020-01-01', '--prev-to', '202
 eq(r.s.ok, true, 'K35 基期无记录不中断');
 ok(r.j.warnings.some((w) => /基期.*没有出库记录/.test(w)), 'K36 基期无记录 warning');
 eq(r.s.counts.anomalies, 0, 'K37 基期无记录时异常为 0（有基期但无可比项）');
+eq(r.s.counts.newInPeriod, 0, 'K37b 基期整段无记录时不把本期全部备件列为新出现（无可比基期）');
 // 「设备编号」不作位号别名
 const EQNO = mk('eqno.xlsx', { '出库记录': [['出库日期', '备件编码', '数量', '设备编号'], ['2026-08-01', 'A-01', 1, '10001234']] });
 r = run(['--input', EQNO, ...BASE], 'eqno');
@@ -258,6 +267,31 @@ ok(fs.existsSync(path.join(r.out, '消耗统计表.xlsx')), 'J4 消耗统计表.
 const xb = readXlsx(path.join(r.out, '消耗统计表.xlsx'));
 ok(xb['按设备'] && xb['按备件'] && xb['按月份'] && xb['未归属'], 'J5 xlsx 含四张表');
 ok(xb['未归属'].length >= 2, 'J6 未归属表含数据');
+
+// ============ U. 两期单位不同：单列 unitMismatch，不算本期新出现（2026-11-04 复核补充） ============
+const UNIT2 = mk('unit2.xlsx', {
+  '出库记录': [['出库日期', '备件编码', '备件名称', '数量', '单位', '位号'],
+    ['2026-04-10', 'U-01', '垫片', 10, '片', 'E-01'],      // 基期按「片」
+    ['2026-04-12', 'U-02', '螺栓', 0, '个', 'E-01'],       // 基期有编码但数量为 0
+    ['2026-07-10', 'U-01', '垫片', 2, '包', 'E-01'],       // 本期按「包」
+    ['2026-07-12', 'U-02', '螺栓', 8, '个', 'E-01'],
+    ['2026-07-15', 'U-03', '填料', 3, '盘', 'P-01'],       // 基期完全没有
+    ['2026-07-16', 'A-01', '机械密封', 1, '套', 'P-01'],
+    ['2026-04-16', 'A-01', '机械密封', 1, '套', 'P-01']],
+});
+r = run(['--input', UNIT2, ...BASE, '--prev-from', '2026-04-01', '--prev-to', '2026-06-30'], 'unit2');
+eq(((r.j && r.j.newInPeriod) || []).map((x) => x.code).sort().join(','), 'U-02,U-03', 'U1 基期没有该编码、或该编码基期全部单位数量为 0 才算本期新出现');
+ok(!((r.j && r.j.newInPeriod) || []).some((x) => x.code === 'U-01'), 'U2 基期有消耗只是单位不同的不列为新出现');
+{
+  const um = ((r.j && r.j.unitMismatch) || []).find((x) => x.code === 'U-01');
+  ok(um && um.unit === '包' && um.current === 2 && /片/.test(JSON.stringify(um.prevUnits || [])), 'U3 单位不同单列 unitMismatch，带本期单位与基期单位');
+  ok(um && /两期单位不同、不可比/.test(um.note), 'U4 unitMismatch 写明两期单位不同、不可比');
+}
+eq(r.s.counts.unitMismatch, 1, 'U5 counts.unitMismatch 计数');
+ok(/两期单位不同、不可比/.test(r.md || ''), 'U6 md 异常节列出两期单位不同项');
+ok(!r.j.anomalies.some((x) => x.code === 'U-01'), 'U7 单位不同项不计入异常增长');
+r = run(['--input', OUT, ...BASE], 'unit-noprev');
+eq(r.s.counts.unitMismatch, null, 'U8 未提供基期时 unitMismatch 为 null 不是 0');
 
 console.log(`\n${'='.repeat(56)}`);
 console.log(`spare-parts-consumption-analysis 自测：${pass} 通过，${fail} 失败`);

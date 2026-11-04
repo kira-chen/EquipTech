@@ -50,8 +50,16 @@ function readDocFile(p, warnings) {
     }
     return out;
   }
-  warnings.push(`资料「${base}」扩展名「${ext || '无'}」不支持（支持 .md/.txt/.docx），已跳过`);
+  warnings.push(skipNote(base, ext));
   return out;
+}
+
+/** 不读的文件统一提示：PDF 指明前置步骤，其余写明支持的格式 */
+const PDF_NOTE = '本脚本不读 PDF：请先用平台 pdf 技能转为 txt/docx 再传入（扫描件需 OCR）';
+function skipNote(base, ext) {
+  return ext === '.pdf'
+    ? `资料「${base}」为 PDF，${PDF_NOTE}，已跳过`
+    : `资料「${base}」扩展名「${ext || '无'}」不支持（支持 .md/.txt/.docx），已跳过`;
 }
 
 /** 展开资料路径：文件直接返回；目录返回其中受支持的文件（不递归子目录） */
@@ -60,9 +68,10 @@ function expandDocPaths(spec, warnings) {
   for (const raw of String(spec).split(',').map((x) => x.trim()).filter(Boolean)) {
     if (!fs.existsSync(raw)) throw new Error(`资料路径不存在: ${raw}`);
     if (fs.statSync(raw).isDirectory()) {
-      const inner = fs.readdirSync(raw)
-        .filter((f) => /\.(md|txt|docx|csv)$/i.test(f) && !f.startsWith('~$'))
-        .map((f) => path.join(raw, f)).sort();
+      const all = fs.readdirSync(raw).filter((f) => !f.startsWith('~$') && !f.startsWith('.') && fs.statSync(path.join(raw, f)).isFile()).sort();
+      const inner = all.filter((f) => /\.(md|txt|docx|csv)$/i.test(f)).map((f) => path.join(raw, f));
+      // 目录里不读的文件不静默丢弃：逐个 warning，用户才知道哪份资料没进来
+      for (const f of all.filter((x) => !/\.(md|txt|docx|csv)$/i.test(x))) warnings.push(skipNote(f, path.extname(f).toLowerCase()));
       if (!inner.length) warnings.push(`资料目录「${raw}」中没有受支持的文件（.md/.txt/.docx）`);
       files.push(...inner);
     } else {
@@ -123,4 +132,4 @@ function citeOf(src) {
   return `${src.file}${c ? ' ' + c : ''}（${src.loc}）`;
 }
 
-module.exports = { readDocFile, expandDocPaths, extractClauses, citeOf, CLAUSE_RE };
+module.exports = { readDocFile, expandDocPaths, extractClauses, citeOf, CLAUSE_RE, PDF_NOTE };

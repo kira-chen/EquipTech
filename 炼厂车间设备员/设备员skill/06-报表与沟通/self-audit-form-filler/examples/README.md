@@ -9,11 +9,21 @@
 |---|---|---|---|---|
 | 1 | 这张设备专项自查表帮我预填一下，台账在这 | `sample-self-audit-form.xlsx` + `sample-ledger-data.xlsx` | `--workshop 常减压车间 --period 2026-09-30` | 15 项：5 预填、8 需判断、2 缺数据、0 无法解析 |
 | 2 | 这张表合并单元格比较多，能读吗 | `sample-form-merged.xlsx` + `sample-ledger-data.xlsx` | 同上 | `needConfirm:true`，8 处合并；md 开头出现「结构复杂先确认」提示 |
-| 3 | 这张表全是「是否健全」「是否到位」这种，能填吗 | `sample-form-all-judgment.xlsx` + `sample-ledger-data.xlsx` | `--workshop 车间` | 6 项全部 `needJudgment`，预填数 0，`cellsWritten` 为 0 |
-| 4 | 台账刚建还没录数据，先试着填一下 | `sample-self-audit-form.xlsx` + `sample-ledger-empty.xlsx` | `--workshop 车间` | 预填 0；7 个客观项全部落入 `noData`，无一项被填「符合」 |
+| 3 | 这张表全是「是否健全」「是否到位」这种，能填吗 | `sample-form-all-judgment.xlsx` + `sample-ledger-data.xlsx` | `--workshop 车间 --period 2026-09-30` | 6 项全部 `needJudgment`，预填数 0，`cellsWritten` 为 0 |
+| 4 | 台账刚建还没录数据，先试着填一下 | `sample-self-audit-form.xlsx` + `sample-ledger-empty.xlsx` | `--workshop 车间 --period 2026-09-30` | 预填 0；7 个客观项全部落入 `noData`，无一项被填「符合」 |
 | 5 | 不告诉自查时点，直接跑 | 主样例，去掉 `--period` | `--workshop 车间` | `ok:false`，报错要求传 `--period`（到期类不按脚本运行日默认） |
 | 6 | 这张考核表有标准分、得分、扣分、检查结论、自评列，预填时别碰 | `sample-form-scored.xlsx` + `sample-ledger-data.xlsx` | `--workshop 车间 --period 2026-09-30` | 3 项：2 预填（台账有无、到期计数）、1 需判断；得分/扣分/检查结论/自评/是否符合列全空，标准分原值保留，`meta.neverWriteCols` 列出 |
 | 7 | 自查表是 PDF | — | — | 先用平台 pdf 技能转为 docx/xlsx 再传 `--form`；直接传 PDF 报错并提示前置转换 |
+
+## MCP 取数对照
+
+自查表用平台知识库的三份模板（开发环境在 `MCPServer/test/kb/self-audit-form-filler/kb/`）。台账按 SKILL.md「数据获取（MCP）」取数：除人员证书外都填 workshop=常减压车间；按说明改名（特种设备检验台账、安全阀台账、缺陷台账、检修记录、检修计划、作业票台账），巡检记录补「巡检日期」列，放目录 A；隐患台账单放目录 B。`--data <A>,<B> --workshop 常减压车间 --period <今天>`。预期结果只列每天都稳定的结论。
+
+| # | 示例问题 | MCP 调用 | 运行参数 | 预期结果 |
+|---|---|---|---|---|
+| M1 | 设备专项自查表（xlsx）按今天台账预填 | 设备资产管理 `get_equipment_ledger`、`get_special_equipment`、`get_safety_valves`、`get_notifications`、`get_work_orders`、`get_maintenance_plans`；点检巡检App `get_inspection_records`；作业票系统 `get_permits`；HSE管理平台 `get_personnel_certificates`、`get_hazards` | `--form KB-自查表-设备专项自查表.xlsx` | 19 项：预填 12、需判断 4、缺数据 1（应急演练无数据源）、无法解析 2；「是否建立车间设备台账」为「有，60 条记录」；到期类只写「截至 <今天>：已过期 N、未到期 M」；是否符合、整改措施、责任人三列不写 |
+| M2 | 特种设备专项自查表（docx） | 同 M1 | `--form KB-自查表-特种设备专项自查表.docx` | 4 项：压力容器到期、上次检验日期取特种设备检验台账，安全阀到期取安全阀台账，共预填 3；「管理责任是否明确到人」需判断；出 xlsx 预填稿，不回写 docx 并 warning |
+| M3 | 安全大检查自查表（合并单元格） | 同 M1 | `--form KB-自查表-安全大检查-合并单元格.xlsx` | `needConfirm:true`，5 处合并；5 项：预填 4、需判断 1；设备台数 60 |
 
 ## 关键验证点
 

@@ -325,6 +325,23 @@ function categoryMatch(v, kinds, sourceKey) {
   });
 }
 
+/** 自查项问的是特种作业（含特种设备作业）人员的证书：只计特种作业类证书，不计入厂教育、体检、培训记录 */
+const wantsSpecialCert = (text) => /特种作业|持证|操作证|作业人员证|证书/.test(norm(text));
+/** 自查项要的是人数（按人去重，不按记录行数） */
+const wantsPersons = (text) => /人数|几人|[（(]人[）)]/.test(String(text || ''));
+const CERT_TYPE_FIELDS = { exact: ['证书类型', '证书名称', '证件类型', '证件名称', '资质类型', '资质名称', '证书种类'], contains: ['证书类型', '证书名称', '证件类型', '证件名称', '资质类型'] };
+const NAME_FIELDS = { exact: ['姓名', '人员姓名', '持证人', '持证人姓名', '员工姓名'], contains: ['姓名'] };
+const certTypeField = (header) => findHeader(header, CERT_TYPE_FIELDS);
+const nameField = (header) => findHeader(header, NAME_FIELDS);
+/** 证书类型归类：'cert' 特种作业类证书 / 'non' 入厂教育、体检、培训记录、资质证明等非证书记录 / null 不详 */
+function certClass(v) {
+  const t = norm(v);
+  if (!t) return null;
+  if (/教育|体检|健康|培训|证明$|记录$|告知|交底/.test(t)) return 'non';
+  if (/证|操作资格|作业资格/.test(t)) return 'cert';
+  return null;
+}
+
 const SOURCE_CN = new Map(SOURCES.map((s) => [s.key, s.name]));
 
 /**
@@ -379,4 +396,5 @@ module.exports = {
   STATUS_IN_USE, STATUS_NOT_IN_USE, SPECIAL_KINDS,
   norm, judgmentRules, objectiveRules, itemSources, sheetSource, pickTable, classify, checkFillValue,
   statusField, categoryField, statusClass, wantsInUse, itemSpecialKinds, categoryMatch,
+  wantsSpecialCert, wantsPersons, certTypeField, nameField, certClass,
 };

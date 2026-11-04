@@ -11,7 +11,7 @@
 | 2 | 上期的漏点台账在这里，这期哪些是新增的 | 主样例 + `sample-leak-ledger.xlsx` | 加 `--ledger examples/sample-leak-ledger.xlsx` | 新增 7 处、历史续跟踪 2 处；产出的 `ledger.xlsx` 共 16 条（本期 15 条 + 历史未复测 1 条 MFD-9001-001） |
 | 3 | 本月静密封点和动密封点泄漏率分别是多少 | 主样例 + `sample-seal-points.xlsx` | 加 `--seal-points examples/sample-seal-points.xlsx` | 静密封 5 / 1200 = 4.17‰，动密封 4 / 400 = 10‰；未给考核线 → 判定列「未判定（未提供厂内考核线）」，不写合格/不合格 |
 | 4 | 我们厂考核线静 0.5‰、动 2‰，这个月达没达标 | 主样例 + `sample-seal-points.xlsx` | 加 `--seal-points … --static-limit 0.5 --dynamic-limit 2` | 两项均标「**高于考核线**」；报告注明考核线由用户参数给定（厂内指标） |
-| 5 | 这是 LDAR 系统导出的表，列名是标签号、功能位置、设备那一套，能直接读吗 | `sample-leak-ldar-export.xlsx` | `--workshop 催化裂化车间 --date 2026-09-21` | 可读；8 条；「序号」列不被当作编号；功能位置→位号、设备→设备编号、工厂区段→装置；认定泄漏 5（静 2 / 动 3）；超期 1；延迟修复（经批准）1（LD-4402-0017）；未判定 2（LD-4403-0005 延迟修复无批准日期、LD-4404-0032 不可达点未检测）；「2600ppm」剥离单位后判泄漏 open；修复闭环 1（含复测日期） |
+| 5 | 这是 LDAR 系统导出的表，列名是标签号、功能位置、设备那一套，能直接读吗 | `sample-leak-ldar-export.xlsx` | `--workshop 催化裂化车间 --date 2026-09-21` | 可读；8 条；「序号」列不被当作编号；功能位置→位号、设备→设备编号、工厂区段→装置；认定泄漏 5（静 2 / 动 3）；超期 1；延迟修复（经批准）1（LD-4402-0017）；本底浓度列有值 → 一条「本底值仅登记，未从检测值中扣除」warning（6 行），报告口径处同句说明，判定不扣本底；未判定 2（LD-4403-0005 延迟修复无批准日期、LD-4404-0032 不可达点未检测）；「2600ppm」剥离单位后判泄漏 open；修复闭环 1（含复测日期） |
 | 6 | 这是系统导出的检测表，列名跟标准不一样，底下有合计行，能读吗 | `sample-leak-messy.xlsx` | `--workshop 污水车间 --date 2026-09-21` | 可读；4 条；合计行跳过并 warning；编号重复 MFD-2201-001 两条均保留并 warning；状态「待定」→ 未判定；「法兰成股流出」按可见泄漏认定 |
 | 7 | 我们厂重液按 300 判、首次修复给 3 天 | 主样例 | 加 `--threshold-liquid 300 --repair-days 3` | 报告标注「用户指定口径（已覆盖：--threshold-liquid、--repair-days）」；阈值与时限按用户口径重算 |
 | 8 | 这几个漏点都修完复测合格了，还用出报告吗 | `sample-leak-all-fixed.xlsx` | `--workshop 催化裂化车间 --date 2026-09-21` | 修复率 100.0%；开头不出现【注意】告警，改为「本期无超期未修漏点，亦无因数据缺失而未判定的记录」；合规提示行与制度出处行仍在 |
@@ -41,3 +41,12 @@
 node scripts/make-sample.js --out examples            # 默认 seed=1
 node scripts/make-sample.js --out examples --seed 7   # 检测时间与检测值变化，结论不变
 ```
+
+## MCP 取数对照
+
+平台接入业务系统 MCP 时不用附件：按 SKILL.md「数据获取（MCP）」调用工具，本期检测记录放目录 A、`scope=history` 的历史台账放目录 B、密封点总数放目录 C，两次 `get_leak_points` 都传 `workshop`，`--date` 用当天。演示数据每天按剧本刷新，预期结果只列每天稳定的结论。
+
+| # | 示例问题 | MCP 调用 | 运行参数 | 预期结果 |
+|---|---|---|---|---|
+| M1 | 常减压车间本轮 LDAR 登记漏点，对历史台账，看新增、超期、延迟修复 | HSE管理平台 `get_leak_points`（workshop=常减压车间）→ A；`get_leak_points`（workshop=常减压车间，scope=history）→ B | `--input A --ledger B --workshop 常减压车间 --date <今天>` | 认定泄漏全部为本期新增（无历史续跟踪）；超期未修 1 处：C-3101A 的 LD-LHR-0061；延迟修复（经批准）1 处：P-2106A 的 LD-CDU1-0031；期限内未修 V-3201；修复闭环 P-2105A、V-1201；E-1201 的 LD-CDU1-0037 介质状态为空 → 未判定并 warning，不按任一阈值默认；全部为仪器检测，无可见泄漏；工具导出的检测记录每行都带本底值 → 一条「本底值仅登记，未从检测值中扣除」warning，报告口径处同句说明，判定不扣本底 |
+| M2 | 算静/动密封点泄漏率并按考核线静 0.5‰、动 2‰ 判定 | 同 M1，另加 HSE管理平台 `get_seal_point_counts` → C | `--input A --ledger B --seal-points C --static-limit 0.5 --dynamic-limit 2 --workshop 常减压车间 --date <今天>` | 分母取密封点台账（静/动密封点数）；静密封泄漏率低于考核线（`pass:true`），动密封泄漏率高于考核线（`pass:false`）；报告注明考核线由用户参数给定；不给考核线时只列泄漏率不判定 |

@@ -25,6 +25,22 @@ metadata:
 - 必填信息：使用人姓名或岗位、日期。可选：上一日待办 JSON（用于结转）、优先级口径、前瞻天数。
 - 环境：可执行 Node.js ≥ 18，脚本仅用内置模块，无需 npm 安装。**若环境无法执行 node（无 Bash 工具或 `node --version` 失败），明确告知用户并终止，不得基于文字手工成文或自行判定（硬约束 2）。**
 
+## 数据获取（MCP）
+
+本技能不直接调用 MCP，读上游技能产出的 JSON。平台接入了业务系统 MCP 服务时，先按各上游技能 SKILL.md「数据获取（MCP）」一节取数并运行，再把产出用逗号拼接后交给本技能 `--input`：
+
+- work-order-tracker 的 orders.json
+- hazard-closure-tracker 的 hazard.json
+- special-equipment-inspection-due 的 inspection.json（上游带 `--issues` 时其中的检验问题整改 `openIssues` 一并纳入待办；未带时 warning 说明不含检验问题整改）
+- valve-instrument-calibration-ledger 的 calibration.json
+- lubrication-manager 的 lube.json
+- defect-intake-grading 的 defects.json
+- shift-handover-record 的 handover.json
+
+次日运行时用 `--prev` 传入前一天的 todo.json，未完成事项按原到期日结转。
+
+上游技能有 `--date` 的与本技能 `--date` 用同一天，shift-handover-record 用当天的 `--time`（defect-intake-grading 没有日期参数）；能按车间取数的工具都带用户所在车间（`workshop`），本技能不按车间筛选，上游混进的其他车间事项会原样进个人待办。
+
 ## 操作步骤
 1. **确认使用人与日期** —— 姓名或岗位、日期、待汇集的来源文件。**来源文件越全，待办越完整；仅提供部分来源时须在产出中说明覆盖范围。**
 2. **运行脚本** —— 技能目录以平台实际加载路径为准（Windows 路径加双引号）：
@@ -33,7 +49,7 @@ metadata:
    ```
    可选：`--prev "<上一日 todo.json>"`（结转未完成项）、`--done "<已完成事项>"`、`--priority-rules "<优先级口径>"`、`--horizon <前瞻天数，默认 7>`。默认输出目录为系统临时目录 `<os.tmpdir()>/wtm-out`，建议始终传 `--out`。
    读取末行 JSON 摘要（同时写入 `<out>/summary.json`）：`ok` 必须为 `true`，`ok:false` 时把 `error` 告知用户并终止；`warnings` 非空时逐条告知用户（来源文件无法识别/待办无到期日/疑似重复待办/旧 I~IV 缺陷口径映射/来源覆盖不全等）。脚本用法详见 `scripts/README.md`。
-   - 上一日未完成项：**必须原样结转并保留原始到期日与来源，绝不静默丢弃，也不得自动延期**。
+   - 上一日未完成项：**必须原样结转并保留原始到期日与来源，绝不静默丢弃，也不得自动延期**。本日上游里同一事项的到期日变了时，脚本按上游本日值排序，warning「上游到期日由 X 变为 Y，请在系统核实」并在清单列出原到期日，交付时点名告知用户。
    - 待办无到期日：归入 `noDueDate` 单列，**不得自行设定到期日**。
    - 疑似重复（同一位号或编号来自多个来源，含交接记录与工单）：列出供用户确认，**不得自动合并**。
    - 优先级：工单按 SAP 1 非常高 / 2 高 / 3 中 / 4 低（中文 紧急/高/中/低 同义）；缺陷按 A 级（重大）/ B 级（严重）/ C 级（一般），旧 I~IV 四级口径按 I→A、II→B、III/IV→C 映射并 warning；交接未完成事项期限已过 P1、其余 P2。

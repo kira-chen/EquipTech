@@ -2,7 +2,7 @@
 'use strict';
 /**
  * 安全环保设施状态检查脚本（仅 Node.js 内置模块）——安全环保设施台账的到期与状态汇总
- * 口径：安全阀校验周期归 special-equipment-inspection-due，SIS 功能测试归仪表专业，本脚本只按台账登记做到期与状态汇总
+ * 口径：安全阀校验用 valve-instrument-calibration-ledger，特种设备本体定检用 special-equipment-inspection-due，压力表温度计检定归计量（仪表）专业，SIS 功能测试归仪表专业；本脚本只按台账登记做到期与状态汇总
  * 周期折算：月/季/年/半年按自然月（C.addMonths），天/周/小时按 addDays
  * 用法：node "<技能目录>/scripts/facility.js" --input <xlsx> --workshop "常减压车间" --date 2026-09-21 [--out <dir>]
  *       [--lead-days 15] [--category 报警器] [--issues <失效整改记录xlsx>] [--reports <检测报告目录>]
@@ -21,7 +21,7 @@ const FLAG_OPTS = ['help'];
 const ALERT = '【注意】存在失效或超期未检的安全环保设施，可能影响安全保护功能有效性，应立即整改并评估风险';
 /** 声明行（口径对照第九节通用模板 + 归口说明），写入 md 末尾与 meta.statement */
 const STATEMENT = '本材料由脚本汇总、模型成文，仅供设备员复核参考，不替代审批、定性、验收与签字；厂内制度与系统数据为准。';
-const SCOPE_NOTE = '本技能只做安全环保设施台账的到期与状态汇总：安全阀等安全附件的校验周期与定期校验归 special-equipment-inspection-due，联锁/SIS 功能测试归仪表专业，检测结论以有资质单位报告为准。';
+const SCOPE_NOTE = '本技能只做安全环保设施台账的到期与状态汇总：安全阀校验台账与校验到期用 valve-instrument-calibration-ledger，特种设备本体定期检验用 special-equipment-inspection-due，压力表、温度计检定归计量（仪表）专业，联锁/SIS 功能测试归仪表专业，检测结论以有资质单位报告为准。';
 
 /**
  * 列名别名：局部别名经 C.mergeAliases 与共享 SYSTEM_ALIASES（SAP PM / EM / 特种设备台账 / 智能巡检导出列名）合并，局部优先。
@@ -49,7 +49,7 @@ const ALIASES = C.mergeAliases({
 /** 设施类别归一：无法识别时返回 null，单列不猜测 */
 const CATEGORY_RULES = [
   { key: '报警器', kws: ['报警器', '可燃气体', '有毒气体', '气体检测', '检测报警', '探测器', '硫化氢', 'H2S', 'LEL', '一氧化碳', 'CO报警'] },
-  // 安全附件：只做台账到期与状态，校验周期与定期校验归 special-equipment-inspection-due
+  // 安全附件：只做台账到期与状态，安全阀校验用 valve-instrument-calibration-ledger
   { key: '安全附件', kws: ['安全阀', '爆破片', '阻火器', '呼吸阀', '安全附件', '紧急泄放', '泄压阀', '液位计（安全附件）'] },
   // 联锁/SIS、紧急切断、防爆电气：只记台账状态，SIS 功能测试归仪表专业
   { key: '联锁与防爆', kws: ['联锁', 'SIS', '安全仪表', '紧急切断', 'ESD', '切断阀', '紧急停车', '防爆', '隔爆', '本安', '增安'] },
@@ -163,7 +163,8 @@ function main() {
         const id = C.str(r['设施编号']);
         if (!id) continue;
         if (isResolved(r['整改状态'])) {
-          resolvedIds.set(id, { status: C.str(r['整改状态']), doneAt: C.normDate(r['整改完成日期']), action: C.str(r['整改措施']) || null });
+          if (!resolvedIds.has(id)) resolvedIds.set(id, []);
+          resolvedIds.get(id).push({ status: C.str(r['整改状态']), doneAt: C.normDate(r['整改完成日期']), action: C.str(r['整改措施']) || null });
         }
       }
     }
@@ -227,7 +228,16 @@ function main() {
     if (category === null) missing.push('设施类别');
     if (st.code === null) missing.push('当前状态');
 
-    const fixed = res.code === 'fail' ? resolvedIds.get(id) || null : null;
+    // 整改记录跨表配对：整改完成日期早于本次（上次）检测日期的，是上一轮不合格的整改，不能闭环本次不合格；
+    // 同一设施有多条闭环记录时取整改完成日期最近的一条（无日期的排最后，仍可采信）
+    let fixed = null;
+    if (res.code === 'fail' && resolvedIds.has(id)) {
+      const cands = resolvedIds.get(id);
+      const valid = cands.filter((x) => !x.doneAt || !lastDate || C.diffDays(x.doneAt, lastDate) >= 0)
+        .sort((x, y) => String(y.doneAt || '').localeCompare(String(x.doneAt || '')));
+      if (valid.length) fixed = valid[0];
+      else warnings.push(`${r._sheet} 第${r._row}行 设施编号「${id}」整改记录的整改完成日期（${cands.map((x) => x.doneAt).join('、')}）早于本次检测日期 ${lastDate}，属上一轮整改，不能作为本次不合格的闭环依据，仍按不合格未整改处理`);
+    }
     const unresolved = res.code === 'fail' && !fixed;
 
     // 到期计算（独立于状态归档，失效设施同样给出超期信息供整改排期）

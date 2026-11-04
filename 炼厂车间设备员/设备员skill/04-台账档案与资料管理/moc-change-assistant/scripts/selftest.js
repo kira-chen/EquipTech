@@ -451,6 +451,123 @@ eq(r.s.changeType, '设备设施变更', 'Q8 末行摘要含变更类型');
   ok(/agent_created: true/.test(skill) && /allowed-tools: Read,Write,Bash/.test(skill), 'R10 SKILL.md 保留 agent_created 与 allowed-tools');
 }
 
+// ============ S. 2026-11-04 核查补充：类别识别与材质牌号口径 ============
+// S1~S4：examples 用例 9 不带 --category，「维保单位 甲公司 → 乙公司」须识别为管理变更（原先只认「维保单位更换」）
+eq(R.classifyCategory('维保单位 甲公司 维保单位 乙公司'), 'management', 'S1 「维保单位 甲公司→乙公司」识别为管理变更');
+r = run(['--tag', '车间', '--before', '维保单位 甲公司', '--after', '维保单位 乙公司'], 's-mg');
+ok(r.j.category === 'management' && r.j.ruleId === 'U6', `S2 用例 9 无 --category 判管理变更 U6（实际 ${r.j.category}/${r.j.ruleId}）`);
+r = run(['--tag', '车间', '--before', '维保单位 甲公司', '--after', '维保单位 乙公司', '--spec', specMg], 's-mg2');
+ok(r.j.level === 'general' && r.j.counts.conflicts === 0, `S3 用例 9 加 --spec 按厂内定一般变更且不计冲突（实际 ${r.j.level}/${r.j.counts.conflicts}）`);
+eq(R.classifyCategory('承包商 甲公司 承包商 乙公司'), 'management', 'S4 承包商更替识别为管理变更');
+// S5~S8：换热管常用的 10# 钢（演示台账 E-1201「管束 10#」）须识别为碳钢、算具体描述
+eq((R.materialRank('管束材质 10#') || {}).rank, 2, 'S5 10# 识别为碳钢');
+eq(R.describeQuality('管束材质 10#').concrete, true, 'S6 「管束材质 10#」算具体到牌号');
+eq(J('管束材质 10#', '管束材质 S30408', { cat: 'material' }).ruleId, 'R1', 'S7 10# → S30408 改变材质类别判 R1');
+eq(R.classifyCategory('管束材质 10# 管束材质 S30408'), 'material', 'S8 10# → S30408 识别为材质变更');
+// S9~S13：轴承型号 6316/7316/NU316/2205 不是材质牌号；GB 新牌号要能识别
+eq(R.materialRank('驱动端轴承 7316 BECBM'), null, 'S9 轴承 7316 不识别为 316 不锈钢');
+eq(R.materialRank('轴承 NU316 ECP'), null, 'S10 轴承 NU316 不识别为 316 不锈钢');
+eq(R.materialRank('调心轴承 2205'), null, 'S10b 轴承 2205 不识别为双相钢（未写双相钢时）');
+ok(R.classifyCategory('驱动端轴承 7316 BECBM SKF 驱动端轴承 7316 BECBM 瓦房店 同规格') !== 'material', 'S11 轴承同规格换厂家不误识别为材质变更');
+eq((R.materialRank('S31603') || {}).rank, 5, 'S12 S31603 识别为 316 系');
+eq((R.materialRank('022Cr17Ni12Mo2') || {}).rank, 5, 'S12b 022Cr17Ni12Mo2 识别为 316 系');
+eq((R.materialRank('06Cr19Ni10') || {}).rank, 4, 'S12c 06Cr19Ni10 识别为 304 系');
+eq((R.materialRank('SS316L') || {}).rank, 5, 'S12d SS316L 仍识别为 316 系');
+eq((R.materialRank('材质 316L') || {}).rank, 5, 'S12e 316L 仍识别为 316 系');
+eq((R.materialRank('2205 双相钢') || {}).rank, 6, 'S12f 2205 双相钢仍识别');
+// S13~S15：变更前后材质牌号相同 → 材质没变，不得判「材质由 316 系变为 316 系」的一般变更
+ok(R.classifyCategory('机封 316L 型号 5610 A厂 机封 316L 型号 5610 B厂 同规格', { before: '机封 316L 型号 5610 A厂', after: '机封 316L 型号 5610 B厂 同规格' }) !== 'material', 'S13 前后材质相同不按材质变更识别');
+{
+  const v = J('管束材质 316L', '管束材质 316L 加厚', { cat: 'material' });
+  ok(v.level === 'undetermined' && v.ruleId === 'U3', `S14 指定材质类但前后牌号相同 → 未判定 U3（实际 ${v.level}/${v.ruleId}）`);
+}
+r = run(['--tag', 'P-2101A', '--before', '机封 316L 型号 5610 A厂', '--after', '机封 316L 型号 5610 B厂 同规格', '--reason', '国产化'], 's-same');
+ok(r.j.ruleId !== 'R2' && r.j.level !== 'general', `S15 不带 --category 的换厂家机封不判 R2 一般变更（实际 ${r.j.ruleId}/${r.j.level}）`);
+// S16：结构改动「新增 DN50 排凝管口」识别为结构改动（原先因 DN 落到型号规格）
+eq(R.classifyCategory('罐体无排凝口 DN2400 罐底新增 DN50 排凝管口一个'), 'structure', 'S16 新增 DN50 排凝管口识别为结构改动');
+// S17~S21：台账常见型号写法（泵型号 OH2 150-400、轴承号 6314 C3）算具体，不得因此判 U1；位号与笼统描述仍不算
+eq(R.describeQuality('机械密封 OH2 150-400 单端面，原厂件').concrete, true, 'S17 泵型号「OH2 150-400」算具体到型号');
+eq(R.describeQuality('驱动端轴承 6314 C3，SKF').concrete, true, 'S18 轴承号「6314 C3」算具体到型号');
+eq(R.describeQuality('换成 P-2101B').concrete, false, 'S19 只写位号仍不算具体（型号串规则不放宽位号）');
+eq(R.describeQuality('换成 1000-CDU-P1101B').concrete, false, 'S19b 长位号仍不算具体');
+r = run(['--tag', 'P-2101A', '--before', '机械密封 OH2 150-400 单端面 SiC/石墨，原厂件', '--after', '机械密封 OH2 150-400 单端面 SiC/石墨，另一厂家同规格', '--reason', '原厂件库存为 0', '--category', '备件代用'], 's-oh2');
+ok(r.j.ruleId === 'R6' && r.j.level === 'review', `S20 OH2 150-400 机封换厂家判 R6 待厂内评审（实际 ${r.j.ruleId}/${r.j.level}）`);
+eq(R.describeQuality('换一下').concrete, false, 'S21 笼统描述仍不算具体');
+eq(R.describeQuality('2026-11-30 前改').concrete, false, 'S22 日期不当作型号串');
+
+// ============ T. 2026-11-04 复核补充：罐号不是牌号、完整牌号比对、单写 2205、reason 不触发管理变更 ============
+// T1~T8：「10#罐 / 20号罐」等编号后紧跟罐、机、泵等字时不是 10# / 20# 碳钢
+eq((R.materialRank('10#罐区进料泵 叶轮材质 铸铁 HT250') || {}).rank, 1, 'T1 「10#罐区」不识别为碳钢，原材质按铸铁');
+eq(R.materialRank('10#罐 进料阀 闸阀 Z41H-25'), null, 'T2 「10#罐 进料阀」不识别出材质');
+eq(R.materialRank('20号罐 出口阀'), null, 'T3 「20号罐」不识别为碳钢');
+eq(R.materialRank('20#机组 10号泵 20#塔 10#炉 20#装置 10#台'), null, 'T3b 机组 / 泵 / 塔 / 炉 / 装置 / 台的编号都不识别为碳钢');
+ok(R.classifyCategory('20#罐 出口阀 DN100 闸阀 20#罐 出口阀 DN100 球阀') !== 'material', 'T4 「20#罐」不触发材质变更识别');
+r = run(['--tag', 'P-1001', '--before', '10#罐区进料泵 叶轮材质 铸铁 HT250', '--after', '叶轮材质 铸铁 HT200', '--reason', '原厂停产'], 't-tank1');
+ok(r.j.ruleId === 'R2' && r.j.category === 'material', `T5 HT250 → HT200 不因「10#罐区」编出碳钢原材质，判 R2（实际 ${r.j.category}/${r.j.ruleId}）`);
+ok(!/碳钢/.test(r.j.basis), 'T5b 依据不出现碳钢');
+r = run(['--tag', 'XV-1001', '--before', '10#罐 进料阀 闸阀 Z41H-25', '--after', '改为 316L 球阀', '--reason', '内漏'], 't-tank2');
+ok(r.j.ruleId === 'U3' && r.j.undetermined[0].missing.includes('原材质牌号'), `T6 原状态只有罐号无材质 → U3 缺原材质牌号（实际 ${r.j.ruleId}）`);
+eq((R.materialRank('20#钢 无缝管') || {}).rank, 2, 'T7 「20#钢」仍识别为碳钢');
+eq((R.materialRank('20号钢') || {}).rank, 2, 'T7b 「20号钢」仍识别为碳钢');
+eq((R.materialRank('管束 10#') || {}).rank, 2, 'T7c 台账「管束 10#」仍识别为碳钢');
+eq((R.materialRank('壳体 Q345R / 管束 10#，') || {}).rank, 2, 'T7d 「10#」后接标点仍识别为碳钢');
+eq(J('管束 10#', '管束 S30408', { cat: 'material' }).ruleId, 'R1', 'T8 E-1201「管束 10#」改 S30408 仍判 R1');
+eq(R.describeQuality('10#罐 换一下').concrete, false, 'T8b 「10#罐」不当作牌号算具体描述');
+// T9~T15：前后牌号用完整牌号比对，区分位不截断；集合只有泛称时不判相同
+eq(R.materialTokens('叶轮材质 铸铁 HT250').join('|'), 'HT250', 'T9 materialTokens 取完整牌号 HT250，泛称「铸铁」不进集合');
+eq(R.materialTokens('材质 0Cr18Ni10Ti').join('|'), '0CR18NI10TI', 'T9b 0Cr18Ni10Ti 取完整牌号');
+eq(R.sameMaterial('叶轮材质 铸铁 HT250', '叶轮材质 铸铁 HT200'), false, 'T10 HT250 与 HT200 不相同');
+eq(R.sameMaterial('材质 Q345R', '材质 Q345D'), false, 'T11 Q345R 与 Q345D 不相同');
+eq(R.sameMaterial('材质 0Cr18Ni9', '材质 0Cr18Ni10Ti'), false, 'T12 0Cr18Ni9 与 0Cr18Ni10Ti 不相同');
+eq(R.sameMaterial('材质 碳钢', '材质 碳钢 加厚'), false, 'T13 集合只有泛称时不判相同');
+eq(R.sameMaterial('材质 SS304', '材质 304'), true, 'T13b SS304 与 304 视为同一牌号');
+eq(R.sameMaterial('材质 20号钢', '材质 20#'), true, 'T13c 20号钢 与 20# 视为同一牌号');
+eq(J('叶轮材质 HT250', '叶轮材质 HT200', { cat: 'material' }).ruleId, 'R2', 'T14 HT250 → HT200 判 R2');
+eq(J('筒体材质 Q345R', '筒体材质 Q345D', { cat: 'material' }).ruleId, 'R2', 'T14b Q345R → Q345D 判 R2');
+eq(J('材质 0Cr18Ni9', '材质 0Cr18Ni10Ti', { cat: 'material' }).ruleId, 'R2', 'T14c 0Cr18Ni9 → 0Cr18Ni10Ti 判 R2');
+r = run(['--tag', 'V-1001', '--before', '筒体材质 Q345R', '--after', '筒体材质 Q345D', '--reason', '低温冲击要求', '--special', '是'], 't-q345');
+ok(r.j.category === 'material' && r.j.ruleId === 'R2', `T15 不带 --category 的 Q345R → Q345D 识别为材质变更判 R2（实际 ${r.j.category}/${r.j.ruleId}）`);
+// T16~T19：单写「2205」识别为双相钢；轴承号仍不误识别
+eq((R.materialRank('叶轮 2205') || {}).rank, 6, 'T16 单写 2205 识别为双相钢');
+eq(J('叶轮材质 316L', '叶轮材质 2205', { cat: 'material' }).ruleId, 'R2', 'T17 叶轮 316L → 2205 判 R2');
+eq(R.materialRank('调心滚子轴承 22205 CC'), null, 'T18 轴承 22205 不识别为双相钢');
+eq(R.materialRank('轴承型号 2205 EKTN9'), null, 'T18b 轴承 2205 EKTN9 不识别为双相钢');
+eq(R.materialRank('2205-2RS1'), null, 'T18c 2205-2RS1 不识别为双相钢');
+r = run(['--tag', 'P-1002', '--before', '叶轮材质 316L', '--after', '叶轮材质 2205', '--reason', '冲蚀'], 't-2205');
+ok(r.j.category === 'material' && r.j.ruleId === 'R2', `T19 脚本层 316L → 2205 判 R2（实际 ${r.j.category}/${r.j.ruleId}）`);
+// T20~T23：reason 里出现「承包商」不触发管理变更，也不跳过 U1 具体性校验
+eq(R.classifyCategory('垫片石棉橡胶板 金属缠绕垫 承包商检修时发现原垫片老化', { before: '垫片石棉橡胶板', after: '金属缠绕垫' }) === 'management', false, 'T20 reason 里的「承包商」不触发管理变更');
+r = run(['--tag', 'E-1002', '--before', '垫片石棉橡胶板', '--after', '金属缠绕垫', '--reason', '承包商检修时发现原垫片老化'], 't-gasket');
+ok(r.j.category !== 'management' && r.j.ruleId === 'U1', `T21 垫片改型 + reason 含承包商 → 不判管理变更，按 U1 未判定（实际 ${r.j.category}/${r.j.ruleId}）`);
+eq(R.classifyCategory('承包商 甲公司 承包商 乙公司', { before: '承包商 甲公司', after: '承包商 乙公司' }), 'management', 'T22 before/after 写承包商更替仍识别为管理变更');
+r = run(['--tag', '车间', '--before', '维保单位 甲公司', '--after', '维保单位 乙公司', '--reason', '承包商合同到期'], 't-mg');
+ok(r.j.category === 'management' && r.j.ruleId === 'U6', `T23 before/after 写维保单位仍判管理变更 U6（实际 ${r.j.category}/${r.j.ruleId}）`);
+
+// ============ V. 第三轮复核：带 R/G 后缀的铬钼钢牌号、轴承后缀连写 ============
+// V1~V6：15CrMoR、15CrMoG、12Cr1MoVG、14Cr1MoR、12Cr2Mo1R 取完整牌号，不截断、不漏识
+eq(R.materialTokens('管箱材质 15CrMoR').join('|'), '15CRMOR', 'V1 15CrMoR 取完整牌号');
+eq(R.materialTokens('炉管 15CrMoG').join('|'), '15CRMOG', 'V2 15CrMoG 取完整牌号');
+eq(R.materialTokens('炉管 12Cr1MoVG').join('|'), '12CR1MOVG', 'V3 12Cr1MoVG 取完整牌号');
+eq(R.materialTokens('筒体 14Cr1MoR').join('|'), '14CR1MOR', 'V4 14Cr1MoR 取完整牌号');
+eq(R.materialTokens('筒体 12Cr2Mo1R').join('|'), '12CR2MO1R', 'V5 12Cr2Mo1R 不截断为 12Cr2Mo');
+eq(R.sameMaterial('筒体 12Cr2Mo1R', '筒体 12Cr2Mo1'), false, 'V6 12Cr2Mo1R 与 12Cr2Mo1 不视为同一牌号');
+eq(R.sameMaterial('管箱材质 15CrMoR，接管 DN100', '管箱材质 15CrMoR，接管改为 DN150'), true, 'V7 前后都是 15CrMoR 视为材质没变');
+r = run(['--tag', 'E-1101', '--before', '管箱材质 15CrMoR，接管 DN100', '--after', '管箱材质 15CrMoR，接管改为 DN150', '--reason', '扩能'], 'v-crmor');
+ok(r.j.category !== 'material' && r.j.ruleId !== 'R2', `V8 牌号 15CrMoR 未变、只改接管规格 → 不判材质变更 R2（实际 ${r.j.category}/${r.j.ruleId}）`);
+// V9~V12：轴承后缀可连写（EKTN9、ETN9、2RSH），不识别为双相钢
+eq(R.materialRank('2205 EKTN9'), null, 'V9 2205 EKTN9（未写轴承）不识别为双相钢');
+eq(R.materialRank('型号 2205 ETN9'), null, 'V10 2205 ETN9 不识别为双相钢');
+eq(R.materialRank('2205-2RSH'), null, 'V11 2205-2RSH 不识别为双相钢');
+eq(R.materialTokens('2205 EKTN9').length, 0, 'V12 2205 EKTN9 不进牌号集合');
+// V13~V15：--until 早于今天时给 warning（恢复期限已过），晚于今天时不给
+r = run(['--tag', 'T-2501', '--before', '冷却水线 DN150 正常投用', '--after', '临时加装 DN50 跨线 压力 0.4 MPa',
+  '--reason', '冷却量不足', '--temporary', '--until', '2020-01-31'], 'until-past');
+ok(r.j.warnings.some((w) => w.includes('--until 2020-01-31') && w.includes('早于今天')), 'V13 --until 早于今天给出期限已过的 warning');
+eq(r.j.temporaryPlan && r.j.temporaryPlan.until, '2020-01-31', 'V14 期限已过仍照常输出恢复期限，不改写');
+r = run(['--tag', 'T-2501', '--before', '冷却水线 DN150 正常投用', '--after', '临时加装 DN50 跨线 压力 0.4 MPa',
+  '--reason', '冷却量不足', '--temporary', '--until', '2099-12-31'], 'until-future');
+ok(!r.j.warnings.some((w) => w.includes('早于今天')), 'V15 --until 晚于今天不给期限已过的 warning');
+
 console.log(`\n${'='.repeat(56)}`);
 console.log(`moc-change-assistant 自测：${pass} 通过，${fail} 失败`);
 if (failures.length) { console.log('\n失败项：'); failures.forEach((f) => console.log('  ✗ ' + f)); }

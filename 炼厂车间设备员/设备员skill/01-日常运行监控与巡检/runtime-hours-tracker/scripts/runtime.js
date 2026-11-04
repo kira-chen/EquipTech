@@ -24,7 +24,7 @@ const C = require('./lib/common');
 
 const warnings = [];
 const num = C.makeNum(warnings);
-const VALUE_OPTS = ['input', 'workshop', 'date', 'out', 'from', 'prev', 'equipment', 'warn-ratio'];
+const VALUE_OPTS = ['input', 'workshop', 'date', 'out', 'from', 'prev', 'equipment', 'warn-ratio', 'running-until'];
 const FLAG_OPTS = ['help'];
 
 /**
@@ -124,6 +124,12 @@ function main() {
   if (a['warn-ratio'] && (!Number.isFinite(warnRatio) || warnRatio <= 0 || warnRatio > 1)) {
     throw new Error(`--warn-ratio 「${a['warn-ratio']}」应为 0~1 之间的数字`);
   }
+  // --running-until：数据源以「停机时间为空」表示仍在运行（如 DCS 启停记录）时，显式给截止时刻才把该段计到此刻；不给则按不配对单列
+  const runningUntil = a['running-until'] ? C.normDateTime(a['running-until']) : null;
+  if (a['running-until'] && !runningUntil) throw new Error(`--running-until 「${a['running-until']}」不是有效时间，应为 YYYY-MM-DD HH:mm`);
+  if (runningUntil && C.diffDays(date, runningUntil.slice(0, 10)) < 0) throw new Error(`--running-until（${runningUntil}）晚于 --date（${date}）当天`);
+  const runUntilMs = runningUntil ? ts(runningUntil) : null;
+  const openRunning = [];
   const only = a.equipment ? new Set(a.equipment.split(/[,，]/).map((x) => x.trim()).filter(Boolean)) : null;
   const outDir = a.out || path.join(os.tmpdir(), 'rht-out');
 
@@ -148,6 +154,25 @@ function main() {
 
   if (startEnd) {
     const recs = C.toRecords(startEnd, ['位号'], '启停记录', ['设备名称', '设备编号', '开机时间', '停机时间'], warnings, ALIASES);
+    // --running-until 只认每台设备时间上最后一段：开机时间最晚、且其后该台再无任何开机记录（含同一时刻）或停机记录（不含同一时刻）的那一条空停机行
+    // 上一段停机时刻正好等于本段开机时刻（同一时刻停机又开机、或只写日期）是首尾相接，本段仍是最后一段
+    const lastOpenRow = new Map();   // tag -> _row
+    if (runUntilMs !== null) {
+      const byTag = new Map();
+      for (const r of recs) {
+        const tag = C.str(r['位号']);
+        if (!tag || (only && !only.has(tag))) continue;
+        if (!byTag.has(tag)) byTag.set(tag, []);
+        byTag.get(tag).push({ row: r._row, s: ts(r['开机时间']), t: ts(r['停机时间']), hasT: C.str(r['停机时间']) !== '' });
+      }
+      for (const [tag, list] of byTag) {
+        const opens = list.filter((x) => x.s !== null && !x.hasT);
+        if (!opens.length) continue;
+        const cand = opens.reduce((m, x) => (x.s > m.s ? x : m));
+        const later = list.some((x) => x !== cand && ((x.s !== null && x.s >= cand.s) || (x.t !== null && x.t > cand.s)));
+        if (!later) lastOpenRow.set(tag, cand.row);
+      }
+    }
     for (const r of recs) {
       const tag = C.str(r['位号']);
       if (!tag) { warnings.push(`工作表「启停记录」第${r._row}行 位号为空，已跳过`); continue; }
@@ -166,11 +191,18 @@ function main() {
         } else {
           e.segments.push({ s, t, row: r._row });
         }
+      } else if (s !== null && !hasT && runUntilMs !== null && s < runUntilMs && lastOpenRow.get(tag) === r._row) {
+        // 停机时间为空 = 截至 --running-until 仍在运行（用户显式声明的数据口径），计到该时刻，不补停机记录；只认该台时间上最后一段
+        e.segments.push({ s, t: runUntilMs, row: r._row, open: true });
+        openRunning.push({ tag, src: '启停记录' });
       } else if (s !== null || t !== null) {
         // 只有启或只有停 → 不配对，绝不按截止时间补
+        const notLast = s !== null && !hasT && runUntilMs !== null && s < runUntilMs;
         e.incomplete.push({ row: r._row, start: s !== null ? C.normDateTime(r['开机时间']) : null,
           end: t !== null ? C.normDateTime(r['停机时间']) : null,
-          reason: s !== null ? '只有开机时间，无停机时间（未按截止时间补停机）' : '只有停机时间，无开机时间' });
+          reason: s === null ? '只有停机时间，无开机时间'
+            : notLast ? '只有开机时间，无停机时间；其后该台还有开停记录，不是最后一段运行，未按 --running-until 计入（未按截止时间补停机）'
+              : '只有开机时间，无停机时间（未按截止时间补停机）' });
         warnings.push(`工作表「启停记录」第${r._row}行 设备「${tag}」启停记录不配对，已单列，**未按截止时间强行补一次停机**`);
       }
     }
@@ -213,7 +245,10 @@ function main() {
           open = null;
         }
       }
-      if (open) {
+      if (open && runUntilMs !== null && open.t < runUntilMs) {
+        e.segments.push({ s: open.t, t: runUntilMs, row: open.row, open: true });
+        openRunning.push({ tag, src: '运行状态记录' });
+      } else if (open) {
         e.incomplete.push({ row: open.row, start: open.text, end: null, reason: '状态记录末条为运行，无后续停机记录（未按截止时间补停机）' });
         warnings.push(`工作表「运行状态记录」设备「${tag}」第${open.row}行之后无停机记录，该段已单列，**未按截止时间强行补一次停机**`);
       }
@@ -232,17 +267,30 @@ function main() {
       if (h !== null) e.rawHours = C.round((e.rawHours || 0) + h, 2);
     }
   }
+  if (openRunning.length) {
+    const tagsOf = (src) => [...new Set(openRunning.filter((x) => x.src === src).map((x) => x.tag))];
+    const parts = [];
+    if (tagsOf('启停记录').length) parts.push(`启停记录中该台时间上最后一段、停机时间为空：${tagsOf('启停记录').join('、')}`);
+    if (tagsOf('运行状态记录').length) parts.push(`运行状态记录末条为运行：${tagsOf('运行状态记录').join('、')}`);
+    warnings.push(`以下设备的当前运行段按「截至 ${runningUntil} 仍在运行」计入（--running-until）——${parts.join('；')}；未补停机记录，请核实这些设备确在运行`);
+  }
   if (!perEquip.size) throw new Error(only ? `指定的设备范围内没有记录` : '没有可统计的设备记录');
 
   // ---- 区间重叠与缺口检测（不补齐）
   for (const e of perEquip.values()) {
     e.segments.sort((x, y) => x.s - y.s);
     e.overlaps = []; e.idleIntervals = [];
+    // 与所有尚未结束的段逐一比较（不只比相邻两段或结束最晚的一段）：长段覆盖其后多段、被覆盖的段之间又互相重叠时，每一对都检出
+    let maxSeg = e.segments[0];
     for (let i = 1; i < e.segments.length; i++) {
-      const prev = e.segments[i - 1], cur = e.segments[i];
-      if (cur.s < prev.t) {
-        e.overlaps.push({ rows: [prev.row, cur.row], note: '时间区间重叠，两段均按原样累计，未去重也未合并' });
-        warnings.push(`设备「${e.tag}」第${prev.row}行与第${cur.row}行运行区间重叠，已原样保留，请核实台账`);
+      const prev = maxSeg, cur = e.segments[i];
+      const active = e.segments.slice(0, i).filter((x) => cur.s < x.t);
+      if (cur.t > maxSeg.t) maxSeg = cur;
+      if (active.length) {
+        for (const p of active) {
+          e.overlaps.push({ rows: [p.row, cur.row], note: '时间区间重叠，两段均按原样累计，未去重也未合并' });
+          warnings.push(`设备「${e.tag}」第${p.row}行与第${cur.row}行运行区间重叠，已原样保留，请核实台账`);
+        }
       }
       // 两段运行之间的间隔是正常停机，不是数据缺口；只记录供参考，不作为数据质量问题呈现。
       else if (cur.s > prev.t) {
@@ -261,11 +309,13 @@ function main() {
   // ---- 阈值表
   const thRows = C.pickSheet(book, '阈值表', '阈值', '周期阈值', '检修周期');
   const thresholds = new Map();   // tag -> [{kind, type, value, base, part, baseHours, baseStarts, ...}]
+  const thNames = new Map();      // tag -> 阈值表里的设备名称（给本期无运行记录的设备用）
   if (thRows) {
-    const recs = C.toRecords(thRows, ['位号'], '阈值表', ['阈值类型', '阈值', '上次归零日期', '部件', '期初累计小时', '期初累计启停'], warnings, ALIASES);
+    const recs = C.toRecords(thRows, ['位号'], '阈值表', ['设备名称', '阈值类型', '阈值', '上次归零日期', '部件', '期初累计小时', '期初累计启停'], warnings, ALIASES);
     for (const r of recs) {
       const tag = C.str(r['位号']); if (!tag) continue;
       if (only && !only.has(tag)) continue;
+      if (!thNames.has(tag) && C.str(r['设备名称'])) thNames.set(tag, C.str(r['设备名称']));
       const type = C.str(r['阈值类型']);
       const raw = r['阈值'];
       const part = C.str(r['部件']);
@@ -308,6 +358,13 @@ function main() {
   } else {
     warnings.push('未提供「阈值表」，只统计不做阈值预警');
   }
+  // 阈值表里有、但本期启停/状态/运行记录里没有的设备（如备机）：照常列出，本期 0h、0 次，累计 = 期初（或上期）值，照常判阈值，注明本期无运行记录
+  const noRunTags = [...thresholds.keys()].filter((tag) => !perEquip.has(tag));
+  for (const tag of noRunTags) {
+    const e = ensure(tag, thNames.get(tag) || '', '');
+    Object.assign(e, { hours: 0, hoursFromSegments: null, overlaps: [], idleIntervals: [], noRunRecord: true });
+  }
+  if (noRunTags.length) warnings.push(`以下设备在阈值表中，但本期记录里没有任何开停或运行数据，按本期无运行记录（本期 0h、0 次）列出，累计取期初/上期值照常判阈值：${noRunTags.join('、')}；如实际有运行，请补导该台的启停记录`);
 
   // ---- 上期累计续算
   let prevMap = null;
@@ -315,6 +372,13 @@ function main() {
     if (!fs.existsSync(a.prev)) throw new Error(`上期 runtime.json 不存在: ${a.prev}`);
     let prev; try { prev = JSON.parse(fs.readFileSync(a.prev, 'utf8')); } catch (e) { throw new Error(`上期 runtime.json 解析失败: ${e.message}`); }
     prevMap = new Map((prev.byEquipment || []).map((x) => [x.tag, x]));
+    // 上期截止日不早于本期最早运行段：续算会把重叠时段重复计入（脚本不自动裁剪，提示用户只导出上期之后的记录）
+    const prevDate = prev.meta && C.normDate(prev.meta.date);
+    const starts = [...perEquip.values()].flatMap((e) => e.segments.map((x) => x.s));
+    if (prevDate && starts.length) {
+      const earliest = new Date(Math.min(...starts) + 8 * H).toISOString().slice(0, 10);
+      if (C.diffDays(prevDate, earliest) >= 0) warnings.push(`上期 runtime.json 截止 ${prevDate}，本期记录含 ${earliest} 起的运行段（不晚于上期截止日），续算会把重叠时段重复计入；请只导出上期截止日之后的启停记录再续算`);
+    }
   }
 
   // ---- 汇总
@@ -332,8 +396,14 @@ function main() {
     if (prev) {
       if (equipBaseHours !== null) warnings.push(`设备「${e.tag}」同时提供了上期 JSON 与「期初累计小时」，累计以上期 JSON 续算为准，期初值未重复计入`);
       cumBasis = 'prev';
-      cumHours = e.hours === null ? (prev.cumHours ?? null) : C.round((prev.cumHours !== null && prev.cumHours !== undefined ? prev.cumHours : 0) + e.hours, 2);
-      cumStarts = (prev.cumStarts !== null && prev.cumStarts !== undefined ? prev.cumStarts : 0) + e.starts;
+      const prevH = typeof prev.cumHours === 'number' && Number.isFinite(prev.cumHours) ? prev.cumHours : null;
+      // 上期累计小时为空：无法续算，累计记 null 判未判定，不按 0 续算（否则只剩本期增量却标「上期续算」）
+      if (prevH === null) warnings.push(`设备「${e.tag}」上期 runtime.json 中累计运行小时为空，无法续算，本期累计记为未判定（未按 0 续算）`);
+      cumHours = prevH === null ? null : (e.hours === null ? prevH : C.round(prevH + e.hours, 2));
+      // 上期累计启停为空：同样不按 0 续算，记 null（未判定）
+      const prevS = typeof prev.cumStarts === 'number' && Number.isFinite(prev.cumStarts) ? prev.cumStarts : null;
+      if (prevS === null) warnings.push(`设备「${e.tag}」上期 runtime.json 中累计启停次数为空，无法续算，本期累计启停记为未判定（未按 0 续算）`);
+      cumStarts = prevS === null ? null : prevS + e.starts;
     } else if (equipBaseHours !== null) {
       cumBasis = 'base';
       cumHours = e.hours === null ? equipBaseHours : C.round(equipBaseHours + e.hours, 2);
@@ -375,7 +445,7 @@ function main() {
       return out;
     });
     const item = {
-      tag: e.tag, name: e.name, code: e.code || null, sources: [...e.sources],
+      tag: e.tag, name: e.name, code: e.code || null, sources: [...e.sources], noRunRecord: !!e.noRunRecord,
       periodHours: e.hours, periodStarts: e.starts,
       baseHours: equipBaseHours, cumBasis, cumHours, cumStarts, thresholds: checks,
       overlaps: e.overlaps, idleIntervals: e.idleIntervals, incompleteCount: e.incomplete.length,
@@ -398,10 +468,12 @@ function main() {
 
   // 供 lubrication-manager 等下游按位号取累计运行小时
   const items = byEquipment.map((x) => ({ tag: x.tag, name: x.name, code: x.code, cumulativeHours: x.cumHours, cumulativeBasis: x.cumBasis,
-    periodHours: x.periodHours, cumulativeStarts: x.cumStarts, asOf: date }));
+    periodHours: x.periodHours, cumulativeStarts: x.cumStarts, noRunRecord: x.noRunRecord, asOf: date }));
 
   const counts = {
-    equipment: byEquipment.length,
+    // equipment = 本期有开停/运行记录的设备数；阈值表里有、本期无记录的设备另计 noRunRecord，两者之和 = byEquipment 行数
+    equipment: byEquipment.filter((x) => !x.noRunRecord).length,
+    listed: byEquipment.length,
     exceeded: exceeded.length, dueSoon: dueSoon.length, undetermined: undetermined.length,
     incomplete: incomplete.length,
     unpaired: incomplete.reduce((n, x) => n + x.unpaired.length, 0),
@@ -409,6 +481,7 @@ function main() {
     thresholdsProvided: !!thRows,
     baseProvided: byEquipment.filter((x) => x.cumBasis === 'base').length,
     periodOnly: byEquipment.filter((x) => x.cumBasis === 'periodOnly').length,
+    noRunRecord: byEquipment.filter((x) => x.noRunRecord).length,
   };
 
   // ---- 产出
@@ -416,7 +489,7 @@ function main() {
   const statement = '阈值到期为计划提示，实际检修时机由设备工程师结合状态评估确定。';
   const disclaimer = '本材料由脚本汇总、模型成文，仅供设备员复核参考，不替代审批、定性、验收与签字；厂内制度与系统数据为准。';
   const result = {
-    meta: { workshop: a.workshop, date, from, warnRatio, generatedAt: C.localDateTime(),
+    meta: { workshop: a.workshop, date, from, warnRatio, runningUntil, generatedAt: C.localDateTime(),
       prevProvided: !!prevMap, thresholdsProvided: !!thRows, statement, disclaimer },
     counts, items, byEquipment, exceeded, dueSoon, undetermined, incomplete, warnings,
   };
@@ -427,27 +500,29 @@ function main() {
   const L = [];
   L.push(`# ${a.workshop} 运行小时与启停次数统计（截至 ${date}）`);
   L.push('');
-  L.push(`统计区间：${from ? `${from} ~ ${date}` : `截至 ${date}`}　｜　预警比例：${(warnRatio * 100).toFixed(0)}%`);
+  L.push(`统计区间：${from ? `${from} ~ ${date}` : `截至 ${date}`}　｜　预警比例：${(warnRatio * 100).toFixed(0)}%${runningUntil ? `　｜　停机时间为空的运行段按截至 ${runningUntil} 仍在运行计入` : ''}`);
   L.push(`生成时间：${C.localDateTime()}（北京时间）`);
   L.push('');
   L.push('## 一、统计概览');
   L.push('');
   L.push(C.mdTable(['指标', '数值'], [
-    ['统计设备数', counts.equipment],
+    ['统计设备数（本期有记录）', counts.equipment],
     ['已超阈值', counts.thresholdsProvided ? counts.exceeded : '—（未提供阈值表）'],
     ['接近阈值', counts.thresholdsProvided ? counts.dueSoon : '—（未提供阈值表）'],
     ['未判定项', counts.thresholdsProvided ? counts.undetermined : '—（未提供阈值表）'],
     ['有期初累计的设备', counts.thresholdsProvided ? counts.baseProvided : '—'],
     ['仅本期增量的设备', counts.periodOnly],
+    ['本期无运行记录的设备', counts.noRunRecord],
     ['数据不完整设备', counts.incomplete],
     ['启停不配对', counts.unpaired], ['区间重叠', counts.overlaps],
   ]));
+  if (counts.noRunRecord) L.push(`【注意】${counts.noRunRecord} 台设备在阈值表中但本期无运行记录（${byEquipment.filter((x) => x.noRunRecord).map((x) => x.tag).join('、')}），本期按 0h 列出，累计取期初/上期值。\n`);
   if (counts.periodOnly) L.push(`【注意】${counts.periodOnly} 台设备无期初累计小时、无上期 JSON，"累计运行"仅为本期增量，不代表自上次大检修以来的累计。\n`);
   L.push('## 二、逐台累计明细');
   L.push('');
   L.push(C.mdTable(['位号', '设备编号', '设备名称', '数据来源', '本期运行(h)', '本期启停(次)', '期初累计(h)', '累计运行(h)', '累计启停(次)', '累计口径'],
-    byEquipment.map((x) => [x.tag, x.code || '—', x.name || '—', x.sources.join('+'), C.fmt(x.periodHours), x.periodStarts,
-      C.fmt(x.baseHours), C.fmt(x.cumHours), x.cumStarts, basisText[x.cumBasis] || x.cumBasis])));
+    byEquipment.map((x) => [x.tag, x.code || '—', x.name || '—', x.noRunRecord ? '本期无运行记录' : x.sources.join('+'), C.fmt(x.periodHours), x.periodStarts,
+      C.fmt(x.baseHours), C.fmt(x.cumHours), C.fmt(x.cumStarts), basisText[x.cumBasis] || x.cumBasis])));
   L.push('## 三、已超阈值');
   L.push('');
   if (!counts.thresholdsProvided) L.push('_未提供阈值表，不做阈值预警。_\n');

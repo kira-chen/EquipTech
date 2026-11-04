@@ -273,6 +273,19 @@ r = run(ST, [], 'six-json');
 eq(r.j.status.byState['备用'], null, 'K11 上游 status.json 无备用档 → null 不是 0');
 ok(r.j.warnings.some((w) => w.includes('三档')), 'K12 三档来源有 warning');
 ok(/\| 备用 \| —（未提供） \|/.test(r.md), 'K13 md 显示未提供');
+// 新版 inspection-data-digest 的 status.json 带 counts.sixTier 与 byEquipment[].special：直接用六档、特护逐台
+const ST6 = mkj('status6.json', {
+  meta: { workshop: 'X', date: DATE }, counts: { equipment: 4, normal: 2, abnormal: 1, unknown: 0, missed: 0, special: 2, specialAbnormal: 1, sixTier: { 运行: 2, 备用: 1, 检修: 0, 停用: 0, 异常: 1, 未判定: 0 } },
+  byEquipment: [{ tag: 'P-01', name: '泵1', special: true, state: 'abnormal', stateCn: '异常' }, { tag: 'K-01', name: '压缩机', special: true, state: 'normal', stateCn: '运行' },
+    { tag: 'P-02', name: '泵2', special: false, state: 'normal', stateCn: '备用' }, { tag: 'P-03', name: '泵3', special: false, state: 'normal', stateCn: '运行' }],
+  abnormal: [{ tag: 'P-01', name: '泵1', desc: '振动 7.3 报警' }],
+});
+r = run(ST6, [], 'six-json-tier');
+eq(r.j.status.byState['备用'], 1, 'K14 status.json 带 counts.sixTier 时直接取六档');
+ok(!r.j.warnings.some((w) => w.includes('三档')), 'K15 带六档时不再 warning');
+eq(r.s.counts.specialEquipment, 2, 'K16 特护设备取 byEquipment[].special');
+eq(r.s.counts.specialAbnormal, 1, 'K17 特护异常数');
+ok(/P-01/.test((r.md.split('二、特护设备')[1] || '').split('## 三')[0]) && /振动 7\.3 报警/.test(r.md), 'K18 特护设备逐台列出，异常带描述');
 
 // ---- L. 特护设备
 const L1 = mk('special.xlsx', {
@@ -356,6 +369,79 @@ eq(r.s.counts.newDefects, 1, 'P8 通知日期=日报日期计新增');
 eq(r.s.counts.openDefects, 1, 'P9 OSNO 未闭环、NOCO 闭环');
 eq(r.j.defects.newList[0].no, '10050001', 'P10 通知单号进表');
 ok(/新增缺陷（维修通知单）/.test(r.md), 'P11 md 用「维修通知单」口径');
+
+// ---- Q. HSE 平台隐患台账列名（整改状态 / 要求整改期限 / 等级 重大·一般 / 验收情况）与作业票系统「作业清单」
+const HZ3 = mk('hse.xlsx', {
+  '隐患台账': [['隐患编号', '隐患描述', '等级', '要求整改期限', '整改状态', '验收情况'],
+    ['HZ-1', '减顶管线腐蚀减薄', '重大', '2026-09-18', '整改中', ''],
+    ['HZ-2', '平台栏杆松动', '一般', '2026-10-30', '未整改', ''],
+    ['HZ-3', '排气阀反复损坏', '一般', '2026-09-10', '已整改', '验收合格'],
+    ['HZ-4', '地沟盖板缺失', '一般', '2026-09-15', '已整改', ''],
+    ['HZ-5', '消防通道占用', '一般', '', '整改中', '']],
+  '作业清单': [['许可证编号', '作业类别', '作业级别', '位号', '区域', '作业单位', '属地监护人', '状态'],
+    ['YH-1', '用火作业', '二级', 'E-1201', '换热器区', '检修一队', '王属地', '作业中'], ['MB-1', '盲板抽堵作业', '—', 'E-1201', '换热器区', '检修一队', '', '作业中']],
+});
+r = run(HZ3, [], 'hse');
+eq(r.s.counts.hazards, 5, 'Q1 HSE 隐患台账 5 条');
+eq(r.s.counts.overdueHazards, 1, 'Q2 「要求整改期限」「整改状态」可识别：整改中且过期限判超期');
+eq(r.j.hazards.major, 1, 'Q3 等级「重大」认作重大隐患');
+eq(r.j.hazards.closed, 1, 'Q4 已整改且验收合格计已闭环');
+eq(r.j.hazards.unverified, 1, 'Q5 已整改未验收单列，不计闭环、不判超期');
+eq(r.j.hazards.undetermined, 1, 'Q6 无整改期限 → 未判定');
+eq(r.j.hazards.inProgress, 1, 'Q7 整改中只计有期限未超期的，不与超期、未判定重复');
+eq((r.j.hazards.overdueList[0] || {}).no, 'HZ-1', 'Q8 隐患编号进超期清单');
+ok(/已整改未验收 \| 1/.test(r.md), 'Q9 md 列已整改未验收');
+eq(r.s.counts.permits, 2, 'Q10 作业票系统「作业清单」表可识别');
+eq(((r.j.permits || {}).list || [{}])[0].place, '换热器区', 'Q11 作业地点取「区域」列');
+
+// ---- R. 直接读隐患台账：完成态 / 验收态词表与 hazard-closure-tracker 同口径；验收人、验收日期独立成列
+const HZ4 = mk('hse-words.xlsx', {
+  '隐患台账': [['隐患编号', '隐患描述', '等级', '要求整改期限', '整改状态', '验收情况'],
+    ['H1', '栏杆缺失', '一般', '2026-09-01', '已销号', '合格'],
+    ['H2', '盖板缺失', '一般', '2026-09-01', '已完成', '验收合格'],
+    ['H3', '通道占用', '一般', '2026-09-01', '已整改', '验收未通过'],
+    ['H4', '防护罩缺失', '一般', '2026-09-01', '已整改', '否'],
+    ['H5', '标识缺失', '一般', '2026-09-01', '已处理', '合格']],
+});
+r = run(HZ4, [], 'hse-words');
+eq(r.j.hazards.overdue, 0, 'R1 已销号/已完成/已处理 属完成态，过期也不判超期');
+eq(r.j.hazards.closed, 3, 'R2 完成态 + 验收合格 计已闭环（与 hazard.js 同为 3）');
+eq(r.j.hazards.unverified, 2, 'R3 「验收未通过」「否」不算验收通过，归已整改未验收');
+const HZ5 = mk('hse-acceptor.xlsx', {
+  '隐患台账': [['隐患编号', '隐患描述', '等级', '要求整改期限', '整改状态', '验收情况', '验收人', '验收日期'],
+    ['H1', '栏杆缺失', '一般', '2026-09-01', '已整改', '', '张三', ''],
+    ['H2', '盖板缺失', '一般', '2026-09-01', '已整改', '', '', '2026-09-05'],
+    ['H3', '通道占用', '一般', '2026-09-01', '已整改', '不合格', '李四', '2026-09-05'],
+    ['H4', '防护罩缺失', '一般', '2026-09-01', '已整改', '', '', ''],
+    ['H5', '标识缺失', '一般', '2026-09-01', '未完成', '', '', ''],
+    ['H6', '照明缺失', '一般', '2026-09-01', '部分完成', '', '', '']],
+});
+r = run(HZ5, [], 'hse-acceptor');
+eq(r.j.hazards.closed, 2, 'R4 验收情况空但填了验收人或验收日期 → 有验收记录，计已闭环');
+eq(r.j.hazards.unverified, 2, 'R5 验收情况「不合格」即使填了验收人/日期也不算通过；四项全空归未验收');
+eq(r.j.hazards.overdue, 2, 'R6 「未完成」「部分完成」不因含「完成」误判完成态，过期判超期');
+const HZ6 = mk('hse-negation.xlsx', {
+  '隐患台账': [['隐患编号', '隐患描述', '等级', '要求整改期限', '整改状态', '验收情况'],
+    ['N1', '栏杆缺失', '一般', '2026-09-01', '整改未完成', ''],
+    ['N2', '盖板缺失', '一般', '2026-09-01', '暂未完成', ''],
+    ['N3', '通道占用', '一般', '2026-09-01', '已整改未销号', ''],
+    ['N4', '防护罩缺失', '一般', '2026-09-01', '尚未闭环', ''],
+    ['N5', '标识缺失', '一般', '2026-09-01', '已闭环', '']],
+});
+r = run(HZ6, [], 'hse-negation');
+eq(r.j.hazards.overdue, 3, 'R7 「整改未完成」「暂未完成」「尚未闭环」过期判超期（与 hazard.js 同口径）');
+eq(r.j.hazards.unverified, 2, 'R8 「已整改未销号」「已闭环」无验收记录归已整改未验收，不计闭环（与 hazard.js 同口径）');
+eq(r.j.hazards.closed, 0, 'R9 无验收记录不计已闭环');
+
+// ---- S. 「检修作业清单」不是作业票；只认以「作业清单」开头或「作业票清单」
+const D2 = path.join(work, 'd2'); fs.mkdirSync(D2, { recursive: true });
+fs.writeFileSync(path.join(D2, '检修作业清单.csv'), '项目名称,位号,状态,完成比例,责任人\n更换机封,P-101A,施工中,60%,检修一队\n清洗换热器,E-201,未开始,0,检修二队\n');
+r = run(D2, [], 'maint-list');
+eq(r.s.counts.permits, null, 'S1 「检修作业清单」不被当成作业票');
+eq(r.s.counts.maintProjects, 2, 'S2 「检修作业清单」仍按检修进度读取');
+const D3 = mk('permit-list.xlsx', { '作业票清单': [['许可证编号', '作业类别', '属地监护人'], ['YH-9', '用火作业', '王']] });
+r = run(D3, [], 'permit-list');
+eq(r.s.counts.permits, 1, 'S3 「作业票清单」可识别为作业票');
 
 console.log(`\n${'='.repeat(56)}`);
 console.log(`equipment-daily-report 自测：${pass} 通过，${fail} 失败`);

@@ -583,6 +583,65 @@ ok(!r.todo.items.some((x) => x.title === '已删除的工单'), '19.13 「已删
 ok(r.todo.warnings.some((w) => w.includes('已删除') && w.includes('已取消')), '19.14 「已删除」的行有 warning，不静默跳过');
 eq(r.summary.counts.total, 1, '19.15 其余行照常进待办');
 
+// ---- 20. 润滑按运行小时判定的项（lube.json 中 dueDate 为 null，给 remainHours / overdueHours）（2026-11-04 核查）
+const lubeHours = mkj('lube-hours.json', {
+  oilAnalysis: { provided: false }, consumption: null, counts: {},
+  overdue: [{ tag: 'P-9001A', name: '测试泵', part: '轴承箱', mode: '换油', owner: '张工', dueDate: null, overdueHours: 36, level: '轻微逾期', periodType: 'hours', periodHours: 4000 }],
+  dueSoon: [{ tag: 'C-9001B', name: '测试压缩机', part: '曲轴箱', mode: '换油', owner: '张工', dueDate: null, remainHours: 120, periodType: 'hours', periodHours: 2000 }],
+});
+r = run(lubeHours, [], 'lube-hours');
+ok(r.todo.items.every((x) => !/null|undefined/.test(x.title)), `20.1 运行小时项标题不出现 null（实际 ${JSON.stringify(r.todo.items.map((x) => x.title))}）`);
+ok(r.todo.items.some((x) => x.tag === 'C-9001B' && /剩余 120 小时/.test(x.title)) && r.todo.items.some((x) => x.tag === 'P-9001A' && /超 36 小时/.test(x.title)), '20.2 标题写明按运行小时的剩余 / 超出小时数');
+ok(r.todo.items.filter((x) => x.kind === 'lube').every((x) => x.bucket === 'noDueDate' && x.dueDate === null && /运行小时/.test(x.noDueReason)), '20.3 无日历到期日：进无到期日、不自行换算日期，原因写明按运行小时判定');
+eq((r.todo.items.find((x) => x.tag === 'P-9001A') || {}).priority, 'P3', '20.4 运行小时已超期的润滑项仍按逾期定优先级（P3）');
+
+// ================================ 21. 结转时上游到期日变了：不静默改写，warning 并两个日期都列出
+{
+  const hz = (deadline, tag) => mkj(`hz-due-${tag}.json`, {
+    majorHazards: [], unverified: [], dueSoon: [], counts: {},
+    overdue: [{ no: 'YH-9', desc: '平台格栅板松动', level: 'general', levelCn: '一般隐患', owner: '张', deadline, measure: '紧固', sheet: '隐患台账', row: 4 }],
+  });
+  const d1 = run(hz(D(-3), 'a'), [], 'due-chg-1');
+  const d2 = run(hz(D(5), 'b'), ['--prev', path.join(d1.out, 'todo.json')], 'due-chg-2', D(1));
+  const it = d2.todo.items.find((x) => x.refNo === 'YH-9') || {};
+  eq(d2.summary.counts.total, 1, '21.1 上游到期日变化的同一事项不重复列');
+  eq(it.originalDueDate, D(-3), '21.2 originalDueDate 保留原到期日');
+  eq(it.dueDate, D(5), '21.3 dueDate 为上游本日到期日（以系统为准，不由脚本改回）');
+  ok(it.dueDateChanged && it.dueDateChanged.from === D(-3) && it.dueDateChanged.to === D(5), '21.4 条目标注 dueDateChanged（原 → 现）');
+  ok(d2.summary.warnings.some((w) => /YH-9/.test(w) && new RegExp(`由 ${D(-3)} 变为 ${D(5)}`).test(w) && /请在系统核实/.test(w)), '21.5 warning「上游到期日由 X 变为 Y，请在系统核实」');
+  ok(new RegExp(`${D(5)}（原 ${D(-3)}`).test(d2.list), '21.6 清单到期日一列同时列出现到期日与原到期日');
+  const d3 = run(hz(D(-3), 'c'), ['--prev', path.join(d1.out, 'todo.json')], 'due-same', D(1));
+  ok(!d3.summary.warnings.some((w) => /到期日由/.test(w)) && !(d3.todo.items[0] || {}).dueDateChanged, '21.7 上游到期日未变时不提示');
+  eq((d3.todo.items[0] || {}).overdueDays, 4, '21.8 到期日未变时逾期天数按新基准日 +1');
+}
+
+// ================================ 22. 特种设备检验问题整改（inspection.json 的 openIssues）纳入待办
+{
+  const ij = mkj('insp-issues.json', {
+    dateConflict: [], prepMaterials: [], byCategory: [], counts: {}, overdue: [], dueSoon: [],
+    openIssues: [
+      { tag: 'V-31', name: '缓冲罐', issue: '筒体腐蚀减薄需补焊', dueDate: D(-6), status: '整改中', owner: '张工', overdueDays: 6, inLedger: true, sheet: '整改项', row: 2 },
+      { tag: 'QZ-31', name: '行车', issue: '限位装置失灵需更换', dueDate: D(10), status: '未开始', owner: '李工', overdueDays: null, inLedger: true, sheet: '整改项', row: 3 },
+      { tag: 'ZZ-31', name: '', issue: '安全附件缺铭牌', dueDate: null, status: '未填写', owner: '', overdueDays: null, inLedger: false, sheet: '整改项', row: 4 },
+    ],
+  });
+  r = run(ij, [], 'insp-issues');
+  const iss = r.todo.items.filter((x) => x.kind === 'inspection');
+  eq(iss.length, 3, '22.1 openIssues 3 项全部纳入待办');
+  eq((iss.find((x) => x.tag === 'V-31') || {}).priority, 'P1', '22.2 整改超期为 P1');
+  eq((iss.find((x) => x.tag === 'QZ-31') || {}).priority, 'P2', '22.3 整改未到期为 P2');
+  eq((iss.find((x) => x.tag === 'V-31') || {}).bucket, 'overdue', '22.4 整改超期进已逾期');
+  ok(/检验问题整改/.test((iss.find((x) => x.tag === 'V-31') || {}).title || '') && /筒体腐蚀减薄需补焊/.test((iss.find((x) => x.tag === 'V-31') || {}).title || ''), '22.5 标题写明检验问题整改与整改内容');
+  eq((iss.find((x) => x.tag === 'ZZ-31') || {}).bucket, 'noDueDate', '22.6 未填要求完成日期的进无到期日，不自设');
+  ok(/不在特种设备台账/.test((iss.find((x) => x.tag === 'ZZ-31') || {}).detail || ''), '22.7 台账外整改项在说明中标注');
+  ok(new Set(iss.map((x) => x.key)).size === 3 && iss.every((x) => /^inspection:issue\|/.test(x.key)), '22.8 整改项 key 与定检超期 / 临期区分');
+  const r2 = run(ij, ['--prev', path.join(r.out, 'todo.json')], 'insp-issues-2', D(1));
+  eq(r2.summary.counts.total, 3, '22.9 次日重跑整改项按 key 合并结转，不重复');
+  eq(r2.summary.counts.carriedOver, 3, '22.10 整改项全部结转');
+  const noIss = run(insp, [], 'insp-noissues');
+  ok(noIss.summary.warnings.some((w) => /inspection\.json/.test(w) && /检验问题整改/.test(w) && /--issues/.test(w)), '22.11 inspection.json 未带整改项清单（openIssues 为 null）时 warning 说明覆盖范围');
+}
+
 // ---- 输出
 console.log(`\n${'='.repeat(56)}`);
 console.log(`worklog-todo-manager 自测：${pass} 通过，${fail} 失败`);

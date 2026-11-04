@@ -21,7 +21,7 @@ examples/
 
 | # | 示例问题 | 运行参数 | 预期结果 |
 |---|---|---|---|
-| 1 | 机械密封压盖螺栓上多大力矩 | `--question "机械密封压盖螺栓上多大力矩"`（不给 `--docs`） | `numeric`／规则 N5；`blockedFromAnswer: true`、`canAnswer: false`、`answerBasis: none`；只给「该数通常记在说明书安装章节与检修规程回装条款」，**产出作答区一个数字都没有** |
+| 1 | 机械密封压盖螺栓上多大力矩 | `--question "机械密封压盖螺栓上多大力矩"`（不给 `--docs`） | `numeric`／规则 N1（「多大」先命中 N1，同时记入 N5）；`blockedFromAnswer: true`、`canAnswer: false`、`answerBasis: none`；只给「该数通常记在说明书安装章节与检修规程回装条款」，**产出作答区一个数字都没有** |
 | 2 | 机械密封压盖螺栓力矩是多少 | `--question "机械密封压盖螺栓力矩是多少" --docs examples/sample-docs` | 仍是 `numeric`，但 `canAnswer: true`、`answerBasis: plant-docs`；照录检修规程原文里的力矩并标「第 N 段」，**同时仍保留「不提供记忆中的数值」声明**与核实版本提示 |
 | 3 | 我们厂机泵备用件是怎么规定的 | `--question "我们厂机泵备用件是怎么规定的"`（不给 `--docs`） | `plant`／规则 P1；`canAnswer: false`、`generalPrincipleAllowed: false`；明写「未提供厂内资料，本技能无法回答本厂是怎么规定的」+「未用通用原理代替本厂规定作答」 |
 | 4 | 我们厂机泵润滑油用什么牌号 | `--question "我们厂机泵润滑油用什么牌号" --docs examples/sample-docs` | `plant`；命中 `车间设备管理规定.docx` 第八条原文，`answerBasis: plant-docs`，引用带「文件名 + 第 N 段」 |
@@ -56,3 +56,14 @@ examples/
 node scripts/make-sample.js --out examples            # seed=1
 node scripts/make-sample.js --out examples --seed 7   # 厂家、型号、力矩、周期变化，文件构成与上述全部预期结论不变
 ```
+
+## MCP 取数对照
+
+平台接入业务系统 MCP 时，本技能**不调用业务系统 MCP**：资料来自平台知识库，下载后放进一个目录作 `--docs`。下表用演示知识库（`P-2101A离心泵检修规程.md`、`常减压车间设备管理规定.docx`、`设备基础知识培训教材.md`，另有说明书 PDF、结构图 PNG、pptx、损坏 docx、空白 txt、设备台账 csv 共 6 个不可检索文件）实跑。
+
+| # | 示例问题 | MCP 调用 | 运行参数 | 预期结果 |
+|---|---|---|---|---|
+| M1 | P-2101A 原油进料泵检修规程里机械密封压盖螺栓的紧固力矩是怎么写的，把原文和出处找出来 | 不调 MCP；平台知识库资料目录 | `--question "<原句>" --docs <知识库目录>` | `numeric`／N5，`canAnswer: true`、`answerBasis: plant-docs`；命中 `P-2101A离心泵检修规程.md` 第 4 段力矩原文；仍带「不提供记忆中的数值」声明；6 个文件进 `unreadable` 并逐个 warning |
+| M2 | 我们车间关键机泵的备用泵是怎么规定的 | 同上 | 同上 | `plant`／P1，`answerBasis: plant-docs`；首段为 `常减压车间设备管理规定.docx` 第 2 段（第五条 一用一备、备用泵每周盘车）；`generalPrincipleAllowed: false` |
+| M3 | 往复压缩机液击是什么 | 同上 | 同上 | `principle`／G9，`answerBasis: plant-docs`；命中 `设备基础知识培训教材.md` 第三节原文 |
+| — | （反例）E-1201 换热器管束内漏一般是什么原因造成的 | 同上 | 同上 | 问句带位号归 `plant`／P4；知识库里 E-1201 只有无文字层的结构图，命中 0 段 → `canAnswer: false`，明说资料未涉及、不用通用原理代替 |

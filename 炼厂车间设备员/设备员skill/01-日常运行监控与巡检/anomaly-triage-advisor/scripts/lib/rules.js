@@ -54,13 +54,35 @@ function classifyEquipType(v) {
 const SYMPTOM_PATTERNS = [
   ['vibration', /振动|震动|抖动|摆动|晃动/],
   ['noise', /异响|异音|噪音|响声|杂音|敲击|摩擦声|尖叫|啸叫/],
-  ['temperature', /温度高|温升|过热|发烫|高温|超温|温度异常|烫手/],
+  // 「温度偏高/升高/上升」是现场最常见的说法；「温度偏低」不进温升口径
+  ['temperature', /温度(?:有点|有些|略|稍|较|比较|很|非常|太|明显|持续|越来越)?(?:偏高|升高|上升|高)|温升|过热|发烫|发热|高温|超温|温度异常|烫手/],
   ['leak', /泄漏|渗漏|滴漏|漏油|漏气|漏水|漏料|冒油|外漏|窜漏|内漏|串漏/],
-  ['performance', /流量不足|压力不足|打不上量|出力下降|效率下降|抽空|汽蚀|气蚀|不上量|憋压|压差大|压降大/],
+  // 内漏/串漏同时进性能类：换热器内漏（SF2）、泵口环内漏（PF2）、压缩机内漏（CF2/CF3）在性能表。
+  // 只因内漏类词进性能类时，triage 按设备类型只补对应条目（见 INTERNAL_LEAK_SUPPLEMENT），不并入整张性能表
+  ['performance', /流量不足|压力不足|打不上量|出力下降|效率下降|抽空|汽蚀|气蚀|不上量|憋压|压差大|压降大|内漏|窜漏|串漏|串料|互串/],
   ['current', /电流|负荷波动|功率波动|跳闸|过载/],
   ['instrument', /指示不准|示值|偏差|信号|显示异常|无显示|飘移|波动大/],
   ['lubrication', /油位|油压低|油温|乳化|油质|润滑不良|断油/],
 ];
+const INTERNAL_LEAK_RE = /内漏|窜漏|串漏|串料|互串/g;
+/** 性能类是否只由内漏类词触发（去掉内漏类词后性能类不再命中）；无文本时返回 false，按原口径并整张性能表 */
+function performanceOnlyByInternalLeak(desc) {
+  const s = String(desc || '');
+  if (!s || !INTERNAL_LEAK_RE.test(s)) return false;
+  INTERNAL_LEAK_RE.lastIndex = 0;
+  const perf = SYMPTOM_PATTERNS.find((x) => x[0] === 'performance')[1];
+  return !perf.test(s.replace(INTERNAL_LEAK_RE, ''));
+}
+/**
+ * 只因内漏类词进性能类时，按设备类型补的性能条目（其余性能条目与内漏无关，不并入，免得压过泄漏表）：
+ *   换热器类（换热器/冷却器/冷凝器/再沸器/空冷/管束/管程/壳程）→ SF2；阀门、塔、容器等不补
+ *   压缩机/机组 → CF2、CF3；泵 → 仅口环/叶轮/级间内漏语境补 PF2（机封内漏不补）；安全阀、电仪不补
+ */
+const INTERNAL_LEAK_SUPPLEMENT = {
+  static: { ruleIds: ['SF2'], when: /换热|冷却器|冷凝器|再沸器|空冷|管束|管程|壳程/ },
+  compressor: { ruleIds: ['CF2', 'CF3'], when: null },
+  pump: { ruleIds: ['PF2'], when: /口环|叶轮|级间/ },
+};
 const SYMPTOM_CN = {
   vibration: '振动偏大', noise: '异响', temperature: '温度异常', leak: '泄漏',
   performance: '性能下降', current: '电流/负荷异常', instrument: '仪表指示异常',
@@ -563,11 +585,18 @@ function scoreCandidate(cand, evidence) {
  * 返回 {typeKey, typeCn, covered, candidates[], undetermined[], notes[]}
  * covered=false 时只给 GENERIC_FRAME，并由调用方补 warning。
  */
-function triage({ equipType, symptoms, evidence }) {
+function triage({ equipType, symptoms, evidence, symptomText }) {
   const typeKey = classifyEquipType(equipType);
   const table = PATTERNS[typeKey];
   const covered = !!table;
   const syms = (symptoms && symptoms.length ? symptoms : ['other']);
+  // 性能类只由内漏类词触发 → 性能表按设备类型只取对应条目
+  let perfFilter = null;
+  if (syms.includes('performance') && performanceOnlyByInternalLeak(symptomText)) {
+    const sup = INTERNAL_LEAK_SUPPLEMENT[typeKey];
+    const ctx = `${equipType || ''} ${symptomText || ''}`;
+    perfFilter = new Set(sup && (!sup.when || sup.when.test(ctx)) ? sup.ruleIds : []);
+  }
 
   const raw = [];
   const seenId = new Set();
@@ -577,6 +606,7 @@ function triage({ equipType, symptoms, evidence }) {
       const list = table[s];
       if (!list) continue;
       for (const c of list) {
+        if (s === 'performance' && perfFilter && !perfFilter.has(c.ruleId)) continue;
         if (seenId.has(c.id)) continue;
         seenId.add(c.id);
         // 同一原因在多个现象表里都出现（如「滚动轴承损伤」既在振动也在异响表）：
@@ -791,7 +821,7 @@ function escalation(risk, candCount, undCount) {
 const DISCLAIMER = '本结论为初判辅助，由脚本汇总、模型成文，不替代专业诊断与停机决策，须由设备工程师或车间设备主任复核；厂内制度与系统数据为准';
 
 module.exports = {
-  classifyEquipType, TYPE_CN, classifySymptoms, SYMPTOM_CN,
+  classifyEquipType, TYPE_CN, classifySymptoms, SYMPTOM_CN, performanceOnlyByInternalLeak, INTERNAL_LEAK_SUPPLEMENT,
   parseSudden, parseAffects, parseRecentRepair,
   PROBES, runProbe, PATTERNS, GENERIC_FRAME,
   scoreCandidate, triage, FIELD_CN,

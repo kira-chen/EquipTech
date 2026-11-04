@@ -29,7 +29,15 @@ const VALUE_KINDS = [
   { key: 'balance', cn: '动平衡等级', re: /动平衡|平衡等级|剩余不平衡|G[0-9]/ },
   { key: 'calibration', cn: '校验精度/误差', re: /精度|示值误差|基本误差|回差|允差|准确度等级|零点漂移|切换差/ },
   { key: 'thermal', cn: '炉管/壁厚/温度限值', re: /壁温|炉管|炉膛|蠕变|胀粗|氧含量|排烟温度|管壁温度|翅片/ },
+  // 壁厚与水平度单列：归入「公差」会引到管板平面度公差等不相干条款，把「没有出处」掩盖成「已有出处」
+  { key: 'thickness', cn: '壁厚与腐蚀裕量', re: /壁厚|最小允许|腐蚀裕量|测厚|减薄/ },
+  { key: 'level', cn: '安装水平度', re: /水平度|垂直度|水平偏差|标高偏差/ },
 ];
+/**
+ * 一项含多个具体数值时（need）：每个分项都要在规程里找到含该分项关键词且带数字的条款才算有出处，
+ * 只命中数值类型关键词（如「间隙」）不算。缺任一分项即整项「待查规程确认」，原因里写明缺哪项、已找到哪项。
+ */
+const NEED_PU_SEAL = [{ cn: '转子轴向窜量', re: /窜量|串量/ }, { cn: '机封压缩量', re: /压缩量/ }];
 
 // ---------------------------------------------------------------- 设备类型
 /**
@@ -58,11 +66,15 @@ const COVERED = EQUIP_TYPES.map((t) => t.key);
  * classifyEquip(type, name) → key；识别不到返回 'generic'
  * 设备类型字段优先于设备名称：「循环水泵电机」按填写的类型判，避免「泵」先命中。
  * 阀门放在泵/机组之后判，「泵出口阀」这类名称里「泵」先命中属预期（以类型字段为准）。
+ * 起重机械等明确不在覆盖范围的类型先判为 generic，避免名称里的「机泵区」「压缩机厂房」等地点词误归泵类/机组类。
  */
+// 「行车」排除「运行车间」里的「运行车」：(?<!运)
+const OUT_OF_SCOPE = /起重机|起重机械|吊车|(?<!运)行车|天车|电梯|叉车/;
 function classifyEquip(type, name) {
   for (const src of [type, name]) {
     const s = String(src || '');
     if (!s.trim()) continue;
+    if (OUT_OF_SCOPE.test(s)) return 'generic';
     for (const t of EQUIP_TYPES) if (t.re.test(s)) return t.key;
   }
   return 'generic';
@@ -98,7 +110,7 @@ const LEVELS = [
   { key: 'overhaul', cn: '大检修（停工检修）', re: /大检修|停工检修|大修|A级检修|全面检修/ },
   { key: 'emergency', cn: '抢修', re: /抢修|紧急抢修|应急抢修|事故抢修/ },
   { key: 'special', cn: '专项（技改技措）', re: /专项|技改|技措|项目检修|改造/ },
-  { key: 'routine', cn: '日常维修', re: /日常维修|日常检修|日常|中修|小修|B级检修|C级检修|消缺|临修|临时/ },
+  { key: 'routine', cn: '日常维修', re: /日常维修|日常检修|日常|(?<!集)中修|小修|B级检修|C级检修|消缺|临修|临时/ },   // 「集中修复」里的「中修」不算
 ];
 /** 旧口径别名 → 现口径 */
 const LEVEL_ALIASES = { medium: 'routine', minor: 'routine' };
@@ -210,7 +222,7 @@ const TYPE_STEPS = {
     { id: 'PU9', phase: 'repair', needValue: 'balance', when: () => true,
       title: '更换机械密封、轴承、O 形圈与密封垫片；叶轮修复或更换后按规定等级做动平衡',
       note: '动平衡等级与剩余不平衡量须引用厂内规程或说明书' },
-    { id: 'PU10', phase: 'assemble', needValue: 'clearance', when: () => true,
+    { id: 'PU10', phase: 'assemble', needValue: 'clearance', need: NEED_PU_SEAL, when: () => true,
       title: '装配转子部件，调整叶轮轴向位置与转子窜量，安装机械密封并按规定压缩量调整',
       note: '转子窜量与机封压缩量须引用厂内规程或机封安装说明书' },
     { id: 'PU11', phase: 'assemble', needValue: 'alignment', when: () => true,
@@ -297,7 +309,7 @@ const TYPE_STEPS = {
     { id: 'ST5', phase: 'inspect', needValue: null, when: () => true,
       title: '清理设备内壁、管束与内件的结垢、聚合物与腐蚀产物，清洗方式按介质特性选择',
       note: '高压水清洗、化学清洗须单独编制作业方案与安全措施' },
-    { id: 'ST6', phase: 'inspect', needValue: 'tolerance', when: () => true,
+    { id: 'ST6', phase: 'inspect', needValue: 'thickness', when: () => true,
       title: '壁厚测定（重点部位与历次测点对照）、腐蚀形貌检查、焊缝与接管角焊缝无损检测',
       note: '最小允许壁厚、腐蚀速率判据与无损检测合格级别须引用厂内规程与设计文件' },
     { id: 'ST7', phase: 'inspect', needValue: null, when: () => true,
@@ -434,7 +446,7 @@ const TYPE_STEPS = {
       when: (ctx) => ctx.dismantle === true ? true : (ctx.dismantle === false ? false : { undetermined: '未说明是否拆管箱/拆风机' }),
       title: '拆除管箱丝堵或管箱盖（记录位置），拆除风机叶片、皮带或联轴器，吊出需更换的管束或电机',
       note: '丝堵与管箱垫片按编号摆放；吊装须办理吊装作业许可' },
-    { id: 'AC4', phase: 'inspect', needValue: 'tolerance', when: () => true,
+    { id: 'AC4', phase: 'inspect', needValue: 'thickness', when: () => true,
       title: '管束检查：翅片管翅片倒伏与积灰、管端胀口泄漏、管箱腐蚀；壁厚测定与历次对照',
       note: '翅片管壁厚与胀口泄漏判废标准须引用厂内规程' },
     { id: 'AC5', phase: 'inspect', needValue: 'clearance', when: () => true,
@@ -634,7 +646,7 @@ const QC_POINTS = {
     { id: 'QC-PU1', phase: 'inspect', item: '口环与叶轮配合间隙', method: '内径千分尺/塞尺测量，逐点记录', valueKind: 'clearance', hold: false },
     { id: 'QC-PU2', phase: 'inspect', item: '泵轴弯曲度与径向跳动', method: '百分表测量', valueKind: 'tolerance', hold: false },
     { id: 'QC-PU3', phase: 'inspect', item: '轴承游隙 / 轴瓦间隙', method: '塞尺或压铅丝测量', valueKind: 'clearance', hold: false },
-    { id: 'QC-PU4', phase: 'assemble', item: '转子轴向窜量与机封压缩量', method: '百分表测量并记录', valueKind: 'clearance', hold: true },
+    { id: 'QC-PU4', phase: 'assemble', item: '转子轴向窜量与机封压缩量', method: '百分表测量并记录', valueKind: 'clearance', need: NEED_PU_SEAL, hold: true },
     { id: 'QC-PU5', phase: 'assemble', item: '泵与电机对中偏差', method: '百分表或激光对中仪，出具对中记录', valueKind: 'alignment', hold: true },
     { id: 'QC-PU6', phase: 'test', item: '严密性试验', method: '按规定压力保压并检查渗漏', valueKind: 'pressure', hold: true },
     { id: 'QC-PU7', phase: 'test', item: '试运振动与轴承温度', method: '测振仪与测温枪，定时记录', valueKind: 'vibration', hold: true },
@@ -652,7 +664,7 @@ const QC_POINTS = {
     { id: 'QC-RO10', phase: 'test', item: '试运振动、轴位移与瓦温', method: '在线监测与就地记录', valueKind: 'vibration', hold: true },
   ],
   static: [
-    { id: 'QC-ST1', phase: 'inspect', item: '壁厚测定', method: '超声测厚，测点与历次对照', valueKind: 'tolerance', hold: true },
+    { id: 'QC-ST1', phase: 'inspect', item: '壁厚测定', method: '超声测厚，测点与历次对照', valueKind: 'thickness', hold: true },
     { id: 'QC-ST2', phase: 'inspect', item: '焊缝与接管无损检测', method: '有资质单位检测出具报告', valueKind: null, hold: true },
     { id: 'QC-ST3', phase: 'repair', item: '承压部件焊接修复', method: '查焊接工艺评定、焊工资质与焊后检测', valueKind: null, hold: true },
     { id: 'QC-ST4', phase: 'assemble', item: '封闭前设备内清理确认', method: '双人进入确认无遗留并签字', valueKind: null, hold: true },
@@ -682,7 +694,7 @@ const QC_POINTS = {
     { id: 'QC-FU5', phase: 'test', item: '烘炉/升温曲线执行', method: '逐时记录炉膛温度与壁温', valueKind: 'thermal', hold: true },
   ],
   aircooler: [
-    { id: 'QC-AC1', phase: 'inspect', item: '翅片管壁厚与胀口检查', method: '测厚仪，胀口目视与试漏', valueKind: 'tolerance', hold: false },
+    { id: 'QC-AC1', phase: 'inspect', item: '翅片管壁厚与胀口检查', method: '测厚仪，胀口目视与试漏', valueKind: 'thickness', hold: false },
     { id: 'QC-AC2', phase: 'inspect', item: '风机叶尖间隙与叶片角度', method: '塞尺与角度仪测量', valueKind: 'clearance', hold: false },
     { id: 'QC-AC3', phase: 'repair', item: '风机叶片平衡', method: '静/动平衡并记录', valueKind: 'balance', hold: true },
     { id: 'QC-AC4', phase: 'test', item: '管束水压（气密）试验', method: '按规定压力保压检查丝堵与胀口', valueKind: 'pressure', hold: true },
@@ -730,9 +742,9 @@ const ACCEPTANCE = {
     { id: 'AC-RO7', item: '试运振动、轴位移、瓦温在规程限值内并连续稳定', valueKind: 'vibration' },
   ],
   static: [
-    { id: 'AC-ST1', item: '壁厚满足最小允许壁厚要求', valueKind: 'tolerance' },
+    { id: 'AC-ST1', item: '壁厚满足最小允许壁厚要求', valueKind: 'thickness' },
     { id: 'AC-ST2', item: '无损检测合格并出具报告', valueKind: null },
-    { id: 'AC-ST3', item: '内件安装位置、水平度符合图纸要求', valueKind: 'tolerance' },
+    { id: 'AC-ST3', item: '内件安装位置、水平度符合图纸要求', valueKind: 'level' },
     { id: 'AC-ST4', item: '水压（气密）试验合格，无渗漏无变形', valueKind: 'pressure' },
     { id: 'AC-ST5', item: '设备内无遗留物，封闭前双人确认签字', valueKind: null },
   ],
@@ -799,15 +811,41 @@ function stripClauseNo(text) {
 }
 const hasValue = (text) => /\d/.test(stripClauseNo(text));
 
-function matchSpec(specLines, valueKind) {
+function matchSpec(specLines, valueKind, need) {
   const kind = VALUE_KINDS.find((k) => k.key === valueKind);
   if (!kind || !specLines || !specLines.length) return null;
+  if (need && need.length) return matchNeed(specLines, need).hit;
   for (const L of specLines) {
     if (!kind.re.test(L.text)) continue;
     if (!hasValue(L.text)) continue; // 无数字（条款号不算）的说明性文字不作为数值出处
     return { quote: L.text.trim(), line: L.line };
   }
   return null;
+}
+/** 分项逐一定位：返回 {hit(全部命中时的合并引用，否则 null), found:[{cn,line}], missing:[cn]} */
+function matchNeed(specLines, need) {
+  const found = [], missing = [];
+  for (const n of need) {
+    const L = (specLines || []).find((x) => n.re.test(x.text) && hasValue(x.text));
+    if (L) found.push({ cn: n.cn, line: L.line, quote: L.text.trim() });
+    else missing.push(n.cn);
+  }
+  if (missing.length) return { hit: null, found, missing };
+  const uniq = [];
+  for (const f of found) if (!uniq.some((u) => u.line === f.line)) uniq.push(f);
+  return { hit: { quote: uniq.map((u) => u.quote).join('；'), line: uniq.map((u) => u.line).join('、') }, found, missing };
+}
+/** 待补齐的数值名称：有分项的写分项名（如「转子轴向窜量、机封压缩量」），否则写数值类型 */
+const needCn = (need, kindCn) => (need && need.length ? need.map((n) => n.cn).join('、') : kindCn);
+/** 未找到出处时的原因：有分项的写明缺哪项、已找到哪项 */
+function tbcReason(specLines, specName, kindCn, need) {
+  if (!specLines) return '未提供厂内规程或设备说明书（--spec）';
+  const src = specName || '厂内规程';
+  if (need && need.length) {
+    const m = matchNeed(specLines, need);
+    return `已提供的${src}中未找到${m.missing.map((x) => `「${x}」`).join('、')}的原文依据${m.found.length ? `（已找到：${m.found.map((f) => `${f.cn} 第 ${f.line} 行`).join('、')}，补齐后一并核对）` : ''}`;
+  }
+  return `已提供的${src}中未找到${kindCn}的原文依据`;
 }
 
 /** 通用口径关键词：出现「一般」「通常」「按经验」等表述时，说明是通用口径而非厂内规定 */
@@ -908,7 +946,7 @@ function buildPlan(ctx) {
     };
     // 数值要求：只引用规程原文，绝不生成
     if (s.needValue) {
-      const hit = matchSpec(specLines, s.needValue);
+      const hit = matchSpec(specLines, s.needValue, s.need);
       if (hit) {
         base.valueSource = 'spec';
         base.valueText = `${base.valueKindCn}：${hit.quote}`;
@@ -920,8 +958,8 @@ function buildPlan(ctx) {
         toBeConfirmed.push({
           stepId: s.id, phaseCn: PHASE_CN[s.phase], where: base.title,
           valueKind: s.needValue, valueKindCn: base.valueKindCn,
-          reason: specLines ? `已提供的${specName || '厂内规程'}中未找到${base.valueKindCn}的原文依据` : '未提供厂内规程或设备说明书（--spec）',
-          action: `查阅厂内检修规程 / 设备说明书补齐${base.valueKindCn}，补齐前不得施工`,
+          reason: tbcReason(specLines, specName, base.valueKindCn, s.need),
+          action: `查阅厂内检修规程 / 设备说明书补齐${needCn(s.need, base.valueKindCn)}，补齐前不得施工`,
         });
       }
     } else {
@@ -949,15 +987,15 @@ function buildPlan(ctx) {
       valueKind: q.valueKind, valueKindCn: q.valueKind ? (VALUE_KINDS.find((k) => k.key === q.valueKind) || {}).cn : null,
     };
     if (q.valueKind) {
-      const hit = matchSpec(specLines, q.valueKind);
+      const hit = matchSpec(specLines, q.valueKind, q.need);
       if (hit) { out.standard = hit.quote; out.standardSource = 'spec'; out.citation = `${specName || '厂内规程'} 第 ${hit.line} 行`; }
       else {
         out.standard = TBC; out.standardSource = 'tbc'; out.citation = null;
         toBeConfirmed.push({
           stepId: q.id, phaseCn: PHASE_CN[q.phase], where: `质量控制点：${q.item}`,
           valueKind: q.valueKind, valueKindCn: out.valueKindCn,
-          reason: specLines ? `已提供的${specName || '厂内规程'}中未找到${out.valueKindCn}的原文依据` : '未提供厂内规程或设备说明书（--spec）',
-          action: `查阅厂内检修规程 / 设备说明书补齐${out.valueKindCn}合格判据`,
+          reason: tbcReason(specLines, specName, out.valueKindCn, q.need),
+          action: `查阅厂内检修规程 / 设备说明书补齐${needCn(q.need, out.valueKindCn)}合格判据`,
         });
       }
     } else {
@@ -975,15 +1013,15 @@ function buildPlan(ctx) {
       valueKind: a.valueKind, valueKindCn: a.valueKind ? (VALUE_KINDS.find((k) => k.key === a.valueKind) || {}).cn : null,
     };
     if (a.valueKind) {
-      const hit = matchSpec(specLines, a.valueKind);
+      const hit = matchSpec(specLines, a.valueKind, a.need);
       if (hit) { out.criterion = hit.quote; out.criterionSource = 'spec'; out.citation = `${specName || '厂内规程'} 第 ${hit.line} 行`; }
       else {
         out.criterion = TBC; out.criterionSource = 'tbc'; out.citation = null;
         toBeConfirmed.push({
           stepId: a.id, phaseCn: '验收', where: `验收标准：${a.item}`,
           valueKind: a.valueKind, valueKindCn: out.valueKindCn,
-          reason: specLines ? `已提供的${specName || '厂内规程'}中未找到${out.valueKindCn}的原文依据` : '未提供厂内规程或设备说明书（--spec）',
-          action: `查阅厂内检修规程 / 设备说明书补齐${out.valueKindCn}验收判据`,
+          reason: tbcReason(specLines, specName, out.valueKindCn, a.need),
+          action: `查阅厂内检修规程 / 设备说明书补齐${needCn(a.need, out.valueKindCn)}验收判据`,
         });
       }
     } else {

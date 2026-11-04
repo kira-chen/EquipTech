@@ -20,9 +20,27 @@ metadata:
 - 不适用：单日日报（用 equipment-daily-report）；会议汇报稿排版（用 meeting-material-builder）；泄漏点逐点跟踪与修复率（用 leak-point-tracker）。
 
 ## 前提条件
-- 输入：多份 `daily.json`（来自 equipment-daily-report，含 `special` 节可汇总特护设备）、`leaks.json`（来自 leak-point-tracker，含 `sealPoints` 时可算泄漏率），或区间内的 `.xlsx` 原始数据：设备台账（须含「在用」列，可含「重要度/ABC标识」列）、故障记录、检修计划（可含「检修类别」列）、工单台账/订单清单、缺陷台账/通知单清单、备件消耗、特护设备、备机、密封点统计、停工记录。列名支持 SAP PM / EM 导出常见列名（功能位置、设备描述、ABC标识、订单、系统状态、基本结束日期、实际结束日期、主工作中心、通知单、通知单描述……），「设备编号」不作位号。
+- 输入：多份 `daily.json`（来自 equipment-daily-report，含 `special` 节可汇总特护设备）、`leaks.json`（来自 leak-point-tracker，含 `sealPoints` 时可算泄漏率），或区间内的 `.xlsx` 原始数据：设备台账（须含「在用」列，可含「重要度/ABC标识」列）、故障记录、检修计划（可含「检修类别」列）、工单台账/订单清单、缺陷台账/通知单清单、备件消耗、特护设备、备机、密封点统计、停工记录。列名支持 SAP PM / EM 导出常见列名（功能位置、设备描述、ABC标识、订单、系统状态、基本结束日期、实际结束日期、主工作中心、通知单、通知单描述……），「设备编号」不作位号。表名含「设备台账」或「技术对象」即按设备台账读取（如「二作业部设备台账」）；特种设备台账、润滑台账、巡检台账，以及「压力容器设备台账」「安全阀设备台账」「检修设备台账」「密封设备台账」这类「专项名 + 设备台账」的表，不当作全车间设备台账。
 - 必填信息：车间名称、报告周期与起止日期。可选：厂内指标口径表（`--metrics`，可带「分母 / 剔除封存」结构化列）、`--intact-denominator 在用|在册`、`--sealed 剔除|计入`、上期 periodic.json（环比）、同期 periodic.json（同比）。
 - 环境：可执行 Node.js ≥ 18，脚本仅用内置模块，无需 npm 安装。**若环境无法执行 node（无 Bash 工具或 `node --version` 失败），明确告知用户并终止，不得手工计算任何指标。**
+
+## 数据获取（MCP）
+
+平台接入了业务系统 MCP 服务时，按下表调用工具取数，不再请用户上传导出文件；未接入时按操作步骤请用户提供系统导出文件。工具全部只读，不在业务系统里创建或修改任何单据。
+
+| 服务 | 工具 | 参数 | 交给脚本 |
+|---|---|---|---|
+| 设备资产管理 | `get_equipment_ledger` | `workshop`：车间名 | `--input` |
+| 设备资产管理 | `get_failure_history` | `workshop`：车间名；`start_date`：统计期起始日，与 --from 相同；`for_skill=equipment-weekly-monthly-report` | `--input` |
+| 设备资产管理 | `get_work_orders` | `workshop`：车间名；`for_skill=equipment-weekly-monthly-report` | `--input` |
+| 设备资产管理 | `get_notifications` | `workshop`：车间名；`for_skill=equipment-weekly-monthly-report` | `--input` |
+
+取数后：
+
+1. 工具返回下载链接（60 分钟内有效，过期重新调用）。csv 按原文件名放进新建的空目录，不改文件名，不与其他技能的文件混放；把目录作为“交给脚本”一列的参数值。
+2. 四个工具都要填 `workshop`：导出表里没有车间列，不填会把别的车间的设备和单据算进本车间的完好率、及时率。
+3. `get_work_orders`、`get_notifications`：输出表名为「工单台账」「缺陷台账」；**不填 `start_date`**，默认返回近 12 个月及全部未关闭的单据。工具按创建/发现日期筛选，填了起始日会漏掉统计期之前创建、要求完成日期落在统计期内的工单（工单及时率分母变小），以及统计期之前发现、至今未闭环的缺陷。
+4. 备机完好率、密封点泄漏率、非计划停工、特护设备没有对应的直接导出，报告写「未提供」；需要时先跑 `standby-rotation-reminder`、`leak-point-tracker` 或逐日 `equipment-daily-report`，把产出 JSON 一并传给 `--input`。
 
 ## 操作步骤
 1. **确认周期与指标口径** —— 车间、周期类型、起止日期；询问是否有厂内指标口径表。未提供口径表时使用 `references/metrics-rules.md` 的默认算法，并必须在报告中注明"采用默认口径，非厂内正式口径"。**口径表命中但算法与默认不一致、又没有结构化口径参数时，该指标不出数并标"需按厂内口径复算"，不得只换文字沿用默认算法结果。**
@@ -35,7 +53,8 @@ metadata:
    - 区间内有缺失日期：warning 列出缺失日期，指标注明"基于 N 天数据（应为 M 天）"，**绝不按已有天数平均后外推补齐**。
    - 设备台账缺「在用」列：设备完好率输出 null（显示 —）并说明原因，**不得按在册台数算**；只有用户明确给 `--intact-denominator 在册` 才按在册计算。
    - 未提供某类表（备机、密封点统计、停工记录、特护设备）：对应指标写"未提供"，不估算。
-3. **读取 periodic.json** —— 从 `<输出目录>/periodic.json` 获取：`metrics`（完好率、主要设备完好率、备机完好率、静/动密封点泄漏率、检修计划完成率及分列、工单及时率、MTTR、故障停机时长与次数、非计划停工次数、`modes` 各指标计算方式）、`failures`、`maintenance`（含 `byCategory`）、`orders`、`defects`、`spare`、`special`、`standby`、`seal`、`leakPoints`、`shutdown`、`highlights`、`compare`、`dataGaps`（`missingDates` / `noDenominator` / `notProvided` / `recompute`）、`counts`。
+   - 历史区间（`--to` 早于今天）：缺陷台账的期末未闭环按发现时间、闭环时间回推到 `--to`（`--to` 之后发现的不计，`--to` 之后才闭环的仍算未闭环），`defects.foundAfterTo` 给出被排除条数；待验收没有状态变更日期，按当前状态计，`defects.asOfNote` 注明。设备完好率、主要设备完好率来自台账当前状态，`metrics.intactSnapshotNote` 注明不是 `--to` 时点；环比、同比基准期报告若生成日晚于其期末，`compare.*.snapshotNote` 注明基准期完好率是生成时的快照。向用户交付时转述这几条说明。
+3. **读取 periodic.json** —— 从 `<输出目录>/periodic.json` 获取：`metrics`（完好率、主要设备完好率、备机完好率、静/动密封点泄漏率、检修计划完成率及分列、工单及时率、MTTR、故障停机时长与次数、非计划停工次数、`modes` 各指标计算方式）、`failures`、`maintenance`（含 `byCategory`）、`orders`、`defects`、`spare`、`special`、`standby`、`seal`、`leakPoints`、`shutdown`、`highlights`（超期工单带 `no` / `tag` / `unit`，责任方写工作中心）、`compare`、`dataGaps`（`missingDates` / `noDenominator` / `notProvided` / `recompute`）、`counts`。
 4. **撰写"设备管理分析"** —— 读 `references/metrics-rules.md` 的表述口径，撰写 400~600 字，按"总体评价 → 关键指标与环比同比 → 特护设备与故障分布 → 检修计划执行（大检修/日常维修分述） → 工单与缺陷 → 备件消耗 → 存在问题 → 下期重点"结构，替换 `periodic.md` 中 `<!-- ANALYSIS_START -->` 与 `<!-- ANALYSIS_END -->` 之间的占位文字。**所有指标引用 periodic.json；指标变化的原因只在数据支持时陈述，否则写"原因待分析"；分母缺失或需复算的指标写"未计算"。**
 5. **交付前自检** —— 对照 `references/checklist.md` 逐项检查；通过后交付 `periodic.md`、`periodic.json` 与 `指标表.xlsx`。用户要求 Word 时按平台能力转换，**不得手写 docx XML**。
 

@@ -85,6 +85,8 @@ sheet 名匹配规则：去空白与「表」字后做包含匹配，因此「�
 | 结论 | 否 | 化验室结论原文，脚本照录不改写 |
 | 油品名称 | 否 | 缺失时取台账中该位号的油品，用于参考限值表的油品类型匹配 |
 
+\* 位号不在本次润滑台账内的油样单列为「台账外油样」（`oilAnalysis.outOfLedger`），不计入异常/正常/无限值计数。
+
 \* **限值为空或无法解析时，该检测项只列示数值、不判异常**，进 `oilAnalysis.noLimit` 单列一节并 warning。脚本**不内置、不引用任何通用限值或行业经验值替代厂内标准**；仅当用户用 `--ref-standard` 显式提供参考限值表时，这些项才进 `oilAnalysis.refChecked` 做参考比对并标注"非厂内标准，仅供参考"。
 
 ### 限值表达式
@@ -117,7 +119,7 @@ sheet 名匹配规则：去空白与「表」字后做包含匹配，因此「�
 - `runtime-hours-tracker` 产出的 `runtime.json`：读 `byEquipment[].tag` 与 `cumHours`；`cumHours` 为空的设备 warning 并不判定。
 - xlsx：工作表「累计运行小时」（或首个工作表），列「位号」「累计运行小时」（带单位 "33500h" 可解析）。
 
-只对运行小时周期项生效；台账自带「累计运行小时」列时以台账为先。仍需台账给「上次加换油时累计小时」或「自上次加换油运行小时」，否则该项无法判定。
+只对运行小时周期项生效；台账「自上次加换油运行小时」或「累计运行小时」有值时以台账为先，台账累计与 `--run-hours` 不一致时 warning 提示核对（不静默取其一）。平台接入 MCP 时，DCS 位号数据 `get_run_events`（`for_skill=lubrication-manager`）导出的「累计运行小时」CSV 目录可直接作 `--run-hours`。读 runtime-hours-tracker 的 runtime.json 时，某台 `periodHours` 为 null（累计只剩期初/上期值）或 `cumBasis` 为 `periodOnly`（仅本期增量）的，累计可能偏小，用到时脚本 warning 提示。仍需台账给「上次加换油时累计小时」或「自上次加换油运行小时」，否则该项无法判定。
 
 ## 六、参考限值表（可选，`--ref-standard`）
 

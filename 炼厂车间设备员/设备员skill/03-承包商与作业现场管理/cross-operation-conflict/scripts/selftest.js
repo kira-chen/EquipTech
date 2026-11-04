@@ -292,6 +292,32 @@ f = mk('resu.xlsx', [HEAD,
 r = run(f, [], 'resu');
 ok(r.json.undetermined.some((u) => u.kind === 'resource'), 'E1.7 资源占用时间缺失列入未判定');
 eq(r.json.counts.resource, 0, 'E1.8 无法判定时不产出已确认资源冲突');
+// Z2 只在起重类设备 / 吊装作业之间判：两张票都写「电焊机」不算同一台起重设备
+f = mk('resz2.xlsx', [HEAD,
+  ['W1', '动火作业', 'E-1', '一区', '0', `${DATE} 08:00`, `${DATE} 12:00`, '甲队', '张', '', '电焊机', '', '', ''],
+  ['W2', '动火作业', 'P-1', '二区', '0', `${DATE} 09:00`, `${DATE} 11:00`, '乙队', '李', '', '电焊机', '', '', ''],
+  ['W3', '吊装作业', 'C-1', '三区', '0', `${DATE} 08:00`, `${DATE} 10:00`, '丙队', '王', '', '1号设备', '', '', ''],
+  ['W4', '吊装作业', 'C-2', '四区', '0', `${DATE} 09:00`, `${DATE} 11:00`, '丁队', '赵', '', '1号设备', '', '', ''],
+]);
+r = run(f, [], 'resz2');
+ok(!r.json.resourceConflicts.some((x) => x.ruleId === 'Z2' && x.resource === '电焊机'), 'E1.9 两张票都写「电焊机」（非起重设备、非吊装作业）不判 Z2');
+ok(r.json.warnings.some((w) => w.includes('电焊机') && w.includes('Z2')), 'E1.10 普通机具同名给出不判 Z2 的说明');
+ok(r.json.resourceConflicts.some((x) => x.ruleId === 'Z2' && x.resource === '1号设备'), 'E1.11 两项吊装作业共用同一设备仍判 Z2');
+// R7：结束时间只写日期且就是检测日，按当日 24:00 处理，不得跳过
+f = mk('enddate.xlsx', [HEAD,
+  ['W1', '动火作业', 'E-1', '一区', '0', `${DATE} 08:00`, DATE, '甲队', '张', '', '', '', '', ''],
+  ['W2', '检修作业', 'P-1', '一区', '0', `${DATE} 09:00`, `${DATE} 11:00`, '乙队', '李', '', '', '', '', ''],
+]);
+r = run(f, [], 'enddate');
+eq(r.summary.ok, true, 'E2.1 结束时间只写检测日日期时检测正常完成');
+ok(r.json && !(r.json.skipped || []).some((s) => s.id === 'W1'), 'E2.2 结束时间只写检测日日期的作业不被跳过');
+ok(r.json && r.json.spatialConflicts.some((c) => (c.pair || []).includes('W1') && (c.pair || []).includes('W2')), 'E2.3 只写日期的结束时间按当日 24:00 参与重叠判定');
+ok(r.json && r.json.warnings.some((w) => w.includes('W1') && w.includes('24:00')), 'E2.4 只写日期的结束时间给出按 24:00 处理的提示');
+f = mk('enddate2.xlsx', [HEAD,
+  ['W1', '动火作业', 'E-1', '一区', '0', `${DATE} 08:00`, DATE, '甲队', '张', '', '', '', '', ''],
+]);
+r = run(f, [], 'enddate2');
+eq(r.summary.ok, true, 'E2.5 唯一作业结束时间只写检测日日期时不因全部跳过而失败');
 
 // ================================================================ F. timeline 时段重叠视图
 f = mk('tl.xlsx', [HEAD,
@@ -336,6 +362,34 @@ ok(r.json.warnings.some((w) => w.includes('合计行')), 'H1.3 合计行 warning
 ok(r.json.warnings.some((w) => w.includes('不在检测日期')), 'H1.4 跨日 warning');
 eq(r.json.skipped.length, 1, 'H1.5 跨日作业列入 skipped');
 ok(hasRule(r.json.riskConflicts, 'R1'), 'H1.6 别名列头下规则仍正常命中');
+// 跨越检测日的多日作业票（前一天开、后一天结束，检测日全天有效）：不跳过，照常参与冲突判定
+f = mk('span.xlsx', [HEAD,
+  ['SP-1', '受限空间作业', 'V-1', '一区', '0', '2026-09-20 09:00', '2026-09-22 17:00', '甲队', '张', '石脑油', '', '', '', ''],
+  ['SP-2', '动火作业', 'E-1', '一区', '0', `${DATE} 09:00`, `${DATE} 12:00`, '乙队', '李', '石脑油', '', '', '', ''],
+  ['SP-3', '脚手架搭设', 'C-1', '一区', '12', '2026-09-22 08:00', '2026-09-23 17:00', '丙队', '王', '', '', '', '', ''],
+]);
+r = run(f, [], 'span');
+ok(r.json.works.some((w) => w.id === 'SP-1') && !r.json.skipped.some((s) => s.id === 'SP-1'), 'H1.6a 跨越检测日的多日作业票不跳过（检测日在其有效期内）');
+ok([...r.json.spatialConflicts, ...r.json.riskConflicts].some((c) => (c.pair || []).includes('SP-1') && (c.pair || []).includes('SP-2')), 'H1.6b 跨越检测日的作业票与当天作业照常判冲突');
+ok(r.json.skipped.some((s) => s.id === 'SP-3'), 'H1.6c 检测日之后才开始的作业仍跳过');
+// 检测日 00:00 结束的票不覆盖检测日；并行时段与重叠分钟截到检测日 [D 00:00, D+1 00:00)（2026-11-04 复核补充）
+f = mk('clip.xlsx', [HEAD,
+  ['SP-1', '受限空间作业', 'V-1', '一区', '0', '2026-09-15 08:00', '2026-09-25 18:00', '甲队', '张', '石脑油', '', '', '', ''],
+  ['SP-2', '动火作业', 'E-1', '一区', '0', '2026-09-18 08:00', `${DATE} 10:00`, '乙队', '李', '石脑油', '', '', '', ''],
+  ['SP-3', '动火作业', 'E-2', '一区', '0', '2026-09-20 08:00', `${DATE} 00:00`, '丙队', '王', '石脑油', '', '', '', ''],
+  ['SP-4', '动火作业', 'E-3', '一区', '0', '2026-09-22 00:00', '2026-09-22 08:00', '丁队', '赵', '石脑油', '', '', '', ''],
+]);
+r = run(f, [], 'clip');
+ok(r.json.skipped.some((s) => s.id === 'SP-3') && !r.json.works.some((w) => w.id === 'SP-3'), 'H1.6d 检测日 00:00 结束的作业票不覆盖检测日，跳过');
+ok(r.json.skipped.some((s) => s.id === 'SP-4'), 'H1.6e 检测日次日 00:00 开始的作业票跳过');
+ok(r.json.segments.length > 0 && r.json.segments.every((s) => s.start >= `${DATE} 00:00` && s.end <= '2026-09-22 00:00'), `H1.6f 并行时段只在检测日内（实际 ${r.json.segments.map((s) => s.start + '~' + s.end).join('；')}）`);
+eq(r.json.segments.reduce((n, s) => n + s.minutes, 0), 1440, 'H1.6g 并行时段合计不超过检测日 1440 分钟');
+eq(r.json.counts.maxConcurrent, 2, 'H1.6h 最大并行作业数按检测日内计（SP-1 + SP-2）');
+{
+  const c = [...r.json.spatialConflicts, ...r.json.riskConflicts].find((x) => (x.pair || []).join('-') === 'SP-1-SP-2');
+  eq(c && c.overlapMinutes, 600, 'H1.6i 重叠分钟截到检测日（00:00~10:00 共 600 分钟，不是 09-18 起算）');
+}
+ok(r.json.works.find((w) => w.id === 'SP-1').start === '2026-09-15 08:00', 'H1.6j 作业清单保留作业票原始起止时间');
 // 空作业编号
 f = mk('noid.xlsx', [HEAD,
   ['', '动火作业', 'E-1', '一区', '0', `${DATE} 09:00`, `${DATE} 12:00`, '甲队', '张', '', '', '', '', ''],

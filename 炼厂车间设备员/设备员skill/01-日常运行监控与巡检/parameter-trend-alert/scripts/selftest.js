@@ -655,6 +655,203 @@ ok(/ISO 10816/.test(r.md), 'R4 分析段占位提示振动按 ISO 10816 / GB/T 6
   try { fs.rmSync(sj.out, { recursive: true, force: true }); } catch (e) {}
 }
 
+// ============ S. 停运设备：低值不判越低报/低低报、不做劣化判定，高限照常判 ============
+// P-11A 运行（电流 60）；P-11B 备用（电流 0、出口压力 0.18、轴承温度 85 越高报）；P-12 电流 0、振动 0→0.6；
+// P-13 无电流/转速位号；II-14/PI-14 只有测点号、无设备位号（归属不定）；P-16 09-07 12:00 才停机（最新数据 08:00 时在运行）
+const ST_HDR = ['设备位号', '测点号', '设备名称', '参数名', '采集时间', '数值', '单位'];
+const ST_T = ['2026-09-01 08:00', '2026-09-03 08:00', '2026-09-05 08:00', '2026-09-07 08:00'];
+const stRows = (tag, pt, name, param, vals, unit) => vals.map((v, i) => [tag, pt, name, param, ST_T[i], v, unit]);
+const STOP = mk('stop.xlsx', {
+  '参数记录': [ST_HDR,
+    ...stRows('P-11A', 'II11A', '进料泵', '电机电流', [60, 60.5, 59.8, 60.2], 'A'),
+    ...stRows('P-11A', 'PI11A', '进料泵', '出口压力', [0.5, 0.5, 0.5, 0.5], 'MPa'),
+    ...stRows('P-11B', 'II11B', '进料泵', '电机电流', [0, 0, 0, 0], 'A'),
+    ...stRows('P-11B', 'PI11B', '进料泵', '出口压力', [0.18, 0.18, 0.18, 0.18], 'MPa'),
+    ...stRows('P-11B', 'TI11B', '进料泵', '轴承温度', [85, 86, 87, 88], '℃'),
+    ...stRows('P-12', 'II12', '回流泵', '电机电流', [0, 0, 0, 0], 'A'),
+    ...stRows('P-12', 'PI12', '回流泵', '出口压力', [0.1, 0.1, 0.1, 0.1], 'MPa'),
+    ...stRows('P-12', 'VI12', '回流泵', '驱动端振动', [0, 0.2, 0.4, 0.6], 'mm/s'),
+    ...stRows('P-13', 'PI13', '注水泵', '出口压力', [0.1, 0.1, 0.1, 0.1], 'MPa'),
+    ...stRows('', 'II14', '', '电机电流', [0, 0, 0, 0], 'A'),
+    ...stRows('', 'PI14', '', '出口压力', [0.1, 0.1, 0.1, 0.1], 'MPa'),
+    ...stRows('P-16', 'II16', '塔底泵', '电机电流', [60, 60, 60, 60], 'A'),
+    ...stRows('P-16', 'PI16', '塔底泵', '出口压力', [0.5, 0.5, 0.5, 0.5], 'MPa'),
+  ],
+  '报警限值': [['设备位号', '测点号', '参数名', '高报', '高高报', '低报', '低低报'],
+    ...['P-11A', 'P-11B', 'P-12', 'P-13', 'P-16'].map((t) => [t, '', '出口压力', '', '', 1.0, 0.8]),
+    ['', 'PI14', '出口压力', '', '', 1.0, 0.8],
+    ['P-11B', '', '轴承温度', 70, 80, '', ''],
+    ['P-12', '', '驱动端振动', 7.1, 11.2, '', ''],
+  ],
+});
+const stItem = (j, tag, param) => ((j && j.items) || []).find((x) => x.tag === tag && x.param === param) || {};
+// --- 无状态来源：按电流自判疑似停运
+r = run(STOP, [], 'stop-self');
+eq(r.s.ok, true, 'S1 停运样例运行成功');
+eq(stItem(r.j, 'P-12', '出口压力').category, 'stopped', 'S2 电流≈0 的设备出口压力低归「停运中（不判定）」，不判低低报');
+eq(stItem(r.j, 'P-12', '出口压力').limitState, null, 'S3 停运设备低值不给 limitState=overLowLow');
+eq(stItem(r.j, 'P-12', '出口压力').runState, 'suspectedStopped', 'S4 无状态来源时标记疑似停运');
+eq(stItem(r.j, 'P-12', '驱动端振动').category, 'stopped', 'S5 停运设备不做劣化趋势判定（振动 0→0.6 不归恶化）');
+eq(stItem(r.j, 'P-12', '驱动端振动').etaDate, null, 'S6 停运设备不预测到限日期');
+eq(stItem(r.j, 'P-12', '电机电流').category, 'stopped', 'S7 电流位号本身也单列停运');
+eq(stItem(r.j, 'P-11B', '出口压力').category, 'stopped', 'S8 备用泵出口压力低不判低低报');
+eq(stItem(r.j, 'P-11B', '轴承温度').category, 'overLimit', 'S9 停运设备高限照常判（轴承温度 88 越高高报）');
+eq(stItem(r.j, 'P-11B', '轴承温度').limitLevel, 'HH', 'S10 停运设备越高高报等级');
+eq(stItem(r.j, 'P-11A', '出口压力').limitState, 'overLowLow', 'S11 运行设备（电流 60A）低值照常判低低报');
+eq(stItem(r.j, 'P-13', '出口压力').limitState, 'overLowLow', 'S12 无电流/转速位号可判 → 维持原逻辑');
+eq((((r.j && r.j.items) || []).find((x) => x.pointTag === 'PI14') || {}).limitState, 'overLowLow', 'S13 只有测点号、归属设备不能确定 → 不套用停运');
+eq(r.s.counts.stopped, 5, 'S14 停运中（不判定）计数（P-11B×2 + P-12×3；越高限的不计，测点无归属不计）');
+ok(((r.j && r.j.warnings) || []).some((w) => /疑似停运/.test(w) && /P-12/.test(w) && /--status/.test(w) && /台账/.test(w) && /启停记录/.test(w)), 'S15 疑似停运 warning 点名并提示提供台账/启停记录');
+ok(/### 停运中（不判定）/.test(r.md || '') && /P-12/.test(((r.md || '').match(/### 停运中（不判定）[\s\S]*?(\n## |\n### 数据质量)/) || [''])[0]), 'S16 md 单列「停运中（不判定）」');
+ok(/停运中（不判定）\s*\|\s*5/.test(r.md || ''), 'S17 概览含停运中计数');
+eq((r.j || { meta: {} }).meta.statusProvided, false, 'S18 meta 记录未提供状态来源');
+eq(stItem(r.j, 'P-12', '出口压力').lowIgnored, 'LL', 'S18a 记录被忽略的低限等级（lowIgnored）');
+ok(/高高报\(HH\)（疑似停运）/.test(r.md || ''), 'S18b 已越限表标注停运设备');
+// --- 启停记录 + 台账：启停记录优先
+const STOP_RUNS = mk('stop-status.xlsx', {
+  '启停记录': [['位号', '设备名称', '开机时间', '停机时间'],
+    ['P-11A', '进料泵', '2026-08-01 08:00', ''],
+    ['P-11B', '进料泵', '2026-07-01 08:00', '2026-08-01 08:00'],
+    ['P-16', '塔底泵', '2026-08-01 08:00', '2026-09-07 12:00']],
+  '设备台账': [['位号', '设备编号', '设备名称', '使用状态'],
+    ['P-11A', '10000001', '进料泵', '备用'],
+    ['P-11B', '10000002', '进料泵', '在用'],
+    ['P-12', '10000003', '回流泵', '停用'],
+    ['P-13', '10000004', '注水泵', '检修']],
+});
+r = run(STOP, ['--status', STOP_RUNS], 'stop-status');
+eq(r.s.ok, true, 'S19 --status 运行成功');
+eq(stItem(r.j, 'P-11B', '出口压力').runState, 'stopped', 'S20 启停记录最近一条已停机 → 停运');
+eq(stItem(r.j, 'P-11B', '出口压力').runStateSource, '启停记录', 'S21 依据为启停记录');
+eq(stItem(r.j, 'P-11A', '出口压力').limitState, 'overLowLow', 'S22 启停记录（运行）优先于台账（备用）');
+eq(stItem(r.j, 'P-11A', '出口压力').runState, 'running', 'S23 启停记录判运行');
+eq(stItem(r.j, 'P-16', '出口压力').limitState, 'overLowLow', 'S24 停机时间晚于最新数据采集时间 → 按采集时运行判定');
+eq(stItem(r.j, 'P-12', '出口压力').runStateSource, '设备台账', 'S25 无启停记录时用台账（停用）');
+eq(stItem(r.j, 'P-13', '出口压力').category, 'stopped', 'S26 台账「检修」→ 停运，无电流位号也不判低低报');
+eq((r.j || { meta: {} }).meta.statusProvided, true, 'S27 meta 记录提供了状态来源');
+ok(!!r.j && !r.j.warnings.some((w) => /疑似停运/.test(w)), 'S28 状态来源覆盖全部设备时不出疑似停运提示');
+// --- 只给台账：台账「在用」不等于在运行，回落到数据自判
+const STOP_LEDGER = mk('stop-ledger.xlsx', { '设备台账': [['位号', '设备名称', '使用状态'], ['P-11B', '进料泵', '在用'], ['P-11A', '进料泵', '在用']] });
+r = run(STOP, ['--status', STOP_LEDGER], 'stop-ledger');
+eq(stItem(r.j, 'P-11B', '出口压力').runState, 'suspectedStopped', 'S29 台账「在用」不判运行，按电流自判疑似停运');
+eq(stItem(r.j, 'P-11A', '出口压力').limitState, 'overLowLow', 'S30 台账在用且电流正常 → 照常判');
+// --- MCP 形态：目录里放 启停记录.csv / 设备台账.csv
+{
+  const sd = path.join(work, 'stop-csvdir'); fs.mkdirSync(sd, { recursive: true });
+  fs.writeFileSync(path.join(sd, '启停记录.csv'), '﻿位号,设备名称,开机时间,停机时间\nP-11B,进料泵,2026-07-01 08:00,2026-08-01 08:00\nP-12,回流泵,2026-08-01 08:00,\n', 'utf8');
+  fs.writeFileSync(path.join(sd, '设备台账.csv'), '﻿位号,设备编号,设备名称,使用状态,完好状态,状态\nP-13,10000004,注水泵,停用,完好,停用\n', 'utf8');
+  r = run(STOP, ['--status', sd], 'stop-csvdir');
+  eq(r.s.ok, true, 'S31 --status 可给 csv 目录');
+  eq(stItem(r.j, 'P-12', '出口压力').runState, 'running', 'S32 启停记录停机时间为空 → 运行（不再自判）');
+  eq(stItem(r.j, 'P-12', '出口压力').limitState, 'overLowLow', 'S33 启停记录判运行时低值照常判');
+  eq(stItem(r.j, 'P-13', '出口压力').runStateSource, '设备台账', 'S34 csv 台账可读');
+  r = run(STOP, ['--status', path.join(sd, '启停记录.csv')], 'stop-csvfile');
+  eq(stItem(r.j, 'P-11B', '出口压力').runStateSource, '启停记录', 'S35 --status 可给单个 csv 文件');
+}
+eq(raw(['--input', STOP, '--workshop', 'X', '--date', DATE, '--status', path.join(work, 'nope.xlsx')]).s.ok, false, 'S36 --status 路径不存在报错');
+eq(raw(['--input', STOP, '--workshop', 'X', '--date', DATE, '--status', BASE]).s.ok, false, 'S37 --status 里没有启停记录/台账 → 报错');
+// --- 阈值：无基准按 ≤0.5 A；有量程按 2%；转速 0
+const STOP2 = mk('stop2.xlsx', {
+  '参数记录': [ST_HDR,
+    ...stRows('P-21', 'II21', '泵', '电机电流', [0.4, 0.3, 0.4, 0.4], 'A'),
+    ...stRows('P-21', 'PI21', '泵', '出口压力', [0.1, 0.1, 0.1, 0.1], 'MPa'),
+    ...stRows('P-22', 'II22', '泵', '电机电流', [0.8, 0.8, 0.8, 0.8], 'A'),
+    ...stRows('P-22', 'PI22', '泵', '出口压力', [0.1, 0.1, 0.1, 0.1], 'MPa'),
+    ...stRows('P-23', 'II23', '泵', '电机电流', [0.8, 0.8, 0.8, 0.8], 'A'),
+    ...stRows('P-23', 'PI23', '泵', '出口压力', [0.1, 0.1, 0.1, 0.1], 'MPa'),
+    ...stRows('C-24', 'SI24', '压缩机', '转速', [0, 0, 0, 0], 'r/min'),
+    ...stRows('C-24', 'PI24', '压缩机', '出口压力', [0.1, 0.1, 0.1, 0.1], 'MPa'),
+  ],
+  '报警限值': [['设备位号', '参数名', '高报', '低报', '低低报', '量程上限'],
+    ...['P-21', 'P-22', 'P-23', 'C-24'].map((t) => [t, '出口压力', '', 1.0, 0.8, '']),
+    ['P-23', '电机电流', 120, '', '', 100]],
+});
+r = run(STOP2, [], 'stop2');
+eq(stItem(r.j, 'P-21', '出口压力').category, 'stopped', 'S38 无额定/量程时电流 ≤0.5 A 判疑似停运');
+eq(stItem(r.j, 'P-22', '出口压力').limitState, 'overLowLow', 'S39 电流 0.8 A（>0.5 A，无基准）不判停运');
+eq(stItem(r.j, 'P-23', '出口压力').category, 'stopped', 'S40 量程 100 A 时 0.8 A ≤ 2% 判疑似停运');
+eq(stItem(r.j, 'C-24', '出口压力').category, 'stopped', 'S41 转速 0 判疑似停运');
+// 原有样例（无停运设备）不受影响
+r = run(BASE, [], 'stop-none');
+eq(r.s.counts.stopped, 0, 'S42 无停运设备时停运计数 0');
+ok(!/### 停运中（不判定）/.test(r.md || ''), 'S43 无停运设备时不出停运小节');
+
+// ============ T. 刚由备机切为主机：回溯窗口里停机期的点剔出回归 ============
+// P-31 前 3 期停机（电流 0），后 4 期运行：振动 0,0,0,2,2,2,2 不得算成上升趋势；P-32 只剩 2 期运行 → 数据不足（含停机期）
+// P-35 切泵后只运行 3 期（窗口内有停机期，剩余 <4 期）→ 不判劣化，数据不足（切泵后运行期数偏少），越限照常判
+// P-33 无电流位号：无启停记录维持原逻辑；有启停记录（09-06 08:00 开机，此前停机）时剔除停机段
+const SW_T = ['2026-09-01 08:00', '2026-09-03 08:00', '2026-09-05 08:00', '2026-09-07 08:00', '2026-09-09 08:00', '2026-09-11 08:00', '2026-09-13 08:00'];
+const swRows = (tag, pt, param, vals, unit) => vals.map((v, i) => [tag, pt, '泵', param, SW_T[i], v, unit]);
+const SWITCH = mk('switch.xlsx', {
+  '参数记录': [ST_HDR,
+    ...swRows('P-31', 'II31', '电机电流', [0, 0, 0, 60, 60.2, 60.1, 60], 'A'),
+    ...swRows('P-31', 'VI31', '驱动端振动', [0, 0, 0, 2.0, 2.05, 2.0, 2.02], 'mm/s'),
+    ...swRows('P-32', 'II32', '电机电流', [0, 0, 0, 0, 0, 60, 60], 'A'),
+    ...swRows('P-32', 'VI32', '驱动端振动', [0, 0, 0, 0, 0, 2.0, 2.1], 'mm/s'),
+    ...swRows('P-33', 'VI33', '驱动端振动', [0, 0, 0, 2.0, 2.05, 2.0, 2.02], 'mm/s'),
+    ...swRows('P-34', 'II34', '电机电流', [60, 60, 60, 60, 60, 60, 60], 'A'),
+    ...swRows('P-34', 'VI34', '驱动端振动', [2.0, 2.4, 2.8, 3.2, 3.6, 4.0, 4.4], 'mm/s'),
+    ...swRows('P-35', 'II35', '电机电流', [0, 0, 0, 0, 60, 60.5, 61], 'A'),
+    ...swRows('P-35', 'VI35', '驱动端振动', [0, 0, 0, 0, 2.0, 2.4, 2.8], 'mm/s'),
+    // 轴承温度停机时不记读数：只有切泵后 3 期；P-34 一直运行的温度也只给 3 期作对照
+    ...swRows('P-35', 'TI35', '轴承温度', [null, null, null, null, 60, 62, 64], '℃').filter((x) => x[5] !== null),
+    ...swRows('P-34', 'TI34', '轴承温度', [null, null, null, null, 60, 62, 64], '℃').filter((x) => x[5] !== null),
+  ],
+  '报警限值': [['设备位号', '参数名', '高报', '高高报'],
+    ...['P-31', 'P-32', 'P-33', 'P-34'].map((t) => [t, '驱动端振动', 7.1, 11.2]),
+    ['P-35', '驱动端振动', 2.5, 11.2],
+    ['P-35', '轴承温度', 80, 90], ['P-34', '轴承温度', 80, 90],
+    ...['P-31', 'P-32', 'P-34', 'P-35'].map((t) => [t, '电机电流', 120, ''])],
+});
+const SWITCH_RUNS = mk('switch-runs.xlsx', {
+  '启停记录': [['位号', '开机时间', '停机时间'],
+    ['P-33', '2026-08-01 08:00', '2026-09-01 07:00'],
+    ['P-33', '2026-09-06 08:00', ''],
+    ['P-34', '2026-08-01 08:00', '']],
+});
+const exN = (x) => ((x && x.excludedStoppedPeriods) || []).length;
+r = run(SWITCH, [], 'switch-self');
+eq(r.s.ok, true, 'T1 切泵样例运行成功');
+eq(stItem(r.j, 'P-31', '驱动端振动').category, 'stable', 'T2 停机期 0 值剔出后振动不再判趋势恶化');
+eq(exN(stItem(r.j, 'P-31', '驱动端振动')), 3, 'T3 记录剔除的停机期 3 期（同期电流≈0）');
+eq(stItem(r.j, 'P-31', '驱动端振动').periodsUsed, 4, 'T4 参与回归的期数为剔除后的 4 期');
+eq(((stItem(r.j, 'P-31', '驱动端振动').excludedStoppedPeriods || [])[0] || {}).time, '2026-09-01 08:00', 'T5 剔除期记录采集时间');
+eq(stItem(r.j, 'P-31', '驱动端振动').excludedStoppedSource, '数据自判', 'T6 剔除依据：同期电流≈0');
+eq(stItem(r.j, 'P-31', '电机电流').category, 'stable', 'T7 电流位号自身的停机期 0 值也剔除，不判上升');
+eq(stItem(r.j, 'P-32', '驱动端振动').category, 'insufficientData', 'T8 剔除后不足 3 期 → 数据不足');
+ok(/含停机期/.test(stItem(r.j, 'P-32', '驱动端振动').note || ''), 'T9 数据不足说明写「含停机期」');
+eq(stItem(r.j, 'P-32', '驱动端振动').etaDate, null, 'T10 剔除后数据不足不预测到限日期');
+ok(((r.j && r.j.warnings) || []).some((w) => /P-32/.test(w) && /含停机期/.test(w)), 'T11 剔除后数据不足 warning');
+eq(stItem(r.j, 'P-33', '驱动端振动').category, 'deteriorating', 'T12 无电流/转速位号且无启停记录 → 维持原逻辑');
+eq(exN(stItem(r.j, 'P-33', '驱动端振动')), 0, 'T13 无可判依据时不剔除');
+eq(exN(stItem(r.j, 'P-34', '驱动端振动')), 0, 'T14 一直运行的设备不剔除');
+eq(stItem(r.j, 'P-34', '驱动端振动').category, 'deteriorating', 'T15 真实上升趋势照常判恶化');
+eq((r.s.counts || {}).excludedStoppedPoints, 24, 'T16 剔除点计数（P-31 3×2 + P-32 5×2 + P-35 4×2）');
+ok(/已剔除停机期 24 个点/.test(r.md || ''), 'T17 md 研判处说明已剔除停机期点数');
+ok(((r.j && r.j.warnings) || []).some((w) => /停机期/.test(w) && /P-31/.test(w) && /剔/.test(w)), 'T18 剔除停机期 warning 点名');
+eq(stItem(r.j, 'P-35', '电机电流').category, 'insufficientData', 'T18a 窗口内有停机期、剔除后剩 3 期（<4）→ 不判劣化，归数据不足');
+ok(/切泵后运行期数偏少，剩 3 期/.test(stItem(r.j, 'P-35', '电机电流').note || ''), 'T18b note 写「数据不足（切泵后运行期数偏少，剩 N 期）」');
+eq(stItem(r.j, 'P-35', '电机电流').etaDate, null, 'T18c 切泵后期数偏少不预测到限');
+eq(stItem(r.j, 'P-35', '电机电流').slope, null, 'T18d 切泵后期数偏少不给斜率');
+eq(stItem(r.j, 'P-35', '驱动端振动').limitLevel, 'H', 'T18e 越限判定照常用剩余点（2.8 > 高报 2.5）');
+ok(((r.j && r.j.overLimit) || []).some((x) => x.tag === 'P-35' && x.param === '驱动端振动'), 'T18f 切泵后期数偏少但已越限 → 仍进越限清单');
+ok(((r.j && r.j.warnings) || []).some((w) => /含停机期/.test(w) && /P-32/.test(w) && /P-35/.test(w) && /切泵后运行期数偏少/.test(w)), 'T18g 与「数据不足（含停机期）」并入同一条 warning 点名');
+eq(stItem(r.j, 'P-34', '驱动端振动').periodsUsed, 7, 'T18h 窗口内无停机期的序列不受 4 期门槛影响');
+eq(stItem(r.j, 'P-35', '轴承温度').category, 'insufficientData', 'T18i 停机时无读数的参数（只剩切泵后 3 期）同样不判劣化');
+ok(/切泵后运行期数偏少，剩 3 期/.test(stItem(r.j, 'P-35', '轴承温度').note || ''), 'T18j 停机时无读数的参数 note 写切泵后运行期数偏少');
+eq(stItem(r.j, 'P-34', '轴承温度').category, 'deteriorating', 'T18k 同样 3 期但窗口内无停机期 → 仍按 3 期判趋势');
+r = run(SWITCH, ['--status', SWITCH_RUNS], 'switch-runs');
+eq(exN(stItem(r.j, 'P-33', '驱动端振动')), 3, 'T19 有启停记录时剔除停机段内的 3 期');
+eq(stItem(r.j, 'P-33', '驱动端振动').excludedStoppedSource, '启停记录', 'T20 剔除依据：启停记录');
+eq(stItem(r.j, 'P-33', '驱动端振动').category, 'stable', 'T21 剔除停机段后不再判恶化');
+eq(exN(stItem(r.j, 'P-34', '驱动端振动')), 0, 'T22 启停记录全程运行不剔除');
+eq(exN(stItem(r.j, 'P-31', '驱动端振动')), 3, 'T23 不在启停记录里的设备仍按同期电流剔除');
+// 启停记录只有窗口内的开机记录（之前的运行段早于导出窗口）：开机前的采集点按停机剔除
+const SWITCH_RUNS2 = mk('switch-runs2.xlsx', { '启停记录': [['位号', '开机时间', '停机时间'], ['P-33', '2026-09-06 08:00', '']] });
+r = run(SWITCH, ['--status', SWITCH_RUNS2], 'switch-runs2');
+eq(exN(stItem(r.j, 'P-33', '驱动端振动')), 3, 'T23a 首段开机之前的采集点按停机剔除（开机即说明此前停机）');
+ok(!/已剔除停机期/.test(run(BASE, [], 'switch-none').md || 'x已剔除停机期'), 'T24 无停机期时 md 不出剔除说明');
+
 console.log(`\n${'='.repeat(56)}`);
 console.log(`parameter-trend-alert 自测：${pass} 通过，${fail} 失败`);
 if (failures.length) { console.log('\n失败项：'); failures.forEach((f) => console.log('  ✗ ' + f)); }

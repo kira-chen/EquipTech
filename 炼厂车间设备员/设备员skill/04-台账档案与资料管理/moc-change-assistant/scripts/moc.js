@@ -5,7 +5,7 @@
  * 用法：node scripts/moc.js --tag "<位号>" --before "<原状态>" --after "<变更后状态>" --reason "<变更原因>" [--out <dir>]
  * 可选：--category <材质|型号|结构|工艺|控制|备件代用|管理> --temporary --until <YYYY-MM-DD>
  *       --same-model-material <是|否> --affects-perf <是|否> --exceeds-design <是|否> --special <是|否>
- *       --spec <厂内变更制度xlsx> --ledger <设备台账xlsx> --workshop <车间> --applicant <申请人> --name <设备名称>
+ *       --spec <厂内变更制度xlsx> --ledger <设备台账xlsx或CSV目录> --workshop <车间> --applicant <申请人> --name <设备名称>
  * 产出：<out>/moc.json、moc.md、summary.json
  *
  * 口径：变更分 工艺技术变更 / 设备设施变更 / 管理变更，级别 重大 / 一般，「临时」是属性；同类替换不属于变更，
@@ -68,6 +68,8 @@ function main() {
     const u = C.normDate(a.until);
     if (!u) throw new Error(`--until 「${a.until}」不是有效日期，应为 YYYY-MM-DD`);
     a.until = u;
+    const today = C.localDate();
+    if (u < today) warnings.push(`--until ${u} 早于今天（${today}）：恢复期限已过，请核实临时变更是否已恢复原状或已转为正式变更；如是笔误，改正后重新评估`);
   }
   if (!a.reason) warnings.push('未提供 --reason（变更原因），变更申请要点中的必要性说明需补充');
   const specialArg = R.parseBool(a.special);
@@ -122,7 +124,7 @@ function main() {
   let category = R.normCategory(a.category);
   let categorySource = category ? '用户指定' : null;
   if (!category) {
-    const guess = R.classifyCategory(`${a.before} ${a.after} ${a.reason || ''}`);
+    const guess = R.classifyCategory(`${a.before} ${a.after} ${a.reason || ''}`, { before: a.before, after: a.after });
     if (guess !== 'unknown') { category = guess; categorySource = '按描述自动识别'; }
   }
   if (!category) warnings.push('变更类别无法从描述中识别，判定结果为未判定，请用 --category 明确类别');

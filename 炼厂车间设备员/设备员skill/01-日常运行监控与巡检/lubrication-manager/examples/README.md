@@ -52,3 +52,13 @@ node scripts/make-sample.js --out examples --seed 7   # 数值变化，结论不
 ```
 
 seed 变化后仍恒定：4 逾期、3 临期、4 周期内、3 无法判定（含 1 项运行小时周期）、2 油液超厂内限值、2 无限值项、1 组油品牌号写法不一致（3 种写法）。
+
+## MCP 取数对照
+
+平台接入业务系统 MCP 时不用附件：按 SKILL.md「数据获取（MCP）」调用工具，润滑台账、加换油记录、油液分析放目录 A（`get_oil_analysis` 先取台账、再用台账位号作 `tag` 取，避免混入外车间油样），油品单价单独放目录 B，`get_run_events` 的累计运行小时放目录 C，`--date` 用当天。演示数据每天按剧本刷新，预期结果只列每天稳定的结论。
+
+| # | 示例问题 | MCP 调用 | 运行参数 | 预期结果 |
+|---|---|---|---|---|
+| M1 | 常减压车间润滑到期、用油量与金额、油样超标 | 点检巡检App `get_lubrication_ledger`（workshop=常减压车间）+ `get_lubrication_records`（workshop=常减压车间）+ `get_oil_analysis`（tag=润滑台账里的位号）→ A；`get_oil_prices` → B | `--input A --price B --oil-analysis --workshop 常减压车间 --date <今天>` | 无法判定 0；五定齐备率 100%；油品全部匹配到单价；油液分析 P-2101A 水分、铁含量超厂内限值（剧本油样），无「无限值项」、无台账外油样；临期含 M-3101A。逾期、临期的其余位号随剧本日变化（如有 P-3102A、P-2106A、M-2106A 逾期，或 C-3101B 运行 2000h 周期剩余不足 168h，则按清单列出），不写死 |
+| M2 | C-3101A/B 按运行 2000 小时换油，用 DCS 启停记录核累计小时再判 | 同 M1，另加 DCS位号数据 `get_run_events`（workshop=常减压车间，for_skill=lubrication-manager）→ C | M1 参数加 `--run-hours C` | 台账累计运行小时与 DCS 启停记录一致，无「不一致」warning；C-3101A 周期内（按台账「自上次加换油运行小时」判定，不折算日历天）；C-3101B 在临期或周期内，随剧本日变化；其余结论同 M1 |
+| M3 | 加氢车间润滑到期与油样 | 点检巡检App `get_lubrication_ledger`（workshop=加氢车间）+ `get_lubrication_records`（workshop=加氢车间）+ `get_oil_analysis`（tag=润滑台账里的位号）→ A；`get_oil_prices` → B；DCS位号数据 `get_run_events`（workshop=加氢车间，for_skill=lubrication-manager）→ C | `--input A --price B --run-hours C --oil-analysis --workshop 加氢车间 --date <今天>` | 临期 P-5201A；新氢压缩机 C-5302A/B 按运行小时周期在周期内；无法判定 0；油液分析无超限项（常减压的 P-2101A 油样不计入加氢车间）。P-5101B 是否逾期随剧本日变化，如有则列入逾期。若 `get_oil_analysis` 没传 `tag` 拿到全厂油样，台账外位号单列为「台账外油样」、不计入，并由 warning 一次点名 |

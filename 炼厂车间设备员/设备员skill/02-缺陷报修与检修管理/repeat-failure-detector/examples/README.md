@@ -9,13 +9,13 @@
 | # | 示例问题 | 附件 | 运行参数 | 预期结果 |
 |---|---|---|---|---|
 | 1 | 这一年哪些设备老坏？帮我看看有没有重复故障 | `sample-failures-2026-09-21.xlsx` | `--workshop 常减压车间 --to 2026-09-21` | 14 条记录、12 条参与判定；默认口径（同部位一年内 ≥2 次）下 3 台设备命中重复故障（P-1101A、P-1102B、E-1201）；1 台间隔缩短；2 条无信息量；warning 说明起始日按默认「一年内」推算 |
-| 2 | 两套装置的记录是分开导的，一起看，同型号的设备是不是都有这个毛病 | `sample-failures-2026-09-21.xlsx + sample-failures-unit2-2026-09-21.xlsx + sample-equip-ledger.xlsx` | `--input "<文件1>,<文件2>" --ledger <台账> --to 2026-09-21` | 2 个文件 16 条、14 条参与判定；BES800-2.5 型换热器共性故障扩为 **3 台 4 次**（规则 D3），出处带文件名 |
+| 2 | 两套装置的记录是分开导的，一起看，同型号的设备是不是都有这个毛病 | `sample-failures-2026-09-21.xlsx + sample-failures-unit2-2026-09-21.xlsx + sample-equip-ledger.xlsx` | `--input "<文件1>,<文件2>" --ledger <台账> --workshop 常减压车间 --to 2026-09-21` | 2 个文件 16 条、14 条参与判定；BES800-2.5 型换热器共性故障扩为 **3 台 4 次**（规则 D3），出处带文件名 |
 | 3 | 这是 SAP 导出的通知单，有损坏代码，按代码看哪些是重复的 | `sample-sap-notifications.xlsx` | `--workshop 加氢车间 --to 2026-09-21` | 6 条全部带损坏代码、无信息量 0；P-2201A 按 LEAK01 归为 3 次（其中一条短文本只写「故障」仍参与）、对象部件机封 2 次命中 D1；P-2201B 按 VIB02 命中 D2；K-2301 单次不命中 |
-| 4 | 哪个部位最容易坏 | 主样例 | 加 `--by part` | 第三节按故障部位归类，`byModel[].dimension` 为「故障部位」 |
-| 5 | 我们厂算重复故障的口径是 3 次 | 主样例 | 加 `--min-count 3` | 同部位阈值升为 3 次，E-1201（2 次）不再命中 D1；报告抬头写明「同设备同部位 ≥3 次」 |
+| 4 | 哪个部位最容易坏 | 主样例 | 第 1 行参数加 `--by part` | 第三节按故障部位归类，`byModel[].dimension` 为「故障部位」 |
+| 5 | 我们厂算重复故障的口径是 3 次 | 主样例 | 第 1 行参数加 `--min-count 3` | 同部位阈值升为 3 次，E-1201（2 次）不再命中 D1；报告抬头写明「同设备同部位 ≥3 次」 |
 | 6 | 这批记录故障现象基本没填，能看出重复故障吗 | `sample-vague-desc.xlsx` | `--workshop 加氢车间 --to 2026-09-21` | **4 条全部列入 uninformative，重复故障组为 0**；不因同一位号出现 4 次就判为重复 |
 | 7 | 这是 MES 直接导出的，第一行是标题、列名跟标准不一样，底下还有合计行 | `sample-mes-export.xlsx` | `--workshop 加氢车间 --to 2026-09-21` | 可读；合计行跳过并 warning；600 天前那条落在区间外被跳过并 warning；P-3101 轴承 2 次命中 |
-| 8 | 只统计最近三个月行不行 | 主样例 | `--from 2026-06-21 --to 2026-09-21` | 可运行，但 warning 提示「区间短于建议下限 180 天，可能漏判」 |
+| 8 | 只统计最近三个月行不行 | 主样例 | `--workshop 常减压车间 --from 2026-06-21 --to 2026-09-21` | 可运行，但 warning 提示「区间短于建议下限 180 天，可能漏判」 |
 
 ## 关键验证点
 
@@ -40,3 +40,13 @@ node scripts/make-sample.js --out examples --seed 7   # 滴漏滴数与处理方
 ## 与备件消耗数据互相印证
 
 若同时有 `05-备品备件与物资/spare-parts-consumption-analysis` 的消耗统计，可把本技能的 `topFrequency` 与消耗排行对照：同一台设备既在故障频次前列、又在备件消耗前列，是优先安排根因分析的强线索。
+
+## MCP 取数对照
+
+> 平台接入设备资产管理 MCP 时不上传附件：`get_failure_history` 的 csv 放目录 A 作 `--input`，`get_equipment_ledger` 的 csv 放目录 B 作 `--ledger`。两个工具都要带 `workshop`，脚本 `--workshop` 只写标题不筛选。区间默认截止今天往前 12 个自然月。
+
+| # | 示例问题 | MCP 调用 | 运行参数 | 预期结果 |
+|---|---|---|---|---|
+| M1 | 常减压车间近一年哪些设备在重复坏、同型号有没有共性问题 | 设备资产管理 `get_failure_history`（for_skill=repeat-failure-detector，workshop=常减压车间）→ 目录 A；`get_equipment_ledger`（workshop=常减压车间）→ 目录 B | `--input <目录A> --ledger <目录B> --workshop 常减压车间 --to <今天>` | 记录全部带 SAP 故障代码，无信息量 0；C-3101A（阀门部位）、P-2105A（机械密封）、E-1201（管束）命中同部位重复故障 D1；C-3101A / C-3101B 同型号 2D25-34/1.5-15 共性故障 D3；结果不出现加氢车间位号 |
+| M2 | 加氢车间换热器是不是老出管束问题 | 设备资产管理 `get_failure_history`（for_skill=repeat-failure-detector，workshop=加氢车间）→ 目录 A；`get_equipment_ledger`（workshop=加氢车间）→ 目录 B | `--input <目录A> --ledger <目录B> --workshop 加氢车间 --to <今天>` | E-5101、E-5102 管束部位命中 D1；结果不出现常减压车间位号 |
+| M3 | P-2101A 近一年算不算重复故障 | 设备资产管理 `get_failure_history`（for_skill=repeat-failure-detector，tag=P-2101A）→ 目录 A | `--input <目录A> --workshop 常减压车间 --to <今天>` | 一年内 2 条（轴承箱振动、机械密封泄漏），部位与故障代码都不同，不构成重复故障（repeatEquipment 0）；warning 提示未提供台账 |

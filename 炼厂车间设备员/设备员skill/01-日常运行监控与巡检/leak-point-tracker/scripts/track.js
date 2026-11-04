@@ -29,6 +29,8 @@ const VALUE_OPTS = ['input', 'workshop', 'date', 'out', 'ledger', 'seal-points',
 const FLAG_OPTS = ['help'];
 
 const COMPLIANCE_LINE = '**本报告为车间内部泄漏点跟踪材料，不替代法定 LDAR 检测报告与排污许可执行报告；泄漏认定阈值、修复时限与泄漏率考核线以现行法规与厂内规定为准，达标判定以生态环境主管部门意见为准。**';
+// 本底值只登记、不参与判定（不从检测值中扣除）；输入里有本底值时提示按厂内口径复核
+const BG_NOTE = '本底值仅登记，未从检测值中扣除；如厂内按扣除本底后的净值判定泄漏，请按厂内口径复核';
 const SOURCE_LINE = '制度出处：GB 31570 与中国石化 LDAR 管理要求（名称引用，不转述数值）；脚本内置阈值与时限为默认参考口径，数值以厂内制度文件为准。';
 
 // 局部别名优先，再合并中石化系统共享别名（SAP PM / EM / 智能巡检 / LDAR 系统）。
@@ -416,7 +418,7 @@ function main() {
       sealType: seal.type, sealTypeCn: SEAL_CN[String(seal.type)], sealBasis: seal.basis, rawSealType: C.str(r['密封类型']),
       medium, mediumCn: MED_CN[String(medium)], rawMedium, rawState,
       method: C.str(r['检测方法']),
-      value, rawValue, bg, threshold,
+      value, rawValue, bg, rawBg: C.str(r['本底值']), threshold,
       visible, visibleCn: VIS_CN[String(visible)], rawVis,
       unreachable, rawUnreach,
       source, sourceCn: source === 'instrument' ? '仪器检测' : source === 'visible' ? '现场可见泄漏' : '—',
@@ -434,6 +436,8 @@ function main() {
   }
 
   if (!items.length) throw new Error(`「${sheetName}」中无有效检测/漏点记录`);
+  const backgroundFilled = items.filter((x) => x.rawBg !== '').length;
+  if (backgroundFilled) warnings.push(`工作表「${sheetName}」有 ${backgroundFilled} 行填了本底值：${BG_NOTE}`);
 
   const byBucket = (b) => items.filter((x) => x.bucket === b);
   const undetermined = byBucket('undetermined');
@@ -496,6 +500,7 @@ function main() {
     staticLeaks, dynamicLeaks, unclassifiedLeaks,
     duplicateNo: items.filter((x) => x.dupOf).length,
     carryOver: leaks.filter((x) => !x.isNew).length,
+    backgroundFilled,
   };
   const metrics = {
     repairRate, avgRepairDays,
@@ -572,6 +577,7 @@ function main() {
   L.push(`统计截止：${date} ｜ 数据来源：${path.basename(a.input)}（工作表「${sheetName}」）${ledgerProvided ? ` ｜ 历史台账：${path.basename(a.ledger)}` : ' ｜ 未提供历史台账'}`);
   L.push(`认定口径：${rulesSource}`);
   L.push(`泄漏认定阈值：气体/轻液 ${thVoc} μmol/mol；重液 ${thLiquid} μmol/mol；现场可见泄漏按滴漏或成股流出定性认定`);
+  if (backgroundFilled) L.push(`本底值：${BG_NOTE}（本期 ${backgroundFilled} 行填了本底值）`);
   L.push(`修复时限：首次修复 ${repairDays} 天内，最终修复 ${finalDays} 天内（自检测/发现日期起算）；经批准的延迟修复单列，不计超期`);
   L.push(`密封点总数：${sealPoints ? sealPoints.source : '未提供（--seal-points），泄漏率不计算'}`);
   L.push(SOURCE_LINE);
@@ -779,7 +785,7 @@ function slim(x) {
     sealType: x.sealType, sealTypeCn: x.sealTypeCn, sealBasis: x.sealBasis, rawSealType: x.rawSealType,
     medium: x.medium, mediumCn: x.mediumCn, rawMedium: x.rawMedium, rawState: x.rawState,
     method: x.method,
-    value: x.value, rawValue: x.rawValue, threshold: x.threshold,
+    value: x.value, rawValue: x.rawValue, bg: x.bg, threshold: x.threshold,
     visible: x.visible, visibleCn: x.visibleCn, rawVis: x.rawVis,
     unreachable: x.unreachable,
     source: x.source, sourceCn: x.sourceCn, isLeak: x.isLeak, leakBasis: x.leakBasis,

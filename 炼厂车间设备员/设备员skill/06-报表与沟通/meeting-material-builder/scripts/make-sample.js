@@ -61,7 +61,7 @@ fs.writeFileSync(path.join(out, 'sample-periodic.json'), JSON.stringify({
   counts: { faults: 8, downtimeCount: 8, maintPlanned: 6, ordersDue: 8 },
   metrics: {
     intactRate: 90, majorRate: 85.7, standbyRate: 50, staticLeakRate: 0.42, dynamicLeakRate: 1.67,
-    planRate: 50, planRateOverhaul: 0, planRateRoutine: 100, orderRate: 62.5,
+    planRate: null, planRateOverhaul: null, planRateRoutine: null, orderRate: 62.5,   // 检修计划完成率需按厂内口径复算：上游不出数（与 periodic.js 一致）
     mttr: C.round(2 + rnd() * 2, 2), downtime: C.round(20 + rnd() * 15, 1), downtimeCount: 8, unplannedShutdowns: 1, faultCount: 8,
     newDefects: v(3, 7), openDefects: v(2, 5), basedOn: '基于 5 天数据（应为 7 天）',
   },

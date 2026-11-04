@@ -444,10 +444,10 @@ eq(r.s.counts.hasEvidence, 1, 'P19 别名列头下对照结果正确（台账已
 /* ==================== Q. 缺陷修复（2026-11-03 全量核验 #8）：系统导出文件名别名 + 资料类型列 ==================== */
 // Q1~Q9 文件名别名：只认正面命中的说法，名称里没有的类别不推断
 ok(S.fileCategories('故障记录.csv').includes('maintenance'), 'Q1 「故障记录」（EAM 导出，含处理措施）归入检修与维护保养记录');
-ok(S.fileCategories('故障记录.csv').includes('defect'), 'Q2 「故障记录」仍归入缺陷隐患类');
-ok(S.fileCategories('通知单.csv').includes('defect'), 'Q3 「通知单」（SAP PM 维修通知单）归入缺陷隐患类');
+ok(S.fileCategories('故障记录.csv').includes('defect'), 'Q2 「故障记录」仍归入缺陷与故障类');
+ok(S.fileCategories('通知单.csv').includes('defect'), 'Q3 「通知单」（SAP PM 维修通知单）归入缺陷与故障类');
 ok(S.fileCategories('作业清单.csv').includes('permit'), 'Q4 「作业清单」（作业票系统导出）归入作业票与作业许可');
-ok(!S.fileCategories('停电通知单.docx').includes('defect'), 'Q5 反例：「停电通知单」不归缺陷隐患类');
+ok(!S.fileCategories('停电通知单.docx').includes('defect'), 'Q5 反例：「停电通知单」不归缺陷与故障类');
 ok(!S.fileCategories('检修作业清单.xlsx').includes('permit'), 'Q6 反例：「检修作业清单」不归作业许可');
 eq(S.fileCategories('班组考勤统计表.xlsx').length, 0, 'Q7 反例：无关资料仍归不进任何类别');
 ok(!S.fileCategories('设备故障率统计.xlsx').includes('maintenance'), 'Q8 反例：只带「故障」二字不算检修记录');
@@ -462,16 +462,19 @@ const RULES_MCP = mkx('rules-mcp.xlsx', {
   '条款清单': [['条款编号', '条款原文', '应做事项'],
     ['第七条', '应当按计划组织设备检修，并保留检修记录。', '保留检修记录'],
     ['第八条', '应当开展隐患排查治理，建立隐患登记与治理台账。', '建立隐患台账'],
-    ['第九条', '用火、受限空间等特殊作业应当办理作业许可。', '办理作业许可']],
+    ['第九条', '用火、受限空间等特殊作业应当办理作业许可。', '办理作业许可'],
+    ['第十条', '设备缺陷应当及时登记报修，跟踪处理至消缺。', '缺陷登记报修']],
 });
 const MCP_DIR = path.join(work, 'mcp-export');
 fs.mkdirSync(MCP_DIR, { recursive: true });
-for (const n of ['故障记录', '通知单', '作业清单']) fs.writeFileSync(path.join(MCP_DIR, `${n}.csv`), '﻿"位号"\r\n"P-01"\r\n', 'utf8');
+for (const n of ['故障记录', '通知单', '作业清单', '隐患台账']) fs.writeFileSync(path.join(MCP_DIR, `${n}.csv`), '﻿"位号"\r\n"P-01"\r\n', 'utf8');
 r = run([...BASE, '--rules', RULES_MCP, '--materials', MCP_DIR], 'q-mcp');
 const qi = (no) => r.j.items.find((i) => i.no === no) || { evidence: [] };
 eq(qi('第七条').status, 'hasEvidence', 'Q13 MCP 导出「故障记录.csv」作为检修记录，第七条已见对应材料');
 ok(qi('第七条').evidence.some((e) => e.name === '故障记录.csv' && e.basis === 'category:maintenance'), 'Q14 第七条对应依据为检修类别');
-ok(qi('第八条').evidence.some((e) => e.name === '通知单.csv'), 'Q15 「通知单.csv」对应到隐患排查治理条款');
+ok(qi('第八条').evidence.some((e) => e.name === '隐患台账.csv') && !qi('第八条').evidence.some((e) => /通知单|故障记录/.test(e.name)), 'Q15 隐患排查治理条款只认隐患台账，通知单、故障记录不充数');
+ok(qi('第十条').evidence.some((e) => e.name === '通知单.csv' && e.basis === 'category:defect'), 'Q15b 「通知单.csv」对应到设备缺陷条款');
+ok(!S.fileCategories('隐患台账.csv').includes('defect') && !S.fileCategories('故障记录.csv').includes('hazard'), 'Q15c 隐患台账与故障记录分属两类');
 ok(qi('第九条').evidence.some((e) => e.name === '作业清单.csv' && e.basis === 'category:permit'), 'Q16 「作业清单.csv」对应到作业许可条款');
 eq(r.s.counts.unmatched, 0, 'Q17 通知单、作业清单不再落入未对应材料');
 ok(r.j.materials.every((m) => Array.isArray(m.categories) && m.categoryFrom && typeof m.categoryFrom === 'object'), 'Q18 materials 逐份带归类结果与来源');
@@ -483,6 +486,16 @@ const MATS_TYPE = mkx('mats-type.xlsx', {
 r = run([...BASE, '--rules', RULES_MCP, '--materials', MATS_TYPE], 'q-type');
 eq((r.j.items.find((i) => i.no === '第七条') || {}).status, 'hasEvidence', 'Q19 资料名称认不出、资料类型填「检修记录」时第七条已见对应材料');
 ok(r.j.unmatched.some((u) => u.name === '导出02.csv'), 'Q20 资料类型只填泛称「台账」时不推断，列入未对应材料');
+
+/* ==================== R. 中石化口径「用火作业」：permit 类与「动火」并列识别 ==================== */
+ok(S.ruleCategories('用火作业前应进行气体分析，用火监护人全程在场。').includes('permit'), 'R1 条款只写「用火」（未写作业票/作业许可）也归作业票与作业许可');
+ok(S.fileCategories('2026年用火监护记录.xlsx').includes('permit'), 'R2 资料名称「用火监护记录」归作业票与作业许可');
+ok(S.ruleCategories('动火作业应当办理动火作业票。').includes('permit'), 'R3 旧写法「动火」仍可识别');
+// 「用火」子串不误伤「备用火炬 / 备用火嘴 / 使用火炬」
+ok(!S.fileCategories('备用火炬运行记录.xlsx').includes('permit'), 'R4 「备用火炬运行记录」不归作业票与作业许可');
+ok(!S.ruleCategories('企业应当使用火炬系统处理事故排放气。').includes('permit'), 'R5 「使用火炬」条款不归作业票与作业许可');
+ok(!S.fileCategories('加热炉备用火嘴更换记录.xlsx').includes('permit'), 'R6 「备用火嘴」不归作业票与作业许可');
+ok(S.fileCategories('用火作业票台账.xlsx').includes('permit') && S.ruleCategories('用火票须经属地单位审批。').includes('permit'), 'R7 「用火作业票」「用火票」仍归作业票与作业许可');
 
 /* ==================== 输出 ==================== */
 console.log(`\n${'='.repeat(60)}`);

@@ -41,7 +41,7 @@
 | 工具 | 返回内容 |
 |---|---|
 | `get_special_equipment` | 设备类别、注册代码、安全状况等级、检验类型、上次和下次检验日期 |
-| `get_inspection_issues` | 检验问题、整改要求、整改状态 |
+| `get_inspection_issues` | 检验问题、整改要求、整改状态；可按车间（workshop）取 |
 | `get_safety_valves` | 位号、整定压力、校验日期、校验周期、结论、送检状态 |
 
 使用技能：`special-equipment-inspection-due`、`valve-instrument-calibration-ledger`
@@ -83,7 +83,7 @@
 | `get_inspection_standards` | 位号或设备类型、检查项目、判定标准、周期、路线 |
 | `get_last_inspection` | 各位号各检查项目的上次巡检时间和结果 |
 | `get_standby_ledger` | 机组、主备设备、切换周期、盘车周期、试运周期 |
-| `get_rotation_records` | 切换、盘车、试运记录 |
+| `get_rotation_records` | 切换、盘车、试运记录；可按车间（workshop）取 |
 
 使用技能：`inspection-data-digest`、`inspection-task-dispatch`、`standby-rotation-reminder`
 
@@ -104,7 +104,7 @@
 
 | 工具 | 返回内容 |
 |---|---|
-| `get_permits` | 作业编号、作业类型、级别、位号、区域、楼层或标高、起止时间、监护人、状态 |
+| `get_permits` | 作业编号、作业类型、级别、位号、区域、楼层或标高、起止时间、监护人、状态；默认返回查询日当天有效的票（含跨天多日票） |
 | `get_permit_document` | 作业票 Word 原件 |
 | `get_area_map` | 区域、相邻关系、上下层关系 |
 
@@ -116,7 +116,7 @@
 |---|---|
 | `get_inventory` | 物料号、名称、规格、库存、库位、在途、再订货点、适用位号（MB52、MMBE） |
 | `get_material_movements` | 物料凭证、移动类型、数量、金额、领用设备、日期（MB51） |
-| `get_reservations` | 工单预留的物料和数量 |
+| `get_reservations` | 工单预留的物料和数量；可按车间（workshop）取 |
 | `get_material_substitutes` | 同规格候选和代用要点 |
 
 使用技能：`spare-parts-inventory-query`、`spare-parts-demand`、`spare-parts-consumption-analysis`
@@ -140,7 +140,7 @@
 | `get_contractors` | 单位、类别、资质、有效期、安全协议 |
 | `get_personnel_certificates` | 人员、证种、有效期、复审日期、三级教育 |
 | `get_admission_requirements` | 按承包商类别的准入要求 |
-| `get_site_inspections` | 现场检查、违章、质量、进度记录 |
+| `get_site_inspections` | 现场检查、违章、质量、进度记录，带所属车间；可按车间（workshop）取 |
 
 使用技能：`contractor-qualification-check`、`contractor-performance-log`、`completion-acceptance`
 

@@ -47,6 +47,8 @@ const ALIASES = C.mergeAliases({
   '维修内容': ['维修内容', '检修内容', '工作内容', '处理内容', '施工内容', '订单描述', '短文本'],
   '承修单位': ['承修单位', '施工单位', '维修单位', '检修单位', '承包商', '主工作中心', '工作中心'],
   '工单号': ['工单号', '工单编号', '单号', '派工单号', '订单', '订单号', '工单', 'PM订单', '维修订单号'],
+  // 输入里已有的 SAP 通知单号（系统已存在）：单独带出，不填进「通知单号(SAP生成)」。不带「通知单」单字别名，免得前缀命中「通知单类型/通知单短文本」
+  '已有通知单号': ['通知单号', '维修通知单号', '通知单编号'],
 });
 
 function loadBook(p) { return fs.statSync(p).isDirectory() ? readCsvDir(p) : readXlsx(p); }
@@ -87,6 +89,8 @@ function parseDefectArg(v) {
     dueDays: typeof d.dueDays === 'number' ? d.dueDays : null, dueDate: C.str(d.dueDate) || null,
     foundAt: C.str(d.foundAt) || null, by: C.str(d.by) || null,
     discipline: C.str(d.discipline), _src: 'defects.json',
+    // defect-intake-grading 批量登记时带出的原记录编号：只有来源是通知单号（sourceNoKind=notification）才算系统已存在的通知单
+    existingNotifNo: d.sourceNoKind === 'notification' ? (C.str(d.sourceNo) || null) : null,
   })) };
 }
 
@@ -147,9 +151,12 @@ function main() {
       const recs = C.toRecords(rows, ['位号'], '维修记录',
         ['维修日期', '维修内容', '承修单位', '工单号'], warnings, ALIASES);
       historyMap = new Map();
+      let openRows = 0;
       for (const r of recs) {
         const t = C.str(r['位号']);
         if (!t) { warnings.push(`工作表「维修记录」第${r._row}行 位号为空，已跳过`); continue; }
+        // 无维修日期、无维修内容的行多为未完工工单（含本次缺陷自己的工单），不是历史维修，不列入摘要
+        if (!C.str(r['维修日期']) && !C.str(r['维修内容'])) { openRows++; continue; }
         const d = r['维修日期'] ? C.normDate(r['维修日期']) : null;
         if (r['维修日期'] && !d) warnings.push(`工作表「维修记录」第${r._row}行 维修日期「${C.str(r['维修日期'])}」无法解析`);
         if (!historyMap.has(t)) historyMap.set(t, []);
@@ -158,6 +165,7 @@ function main() {
           orderNo: C.str(r['工单号']) || null, srcRow: r._row,
         });
       }
+      if (openRows) warnings.push(`工作表「维修记录」有 ${openRows} 行既无维修日期也无维修内容（多为未完工工单），未列入历史维修摘要`);
       for (const [, list] of historyMap) {
         list.sort((x, y) => {
           if (x.date && y.date) return x.date < y.date ? 1 : x.date > y.date ? -1 : 0;
@@ -178,7 +186,7 @@ function main() {
     const rows = C.pickSheet(loadBook(a.input), '缺陷记录', '缺陷', '记录', '通知单');
     if (!rows) throw new Error('输入文件中未找到「缺陷记录」工作表');
     const recs = C.toRecords(rows, ['位号', '缺陷描述'], '缺陷记录',
-      ['设备编号', '设备名称', '缺陷部位', '缺陷编号', '等级', '介质', '发现时间', '发现人'], warnings, ALIASES);
+      ['已有通知单号', '设备编号', '设备名称', '缺陷部位', '缺陷编号', '等级', '介质', '发现时间', '发现人'], warnings, ALIASES);
     for (const r of recs) {
       const tag = C.str(r['位号']);
       if (!tag) { warnings.push(`工作表「缺陷记录」第${r._row}行 位号为空，已跳过`); continue; }
@@ -188,6 +196,7 @@ function main() {
         tag, equipNo: C.str(r['设备编号']), name: C.str(r['设备名称']), part: C.str(r['缺陷部位']), desc,
         defectNo: C.str(r['缺陷编号']), levelCn: C.str(r['等级']), medium: C.str(r['介质']),
         foundAt: C.normDateTime(r['发现时间']), by: C.str(r['发现人']),
+        existingNotifNo: C.str(r['已有通知单号']) || null,
         _row: r._row, _src: '缺陷记录表',
       });
     }
@@ -271,6 +280,7 @@ function main() {
 
     const order = {
       draftNo: seq, defectNo: it.defectNo || null,
+      existingNotifNo: it.existingNotifNo || null,   // 输入已带的 SAP 通知单号：系统已存在，勿重复创建
       equipment,
       fault: {
         part: it.part || null, desc: it.desc, phenomenon, phenomenonCn, faultCode: D.PHEN_SAP_CODE[phenomenon] || '',
@@ -313,7 +323,11 @@ function main() {
     undeterminedPriority: nU,
     undeterminedType: orders.filter((o) => o.notification.typeUndetermined).length,
     withMissingInfo: missingInfo.length,
+    existingNotif: orders.filter((o) => o.existingNotifNo).length,
   };
+  if (counts.existingNotif) {
+    warnings.push(`${counts.existingNotif} 张草稿的输入已带 SAP 通知单号（${orders.filter((o) => o.existingNotifNo).map((o) => `草稿 ${o.draftNo}→${o.existingNotifNo}`).join('、')}），系统已存在，勿重复创建；草稿只供核对补充长文本`);
+  }
 
   // ---- 产出
   C.ensureDir(outDir);
@@ -329,10 +343,10 @@ function main() {
   fs.writeFileSync(path.join(outDir, 'notifications.json'), JSON.stringify(result, null, 2), 'utf8');
 
   // ---- 通知单草稿 CSV（SAP PM 通知单列，带 BOM；通知单号留空由系统生成）
-  const csvHead = ['草稿序号', '通知单号(SAP生成)', '通知单类型', '功能位置', '设备编号', '设备描述', '通知单短文本', '长文本',
+  const csvHead = ['草稿序号', '通知单号(SAP生成)', '已有通知单号', '通知单类型', '功能位置', '设备编号', '设备描述', '通知单短文本', '长文本',
     '优先级', '故障代码', '对象部件', '要求开始', '要求结束', '报告单位', '报告人', '缺陷登记号', '建议专业归口', '建议承修单位', '信息待补充项'];
   const csvRows = orders.map((o) => [
-    o.draftNo, '', o.notification.type || '待确认', o.equipment.funcLoc, o.equipment.equipNo || '待补充', o.equipment.name || '待补充',
+    o.draftNo, '', o.existingNotifNo || '', o.notification.type || '待确认', o.equipment.funcLoc, o.equipment.equipNo || '待补充', o.equipment.name || '待补充',
     o.notification.shortText, o.notification.longText,
     o.priority.key === null ? '待确认' : o.priority.key, o.fault.faultCode, o.fault.part || '',
     o.notification.requiredStart, o.notification.requiredEnd, o.notification.reportUnit, o.notification.reporter || '',
@@ -364,7 +378,12 @@ function main() {
     ['位号不在台账', counts.notInLedger],
     ['无历史维修记录', counts.withoutHistory],
     ['信息待补充草稿', counts.withMissingInfo],
+    ['输入已带通知单号（系统已存在）', counts.existingNotif],
   ]));
+  if (counts.existingNotif) {
+    L.push(`【注意】以下 ${counts.existingNotif} 张草稿的输入已带 SAP 通知单号，系统已存在，勿重复创建：${orders.filter((o) => o.existingNotifNo).map((o) => `草稿 ${o.draftNo}（${o.equipment.funcLoc}）→ ${o.existingNotifNo}`).join('、')}。`);
+    L.push('');
+  }
   L.push('【注意】专业归口为建议值，需车间与承修单位确认；工时与备件由承修单位在工单（订单）中填写，草稿不给数值。优先级按 SAP 1 非常高 / 2 高 / 3 中 / 4 低；通知单类型 M1 维修申请 / M2 故障报告 为常见口径，厂内可配置。');
   L.push('');
 
@@ -377,6 +396,7 @@ function main() {
     L.push('');
     L.push(C.mdTable(['项目', '内容'], [
       ['通知单号', '由 SAP 生成'],
+      ...(o.existingNotifNo ? [['已有通知单号', `**${o.existingNotifNo}**（系统已存在，勿重复创建）`]] : []),
       ['通知单类型', `${o.notification.typeCn}${o.notification.typeSource ? '（' + o.notification.typeSource + '）' : ''}`],
       ['功能位置', o.equipment.funcLoc],
       ['设备编号', V(o.equipment.equipNo)],

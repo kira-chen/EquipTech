@@ -73,6 +73,37 @@ eq(g('机封泄漏', '液化气', '').level, 'undetermined', 'A10 影响运行�
 eq(g('机封泄漏', '液化气', '').ruleId, 'U1', 'A11 未判定规则U1');
 eq(g('机封泄漏', '', '否').level, 'undetermined', 'A12 泄漏但介质未填→未判定');
 eq(g('机封泄漏', '未知介质XYZ', '否').level, 'undetermined', 'A13 介质不在库→未判定');
+// 口语「还在漏 / 漏得厉害」也是泄漏（EAM 通知单常见写法），不得落成「其他」按 C 级放过
+eq(R.classifyPhenomenon('V-1101 排凝阀关不严，还在漏'), 'leak', 'A13a 口语「还在漏」识别为泄漏');
+eq(g('排凝阀关不严，还在漏', '原油', '否').level, 'A', 'A13b 原油「还在漏」→A级（R2）');
+eq(R.classifyPhenomenon('法兰漏得厉害'), 'leak', 'A13c 「漏得厉害」识别为泄漏');
+// 「漏检 / 漏报 / 漏电」不是介质泄漏
+eq(R.classifyPhenomenon('巡检漏检两个点'), 'other', 'A13d 「漏检」不算泄漏');
+eq(R.classifyPhenomenon('电机漏电跳闸'), 'electrical', 'A13e 「漏电」归电气异常，不算泄漏');
+eq(R.classifyPhenomenon('P-201 泵振动大，巡检遗漏未及时发现'), 'vibration', 'A13f 「遗漏」不算泄漏，按振动');
+eq(g('P-201 泵振动大，巡检遗漏未及时发现', '液化气', '否').level, 'C', 'A13g 「遗漏」不把振动缺陷抬成泄漏A级');
+eq(R.classifyPhenomenon('轴承漏加润滑脂，温度高'), 'temperature', 'A13h 「漏加」不算泄漏');
+eq(R.classifyPhenomenon('检修后漏装联轴器防护罩'), 'other', 'A13i 「漏装」不算泄漏');
+eq(R.classifyPhenomenon('疏漏签字，漏斗堵塞'), 'other', 'A13j 「疏漏」「漏斗」不算泄漏');
+eq(R.classifyPhenomenon('出口法兰又漏了'), 'leak', 'A13k 「又漏了」识别为泄漏');
+eq(R.classifyPhenomenon('排凝阀往外漏，地面有油'), 'leak', 'A13l 「往外漏」识别为泄漏');
+eq(g('法兰发现漏点，有油迹', '液化气', '否').level, 'A', 'A13m 「漏点」仍为泄漏，液化气→A');
+eq(g('排凝阀漏了', '原油', '否').level, 'A', 'A13n 「漏了」仍为泄漏，原油→A');
+eq(g('法兰漏介质', '液化气', '否').level, 'A', 'A13o 「漏介质」仍为泄漏');
+// 温升口语与数值写法（与 anomaly-triage-advisor 同口径）
+eq(R.classifyPhenomenon('P-2105A 轴承温度偏高'), 'temperature', 'A13p 「温度偏高」识别为温升');
+eq(R.classifyPhenomenon('电机外壳温度升高'), 'temperature', 'A13q 「温度升高」识别为温升');
+eq(R.classifyPhenomenon('出口温度持续上升'), 'temperature', 'A13r 「温度持续上升」识别为温升');
+eq(R.classifyPhenomenon('轴承箱 91℃，比同类泵高约 15℃'), 'temperature', 'A13s 「高约 15℃」识别为温升');
+eq(R.classifyPhenomenon('前轴承偏高 8℃'), 'temperature', 'A13t 「偏高 8℃」识别为温升');
+eq(R.classifyPhenomenon('温度有点高'), 'temperature', 'A13u 「温度有点高」识别为温升');
+eq(R.classifyPhenomenon('出口压力偏高'), 'other', 'A13v 「压力偏高」不算温升');
+eq(R.classifyPhenomenon('疏水阀漏汽'), 'leak', 'A13p 「漏汽」仍为泄漏（蒸汽→R8）');
+eq(R.classifyPhenomenon('出口管线漏氢'), 'leak', 'A13q 「漏氢」仍为泄漏');
+eq(g('P-201 泵振动大，存在漏检', '液化气', '否').level, 'C', 'A13r 「存在漏检」不算泄漏，振动→C');
+eq(R.classifyPhenomenon('巡检又漏检两个点'), 'other', 'A13s 「又漏检」不算泄漏');
+eq(R.classifyPhenomenon('轴承漏了加润滑脂'), 'other', 'A13t 「漏了加」不算泄漏');
+eq(R.classifyPhenomenon('检查时漏掉一个测点'), 'other', 'A13u 「漏掉」不算泄漏');
 eq(g('泵振动偏高', '', '否').level, 'C', 'A14 振动类不需介质→可定级');
 eq(g('机封泄漏', '液化气', '').dueDays, null, 'A15 未判定无处理时限');
 ok(g('机封泄漏', '液化气', '').missing.includes('是否影响运行'), 'A16 未判定列出缺失字段');
@@ -274,6 +305,37 @@ eq(r.j.defects[0].level, 'B', 'H8 含硫污水泄漏→B 级（中危）');
 eq(r.j.defects[0].foundAt, `${DATE} 07:50`, 'H9 "通知日期"作发现时间');
 eq(r.j.defects[0].by, '刘', 'H10 "报告人"作发现人');
 eq(r.j.defects[1].discipline, '电气', 'H11 EM- 位号归电气');
+// 原记录编号与等级带出（sourceNo / sourceLevel），便于与系统等级对比
+const srcSap = mk('src-sap.xlsx', {
+  '通知单': [
+    ['通知单号', '位号', '设备名称', '描述', '缺陷等级', '介质', '是否影响运行', '发现时间'],
+    ['10046716', 'P-2108', '液化气泵', 'P-2108 出口法兰泄漏', 'C', '液化气', '否', `${DATE} 09:05`],
+    ['10046690', 'LT-1101', '界位计', 'LT-1101 示值偏差约 5%', 'C', '原油', '否', `${DATE} 09:42`],
+    ['10046691', 'P-2109', '回流泵', '盘车沉重', '', '', '', `${DATE} 10:00`],
+  ],
+});
+r = run(['--input', srcSap], 'src-sap');
+const s0 = (r.j && r.j.defects) || [];
+eq(s0[0] && s0[0].sourceNo, '10046716', 'H18 原记录通知单号带出到 sourceNo');
+eq(s0[0] && s0[0].sourceNoKind, 'notification', 'H19 来源为通知单号列 → sourceNoKind=notification');
+eq(s0[0] && s0[0].sourceLevel, 'C', 'H20 原记录缺陷等级原文带出到 sourceLevel');
+ok(s0[0] && s0[0].level !== 'C' && s0[0].sourceLevelDiffers === true, 'H21 系统等级 C 与脚本定级不同 → sourceLevelDiffers=true');
+eq(s0[1] && s0[1].sourceLevelDiffers, false, 'H22 系统等级与脚本定级相同 → sourceLevelDiffers=false');
+ok(s0[2] && s0[2].sourceLevel === null && s0[2].sourceLevelDiffers === null, 'H23 原记录无等级 → sourceLevel、sourceLevelDiffers 为 null');
+ok(r.j && /10046716/.test(r.md) && /系统等级/.test(r.md), 'H24 md 列出原记录编号与系统等级');
+eq(r.j && r.j.counts.sourceLevelDiffers, 1, 'H25 counts.sourceLevelDiffers 计 1');
+ok(r.j && r.j.warnings.some((w) => /10046716/.test(w) && /系统等级/.test(w)), 'H26 系统等级与脚本定级不一致给 warning');
+const srcLed = mk('src-led.xlsx', {
+  '缺陷记录': [['缺陷编号', '位号', '缺陷描述', '等级', '介质', '是否影响运行'],
+    ['QX-0901', 'P-11', '机封滴漏', 'B 级（严重）', '柴油', '否']],
+});
+r = run(['--input', srcLed], 'src-led');
+const s1 = ((r.j && r.j.defects) || [])[0] || {};
+ok(s1.sourceNo === 'QX-0901' && s1.sourceNoKind === 'defect', 'H27 来源为缺陷编号列 → sourceNoKind=defect');
+r = run(['--desc', '机封滴漏', '--tag', 'P-11', '--medium', '柴油', '--affects-run', '否'], 'src-single');
+const s2 = ((r.j && r.j.defects) || [])[0] || {};
+ok(s2.sourceNo === null && s2.sourceNoKind === null && s2.sourceLevel === null, 'H28 单条登记无原记录 → 三个字段为 null');
+
 // examples 样例预期计数
 const EX = path.join(__dirname, '..', 'examples');
 if (fs.existsSync(path.join(EX, 'sample-sap-notification-export.xlsx'))) {

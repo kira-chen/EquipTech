@@ -12,7 +12,7 @@
 | `status.json` | inspection-data-digest | `byEquipment` + `abnormal` | 设备数、异常、未判定、漏检；异常项进问题项 |
 | `orders.json` | work-order-tracker | `byStatus` 或 `metrics.closeRate` | 工单总数、未闭环、超期、停滞、完成率；超期工单进问题项，责任方取 `vendor`（承修单位/工作中心），无 `vendor` 时才用 `owner` |
 | `defects.json` | defect-intake-grading | `counts.byLevel` + `defects` | 新增缺陷、各等级分布 |
-| `periodic.json` | equipment-weekly-monthly-report | `metrics` + `failures` + `dataGaps` | 指标键映射为中文标签与单位（见下表）；`dataGaps.recompute` 需复算指标与 `highlights` 进问题项；`basedOn` 数据覆盖进要点 |
+| `periodic.json` | equipment-weekly-monthly-report | `metrics` + `failures` + `dataGaps` | 指标键映射为中文标签与单位（见下表）；`dataGaps.recompute` 需复算指标与 `highlights` 进问题项；超期工单责任方写单位（`highlights[].unit` 或 `orders.overdueList[].workCenter`），只有责任人姓名的（旧版 periodic.json、检修计划「责任人」）去掉人名并 warning；`basedOn` 数据覆盖进要点 |
 | `daily.json` | equipment-daily-report | `counts` + `status` + `orders` | counts 映射为中文；`special.list` 中状态为异常的特护设备进问题项 |
 
 指标键 → 中文标签（只做展示映射，不改数值；null 保留 null）：
@@ -53,7 +53,7 @@
 | `--hide-tags` | 否 | 旗标，任何层级都去位号 / 工单号 / SAP 单号 |
 | `--out` | 否 | 输出目录，默认系统临时目录 `<os.tmpdir()>/mmb-out`，建议始终传 |
 | `--topics` | 否 | 议题，逗号分隔。无数据支撑的议题写「需补充」 |
-| `--need-decision` | 否 | 需决策事项，分号或换行分隔 |
+| `--need-decision` | 否 | 需决策事项，分号或换行分隔；公司层级或 `--hide-tags` 时同样去位号、工单号、SAP 单号（`--pending` 同理） |
 | `--pending` | 否 | 上次会议遗留事项 |
 | `--workshop` | 否 | 车间名，写入稿件头部 |
 

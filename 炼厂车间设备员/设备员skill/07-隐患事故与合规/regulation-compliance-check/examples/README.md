@@ -38,3 +38,13 @@
 node scripts/make-sample.js --out examples            # 默认 seed=1
 node scripts/make-sample.js --out examples --seed 7   # 虚构文号变化，结论不变
 ```
+
+## MCP 取数对照
+
+平台接入业务系统 MCP 时不用附件：条款清单、资料清单、厂内制度清单取自平台知识库；本车间台账与记录按 SKILL.md「数据获取（MCP）」调用工具，csv 全部放进同一个新建空目录 A，作 `--materials A`（目录扫描只看文件名）。演示数据每天按剧本刷新，资料种类与文件名固定，下表结论每天稳定。
+
+| # | 示例问题 | MCP 调用 | 运行参数 | 预期结果 |
+|---|---|---|---|---|
+| M1 | 用知识库条款清单给常减压车间做设备管理自查，记录从系统取 | 设备资产管理 `get_equipment_ledger`、`get_special_equipment`、`get_safety_valves`、`get_failure_history`、`get_notifications`，点检巡检App `get_inspection_records`，HSE管理平台 `get_hazards`，作业票系统 `get_permits`（均 workshop=常减压车间）；HSE管理平台 `get_personnel_certificates` → 全部放 A（9 份 csv） | `--rules <知识库 KB-法规制度条款清单-设备管理.xlsx> --materials A --workshop 常减压车间 --date <今天>` | 14 条：已见 8、未见 4、材料不完整 0、需确认 2；第八条（隐患排查治理）只认「隐患台账.csv」，通知单、故障记录不充数；第七条由「故障记录.csv」（含处理措施）认作检修记录；第九条由「作业清单.csv」认作作业许可；未见的是第一条（管理制度）、第四条（定期检验报告）、第十一条（应急预案）、第十二条（防雷防静电接地检测）；第十三、十四条进需进一步确认；「通知单.csv」是缺陷/故障报修记录，条款清单无缺陷类条款，列入未对应材料 |
+| M2 | 知识库特种设备条款对加氢车间特种设备台账与校验台账 | 设备资产管理 `get_special_equipment`、`get_safety_valves`（workshop=加氢车间）→ A | `--rules <知识库 KB-法规条款-特种设备使用管理.docx> --materials A --workshop 加氢车间 --date <今天>` | docx 表格解析出 3 条：第三条（使用登记）由特种设备台账、第五条（安全阀校验）由校验台账已见；第四条（定期检验报告）未见对应材料，没拿台账去顶 |
+| M3 | 知识库资料清单 + 厂内制度清单对条款清单（不调业务系统） | 无，数据来自平台知识库 | `--rules <KB-法规制度条款清单-设备管理.xlsx> --materials <资料清单-常减压车间.xlsx> --internal <厂内制度清单.xlsx> --workshop 常减压车间 --date <今天>` | 14 条：已见 9、未见 1、材料不完整 2、需确认 2；第五条（校验台账自报「校验结论待补」）、第十条（人员证书自报「复审记录未归档」）判材料不完整；第十一条由厂内制度「厂设备事故应急预案（2026版）」补上；第十二条仍未见；「班组考勤统计表」列入未对应材料 |

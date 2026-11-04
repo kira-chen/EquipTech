@@ -377,6 +377,50 @@ ok(!r.s.warnings.some((w) => /设备资料登记\.csv/.test(w) && /无法读取/
 eq(r.j.counts.catalogFiles, 1, 'O12 CSV 目录清单仍计 1 份');
 fs.rmdirSync(ODDCSV);
 
+// ============ P. 位号边界与 A/B 简写（2026-11-04 核查新增）============
+// 演示台账里 V-1101 / PSV-1101、T-1101 / LT-1101 这类「短位号是长位号的尾巴」很常见，按去分隔符后的子串比对会串台
+const BD = path.join(work, 'bound');
+fs.mkdirSync(BD, { recursive: true });
+const wbd = (n, t) => fs.writeFileSync(path.join(BD, n), t, 'utf8');
+wbd('V-1101电脱盐罐使用说明书.md', '# V-1101 电脱盐罐使用说明书\n设计压力 2.5MPa。\n');
+wbd('PSV-1101安全阀校验报告.txt', 'PSV-1101 安全阀校验报告\n整定压力 2.3MPa。\n');
+wbd('液位计检定记录.md', '# 液位计检定记录\nLV-1101 液位计零点检查合格。\n');
+wbd('V-11011储罐说明书.md', '# V-11011 储罐说明书\n设计压力 1.0MPa。\n');
+wbd('电脱盐系统巡检要点.md', '# 电脱盐系统巡检要点\n每班检查 V-1101 界位与电流。\n');
+wbd('常减压机泵检修规程.md', '# 常减压机泵检修规程\nP-31A/B 进料泵机械密封压盖螺栓紧固力矩 40N·m。\n');
+wbd('P-31C说明书.md', '# P-31C 说明书\n型号 ZA-50-160。\n');
+r = run(['--docs', BD, '--tag', 'V-1101'], 'bound-v');
+const bdFiles = (r.j && r.j.documents || []).map((d) => d.file);
+ok(bdFiles.includes('V-1101电脱盐罐使用说明书.md') && bdFiles.includes('电脱盐系统巡检要点.md'), 'P1 文件名或内容含 V-1101 仍关联');
+ok(!bdFiles.includes('PSV-1101安全阀校验报告.txt'), 'P2 查 V-1101 不带出 PSV-1101 的资料（位号前紧挨字母不算命中）');
+ok(!bdFiles.includes('液位计检定记录.md'), 'P3 查 V-1101 不按内容带出 LV-1101 的资料');
+ok(!bdFiles.includes('V-11011储罐说明书.md'), 'P4 查 V-1101 不带出 V-11011（位号后紧跟数字不算命中）');
+r = run(['--docs', BD, '--tag', 'PSV-1101'], 'bound-psv');
+ok(r.j.documents.some((d) => d.file === 'PSV-1101安全阀校验报告.txt'), 'P5 查 PSV-1101 正常关联自己的资料');
+r = run(['--docs', BD, '--tag', 'P-31B', '--query', '机械密封'], 'bound-ab');
+ok(r.j.documents.some((d) => d.file === '常减压机泵检修规程.md' && d.relatedBy === '内容中出现位号'), 'P6 内容写「P-31A/B」时查 P-31B 也能关联');
+ok(r.j.passages.some((p) => /40N·m/.test(p.text)), 'P7 A/B 简写关联后照常抽原文');
+r = run(['--docs', BD, '--tag', 'P-31C'], 'bound-c');
+ok(!r.j.documents.some((d) => d.file === '常减压机泵检修规程.md'), 'P8 「P-31A/B」不关联到 P-31C');
+
+// ============ Q. 取值冲突口径：一份资料的取值被另一份完全包含时不算冲突（2026-11-04 核查新增）============
+const CF = path.join(work, 'cf');
+fs.mkdirSync(CF, { recursive: true });
+const wcf = (n, t) => fs.writeFileSync(path.join(CF, n), t, 'utf8');
+wcf('P-41使用说明书.md', '# P-41 使用说明书\n冷态对中径向偏差不大于 0.05mm，轴向偏差不大于 0.08mm。\n');
+wcf('P-41检修规程.md', '# P-41 检修规程\n回装后复测冷态对中，径向偏差不大于 0.05mm。\n');
+r = run(['--docs', CF, '--tag', 'P-41', '--query', '对中'], 'cf-sub');
+eq(r.j.counts.conflicts, 0, 'Q1 规程只写径向 0.05mm、说明书写径向 0.05mm + 轴向 0.08mm，不误报冲突');
+ok(/未发现同一内容在不同资料中取值不一致/.test(r.md), 'Q2 md 写未发现不一致');
+wcf('P-42使用说明书.md', '# P-42 使用说明书\n机械密封压盖螺栓力矩 45N·m，冲洗管接头力矩 20N·m。\n');
+wcf('P-42检修规程.md', '# P-42 检修规程\n机械密封压盖螺栓力矩 50N·m，冲洗管接头力矩 20N·m。\n');
+r = run(['--docs', CF, '--tag', 'P-42', '--query', '机械密封'], 'cf-real');
+eq(r.j.counts.conflicts, 1, 'Q3 两份资料各有对方没有的取值（45 与 50）仍判冲突');
+ok(['45N·m', '50N·m', '20N·m'].every((v) => r.j.conflicts[0].values.some((x) => x.value === v)), 'Q4 冲突时同单位取值全部列出');
+wcf('P-42技术协议.txt', 'P-42 技术协议\n机械密封压盖螺栓力矩 45N·m。\n');
+r = run(['--docs', CF, '--tag', 'P-42', '--query', '机械密封'], 'cf-three');
+eq(r.j.counts.conflicts, 1, 'Q5 三份资料中两份一致、一份不同仍判冲突');
+
 console.log(`\n${'='.repeat(56)}`);
 console.log(`technical-document-finder 自测：${pass} 通过，${fail} 失败`);
 if (failures.length) { console.log('\n失败项：'); failures.forEach((f) => console.log('  ✗ ' + f)); }

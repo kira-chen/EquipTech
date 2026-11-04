@@ -44,7 +44,17 @@ const ALIASES = C.mergeAliases({
   '上限': ['上限', '上限值', '高报', '高报值', '报警上限', 'H'],
   '下限': ['下限', '下限值', '低报', '低报值', '报警下限', 'L'],
   '是否需巡检': ['是否需巡检', '需巡检', '是否巡检', '巡检范围'],
+  '特护': ['特护', '是否特护', '特护设备', '特护标记', '特护机组'],
 });
+
+/**
+ * 特护单列（中石化口径：重要度 A/B/C 与特护标记是两回事，关键设备 A 不等于特护）：
+ * 「特护」列为 是/Y/1/特护 → 特护；或重要度/ABC标识的值本身写「特护」→ 特护。A、关键 不判特护。
+ */
+function isSpecial(r) {
+  if (/^(是|Y|yes|true|1|√|✓|特护)/i.test(C.str(r['特护']))) return true;
+  return /特护/.test(C.str(r['重要度']));
+}
 
 const SOURCE_TYPES = {
   patrol: { key: '巡检记录', label: '操作工巡检' },
@@ -138,8 +148,9 @@ function main() {
     for (const job of jobs) {
       const label = SOURCE_TYPES[job.type].label;
       foundSources.push(`${path.basename(p)}/${job.sheetName}→${label}${job.forced ? '（--source-type 指定）' : ''}`);
+      // 「特护」排在「重要度」前：共享别名「重要度」含「特护」，表头恰好是「特护」时不能被重要度抢走
       const recs = C.toRecords(job.rows, ['位号'], `${path.basename(p)}/${job.sheetName}`,
-        ['设备名称', '设备编号', '检查结果', '运行状态', '异常描述', '检查时间', '检查人', '区域', '专业', '参数名', '参数值', '上限', '下限', '是否报警', '重要度'], warnings, ALIASES);
+        ['设备名称', '设备编号', '检查结果', '运行状态', '异常描述', '检查时间', '检查人', '区域', '专业', '参数名', '参数值', '上限', '下限', '是否报警', '特护', '重要度'], warnings, ALIASES);
       const sheetTag = `${path.basename(p)}/${job.sheetName}`;
       const has = (c) => recs.hasCol(c);
       if (!has('检查结果') && !has('是否报警') && !(has('参数值') && (has('上限') || has('下限'))) && !has('运行状态')) {
@@ -180,7 +191,7 @@ function main() {
           else state = 'unknown';
         } else if (C.str(r['检查结果'])) state = 'unknown';
         if (basis) basisUsed.add(basis);
-        const special = /特护|^A$|^A类|关键/.test(C.str(r['重要度']));
+        const special = isSpecial(r);
         all.push({
           tag, name: C.str(r['设备名称']), eqNo: C.str(r['设备编号']), source: label, type: job.type,
           state, basis, rawResult: C.str(r['检查结果']) || (basis === '是否报警' ? `报警:${alarm ? '是' : '否'}` : basis === '测值对限值' ? `测值对限值:${state === 'abnormal' ? '超限' : '未超限'}` : basis === '运行状态' ? `运行状态:${C.str(r['运行状态'])}` : ''),
@@ -217,7 +228,10 @@ function main() {
         resolved: 'abnormal', basis: '就严原则：同一检查项既有正常又有异常记录时整机判为异常' });
     }
     let state;
+    // 有未判定检查项（结果无法归类如「待查」，或为空且无其它判定依据）且没有异常项：整机判未判定，不因其余项正常就判正常
+    const pendingItems = recs.filter((r) => r.state === 'unknown' || r.state === null);
     if (states.has('abnormal')) state = 'abnormal';
+    else if (states.has('normal') && pendingItems.length) state = 'unknown';
     else if (states.has('normal')) state = 'normal';
     else if (states.has('unknown')) state = 'unknown';
     else state = 'unfilled';
@@ -257,7 +271,13 @@ function main() {
         by: recs.find((r) => r.state === 'abnormal')?.by || '',
       });
     }
-    if (state === 'unknown' || state === 'unfilled') {
+    if (state === 'unknown' && states.has('normal')) {
+      const what = pendingItems.map((r) => `${r.param || '（整机结论）'}「${r.rawResult || '空'}」`).join('、');
+      unknownState.push({ tag, name: rep.name, rawResults: recs.map((r) => r.rawResult), partial: true,
+        pendingItems: pendingItems.map((r) => ({ param: r.param || null, result: r.rawResult || null, sheet: r.sheet, row: r.row })),
+        reason: `部分检查项未判定：${what}；其余检查项正常、无异常项，整机不判正常` });
+      warnings.push(`设备「${tag}」检查项 ${what} 未判定（其余正常、无异常项），整机判为未判定、未计入正常，请复核该项`);
+    } else if (state === 'unknown' || state === 'unfilled') {
       unknownState.push({ tag, name: rep.name, rawResults: recs.map((r) => r.rawResult), reason: state === 'unfilled' ? '检查结果为空，且无是否报警、测值对限值、运行状态任一判定依据' : '检查结果无法归类为正常/异常' });
     }
   }
@@ -273,18 +293,24 @@ function main() {
     const rows = C.pickSheet(lb, '设备台账', '台账', '设备清单', '技术对象', '功能位置清单');
     if (!rows) { warnings.push('台账文件中未找到「设备台账」工作表，无法识别漏检'); }
     else {
-      const lr = C.toRecords(rows, ['位号'], '设备台账', ['设备名称', '区域', '专业', '是否需巡检', '重要度'], warnings, ALIASES);
+      const lr = C.toRecords(rows, ['位号'], '设备台账', ['设备名称', '区域', '专业', '是否需巡检', '特护', '重要度'], warnings, ALIASES);   // 「特护」在「重要度」前，理由同上
       missed = [];
       for (const r of lr) {
         const tag = C.str(r['位号']);
         if (!tag) continue;
         const need = C.str(r['是否需巡检']);
         if (need && /^(否|不|N|no)/i.test(need)) continue;
-        const special = /特护|^A$|^A类|关键/.test(C.str(r['重要度']));
+        const special = isSpecial(r);
         if (!byTag.has(tag)) missed.push({ tag, name: C.str(r['设备名称']), area: C.str(r['区域']), discipline: C.str(r['专业']), special });
-        else if (special) { const it = byEquipment.find((x) => x.tag === tag); if (it) it.special = true; }
+        else if (special) {
+          // 台账才有的特护标记（巡检记录多不带特护列）补到设备与异常清单，再重新置顶
+          const it = byEquipment.find((x) => x.tag === tag); if (it) it.special = true;
+          const ab = abnormal.find((x) => x.tag === tag); if (ab) ab.special = true;
+        }
       }
       missed.sort((x, y) => (y.special - x.special) || zh(x, y));
+      byEquipment.sort((x, y) => (y.special - x.special) || (x.state === 'abnormal' ? -1 : 0) - (y.state === 'abnormal' ? -1 : 0) || zh(x, y));
+      abnormal.sort((x, y) => (y.special - x.special) || zh(x, y));
     }
   } else {
     warnings.push('未提供设备台账（--ledger），无法识别漏检设备');

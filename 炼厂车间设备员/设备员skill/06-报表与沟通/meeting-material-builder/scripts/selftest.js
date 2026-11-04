@@ -180,6 +180,10 @@ const ORD_REAL = mkj('orders-real.json', {
 r = run(['--input', ORD_REAL, '--meeting', 'X', '--duration', '10', '--audience', '车间'], 'orders-real');
 ok(r.j.issues.some((x) => /WO-26090102 K-1201 超期 6 天，责任方 外委-华东检修/.test(x.text)), 'H10 超期工单责任方取上游 vendor（承修单位）');
 ok(!r.j.issues.some((x) => /项目经理李/.test(x.text)), 'H11 不把上游 owner（责任人个人）写成责任方');
+ok(r.j.issues.some((x) => /WO-26090102/.test(x.text) && /循环氢压缩机/.test(x.text) && /二级出口温度偏高/.test(x.text)), 'H18 超期工单问题项带设备名称与故障描述');
+r = run(['--input', ORD_REAL, '--meeting', 'X', '--duration', '8', '--audience', '公司'], 'orders-real-company');
+{ const sec = (r.md.split('## 四、存在问题')[1] || '').split('## 五')[0];
+  ok(!/K-1201|WO-26090102/.test(sec) && /循环氢压缩机/.test(sec), 'H19 公司层级去位号后超期工单仍保留设备名称（去位号不等于去信息）'); }
 
 // ============ I. 内容量与时长匹配 ============
 r = run([...BASE, '--duration', '3', '--audience', '车间'], 'short');
@@ -296,6 +300,52 @@ r = run(['--input', DAY, '--meeting', '早会', '--duration', '5', '--audience',
 ok(r.j.metrics.some((m) => m.label === '当日作业票' && m.value === 4), 'R8 daily.json counts 映射为中文');
 ok(r.j.issues.some((x) => /特护设备 K-1601/.test(x.text)), 'R9 日报特护异常进问题项');
 
+// 上游 periodic.json 把指标列为需复算、却仍带数值（旧样例或手工 JSON）：不引用该数值，避免「50%」与「本期未出数」并存
+const PER_BAD = mkj('periodic-bad.json', {
+  meta: { workshop: '测试车间', period: 'weekly' },
+  metrics: { intactRate: 90, planRate: 50, planRateOverhaul: 0, planRateRoutine: 100, orderRate: 62.5 },
+  failures: { total: 1 }, dataGaps: { recompute: [{ metric: '检修计划完成率', algo: 'x' }] },
+});
+r = run(['--input', PER_BAD, '--meeting', '分厂设备月会', '--duration', '10', '--audience', '分厂'], 'periodic-recompute-value');
+ok(!r.j.metrics.some((m) => /检修计划完成率/.test(m.label)), 'R10 需复算的检修计划完成率（含大检修、日常维修分列）不进关键指标');
+ok(r.j.metrics.some((m) => m.label === '设备完好率' && m.value === 90), 'R11 其余指标照常引用');
+ok(r.s.warnings.some((w) => /检修计划完成率/.test(w) && /需复算/.test(w)), 'R12 上游需复算却带数值时 warning');
+
+
+// ============ S. periodic.json 超期工单责任方写单位，不点人名（v4-4） ============
+{
+  // 新版 periodic.json：highlights 带 unit（工作中心）
+  const PER_NEW = mkj('periodic-unit.json', {
+    meta: { period: 'monthly', from: '2026-10-05', to: '2026-11-04' }, metrics: { intactRate: 95 }, failures: { total: 1 }, dataGaps: {},
+    orders: { overdueList: [{ no: '20032936', tag: 'P-2105A', desc: '机封漏油', owner: '郑八', workCenter: '检维修中心动设备班' }] },
+    highlights: [{ type: '超期工单', no: '20032936', tag: 'P-2105A', unit: '检维修中心动设备班', text: '20032936 P-2105A 机封漏油，要求完成 2026-10-13，实际 2026-10-16 闭环，超期 3 天，责任方 检维修中心动设备班' }],
+  });
+  let r = run(['--input', PER_NEW, '--meeting', '分厂设备月会', '--duration', '10', '--audience', '分厂'], 'periodic-unit');
+  ok(r.j.issues.some((x) => /责任方 检维修中心动设备班/.test(x.text)) && !/郑八/.test(JSON.stringify(r.j)), 'S1 periodic.json 超期工单责任方写工作中心，不出现人名');
+  // 旧版 periodic.json：highlights 只有文字，责任方是人名，overdueList 有 owner 无 workCenter
+  const PER_OLD = mkj('periodic-person.json', {
+    meta: { period: 'monthly', from: '2026-10-05', to: '2026-11-04' }, metrics: { intactRate: 95 }, failures: { total: 1 }, dataGaps: {},
+    orders: { overdueList: [{ no: '20032936', tag: 'P-2105A', desc: '机封漏油', owner: '郑八' }] },
+    highlights: [{ type: '超期工单', text: '20032936 P-2105A 机封漏油，要求完成 2026-10-13，实际 2026-10-16 闭环，超期 3 天，责任方 郑八' },
+      { type: '检修计划未完成', text: '项目5（V-1301） 计划完成 2026-10-20，截至 2026-11-04 未完工，责任人 王五' }],
+  });
+  r = run(['--input', PER_OLD, '--meeting', '分厂设备月会', '--duration', '10', '--audience', '分厂'], 'periodic-person');
+  ok(!/郑八|王五/.test(r.md) && !/郑八|王五/.test(JSON.stringify(r.j.issues)), 'S2 旧版 periodic.json 的责任人姓名不进汇报稿和问题项');
+  ok(r.j.issues.some((x) => /20032936 P-2105A 机封漏油/.test(x.text) && /超期 3 天/.test(x.text)), 'S3 去掉人名后超期工单事实保留');
+  ok(r.s.warnings.some((w) => /人名|姓名|责任人/.test(w) && /工作中心|单位/.test(w)), 'S4 去掉人名时给 warning，提示补单位');
+}
+
+// ============ T. 公司层级需决策事项同样去位号（v4 疑点 4） ============
+{
+  let r = run([...BASE, '--duration', '8', '--audience', '公司', '--need-decision', 'P-2101A 进料泵是否提前安排检修；20033023 工单需协调外委'], 'decision-company');
+  const sec = (r.md.match(/## 五[\s\S]*?(\n## |$)/) || [''])[0];
+  ok(!/P-2101A|20033023/.test(sec) && /进料泵是否提前安排检修/.test(sec), 'T1 公司层级需决策节去掉位号、工单号，保留设备名称与事项');
+  ok(!r.j.needDecision.some((d) => /P-2101A|20033023/.test(d.text)), 'T2 outline.json needDecision 文本去位号');
+  const sl = (r.j.slides || []).find((x) => /需协调决策/.test(x.title));
+  ok(sl && !sl.bullets.some((b) => /P-2101A/.test(b)), 'T3 slides 需决策页去位号');
+  r = run([...BASE, '--duration', '8', '--audience', '车间', '--need-decision', 'P-2101A 进料泵是否提前安排检修'], 'decision-ws');
+  ok(r.j.needDecision.some((d) => /P-2101A/.test(d.text)), 'T4 车间层级需决策保留位号');
+}
 console.log(`\n${'='.repeat(56)}`);
 console.log(`meeting-material-builder 自测：${pass} 通过，${fail} 失败`);
 if (failures.length) { console.log('\n失败项：'); failures.forEach((f) => console.log('  ✗ ' + f)); }

@@ -177,6 +177,9 @@ ok(r.data.savingPotential.length === 1 && r.data.savingPotential[0].annualCostGa
 ok(/不等于可实现的节能收益/.test(r.data.meta.savingStatement), '9.3 声明不等于节能收益');
 ok(/不等于可实现的节能收益/.test(r.md), '9.4 报告含费用差额声明行');
 ok(r.data.savingPotential[0].statement === r.data.meta.savingStatement, '9.5 逐条带声明');
+// 测算参照与偏低基准一致：设计效率或组内中位数（不是组内最优）
+eq(r.data.savingPotential[0].baselineKind, 'groupMedian', '9.12 本例费用差额以组内中位数为参照');
+ok(/组内中位数/.test(r.data.meta.savingStatement) && !/组内最优/.test(r.data.meta.savingStatement) && !/组内最优/.test(r.md), '9.13 声明行写明以设计效率或组内中位数为参照，不写「组内最优」');
 // 无运行时间 → 不测算，不用典型运行小时代替
 const noHours = mk('nohours.xlsx', {
   '运行数据': [PUMP_HDR, pumpRow('P-61', 0.80), pumpRow('P-62', 0.75), pumpRow('P-63', 0.60, { hours: '' })],
@@ -511,6 +514,36 @@ eq(rp.summary.counts.insufficientData, 2, '28.15 多变样例恒 2 台数据不�
 eq(rp.data.meta.unitPrice, 0.64, '28.16 多变样例单价取加权行');
 const rp7 = run(path.join(s7.d, 'sample-compressor-polytropic.xlsx'), ['--polytropic'], 'smppoly7', '压缩机');
 eq(rp7.summary.counts.insufficientData, 2, '28.17 seed 变多变样例结论不变');
+
+// ---- 29. 统计期内运行时间为 0 h：效率照算供核对，但不判正常或偏低、不参与同类对比，warning 提示
+{
+  const DH = ['位号', '设备名称', '设计效率'];
+  const zero = mk('zero-hours.xlsx', {
+    '运行数据': [PUMP_HDR,
+      pumpRow('P-21A', 0.60, { group: 'P-21', hours: 720 }),
+      pumpRow('P-21B', 0.50, { group: 'P-21', hours: 0 }),
+      pumpRow('P-22A', 0.80, { group: 'P-22', hours: 0 }),
+      pumpRow('P-22B', 0.76, { group: 'P-22', hours: 500 }),
+      pumpRow('P-22C', 0.74, { group: 'P-22', hours: 400 })],
+    '设计参数': [DH, ['P-21A', 'P-21A泵', 78], ['P-21B', 'P-21B泵', 78]],
+  });
+  r = run(zero, [], 'zerohours');
+  const by = (t) => r.data.byEquipment.find((x) => x.tag === t) || {};
+  eq(r.summary.ok, true, '29.1 含 0 h 设备可正常运行');
+  eq(by('P-21B').lowJudgement, 'notRunning', '29.2 运行 0 h 的泵判定为 notRunning，不判正常或偏低');
+  ok(!r.data.lowEfficiency.some((x) => x.tag === 'P-21B'), '29.3 运行 0 h 的泵不进能效偏低清单（即使低于设计值）');
+  eq(by('P-21A').lowJudgement, 'low', '29.4 同组正常运行的泵照常按设计值判偏低');
+  eq(by('P-21A').groupSize, 1, '29.5 运行 0 h 的泵不参与组内排名');
+  eq(by('P-21B').groupRank, null, '29.6 运行 0 h 的泵无组内排名');
+  eq(by('P-22A').lowJudgement, 'notRunning', '29.7 效率高的 0 h 泵同样不判正常');
+  eq(r.data.groupComparison.find((g) => g.group === 'P-22').size, 2, '29.8 组内中位数只用运行中的泵');
+  eq(r.summary.counts.notRunning, 2, '29.9 counts.notRunning 计 2 台');
+  eq(r.summary.counts.calculated, 5, '29.10 0 h 泵仍计入完成计算（效率列出供核对）');
+  ok(r.summary.warnings.some((w) => /P-21B/.test(w) && /0 h/.test(w) && /不判正常或偏低/.test(w)), '29.11 运行 0 h 给 warning');
+  ok(/P-21B[^\n]*统计期内未运行/.test(r.md), '29.12 md 判定列标「统计期内未运行」');
+  const wb = readXlsx(path.join(r.out, '能效对标表.xlsx'));
+  ok(wb['逐台能效'].some((row) => row[0] === 'P-21B' && /统计期内未运行/.test(String(row[row.length - 1]))), '29.13 xlsx 判定列标「统计期内未运行」');
+}
 
 // ---- 输出
 console.log(`\n${'='.repeat(56)}`);

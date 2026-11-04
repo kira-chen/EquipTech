@@ -154,6 +154,21 @@ r = run(['--input', LED, '--query', 'P-01', '--history', HIS2], 'history-sap');
 eq((r.j.records[0]['_检修历史'] || []).length, 1, 'F8 SAP 工单导出列名可关联检修历史');
 eq(r.j.records[0]['_检修历史'][0].order, '40000001', 'F9 工单号取自订单号列');
 eq(r.j.records[0]['_检修历史'][0].vendor, '一队', 'F10 承修单位取自主工作中心列');
+// 业务系统故障/检修历史导出：未完工的记录没有实际结束日期和检修内容，要按发生时间排序并带出故障现象，不能显示成空行排在最后
+const HIS3 = mk('his3.xlsx', {
+  '检修历史': [
+    ['通知单号', '工单号', '位号', '故障现象', '发生时间', '检修内容', '工单类型', '实际结束日期', '承修单位'],
+    ['10000001', '20000001', 'E-01', '端差增大', '2025-12-18 12:28', '抽芯化学清洗', 'PM01', '2025-12-21', '静设备班'],
+    ['10000002', '20000002', 'E-01', '管束内漏，需抽芯试压', '2026-10-31 09:36', '', 'PM01', '', '静设备班'],
+  ],
+});
+r = run(['--input', LED, '--query', 'E-01', '--history', HIS3], 'history-open');
+const h3 = (r.j && r.j.records[0]['_检修历史']) || [];
+eq(h3.length, 2, 'F11 未完工记录也关联');
+eq(h3[0] && h3[0].order, '20000002', 'F12 无完工日期的记录按发生时间排序（最新的在前）');
+eq(h3[0] && h3[0].date, null, 'F13 检修日期不用发生时间冒充');
+ok(/管束内漏，需抽芯试压/.test(r.md || ''), 'F14 未填检修内容时 md 带出故障现象');
+ok(/无完工日期/.test(r.md || ''), 'F15 md 写明无完工日期而不是只显示「—」');
 
 // ============ G. 别名列头 + 标题行 + 合计行 ============
 const ALIAS = mk('alias.xlsx', {
@@ -244,6 +259,46 @@ r = run(['--input', LED, '--describe', '--query', 'P-01'], 'describe-q');
 eq(r.s.queryType, 'describe', 'K9 --describe 优先于 --query');
 ok(/--describe/.test(raw(['--input', LED, '--query', '{"type":"filter","where":[["设计压力","gt","1.0"]]}']).s.error), 'K10 字段不存在的错误信息提示 --describe');
 
+// ============ L. 台账原有的其它列（业务系统导出常带设备类型、功率、设计压力等） ============
+const EXT = mk('ext.xlsx', {
+  '设备台账': [
+    ['位号', '设备编号', '设备名称', '设备类型', '专业', '重要度', '特护标记', '功率(kW)', '设计压力(MPa)', '设备描述(备注)'],
+    ['P-01', '10000001', '进料泵', '离心泵', '动设备', 'A', '是', 132, 2.5, '驱动端轴承'],
+    ['P-02', '10000002', '回流泵', '离心泵', '动设备', 'B', '否', 75, 1.6, ''],
+    ['E-01', '10000003', '换热器', '换热器', '静设备', 'B', '否', '', 0.8, ''],
+  ],
+});
+r = run(['--input', EXT, '--query', '{"type":"filter","where":[["设备类型","eq","离心泵"]]}'], 'ext-filter');
+eq(r.s.ok, true, 'L1 台账原有的其它列（设备类型）可作筛选条件');
+eq(r.s.counts && r.s.counts.matched, 2, 'L2 按设备类型筛出 2 台');
+r = run(['--input', EXT, '--query', '{"type":"stats","groupBy":"设备类型"}'], 'ext-stats');
+eq(r.j && r.j.stats && r.j.stats.groups.length, 2, 'L3 可按设备类型分组统计');
+r = run(['--input', EXT, '--query', '{"type":"filter","where":[["设计压力(MPa)","gt","1.0"]]}'], 'ext-unit');
+eq(r.s.counts && r.s.counts.matched, 2, 'L4 带单位的原列名「设计压力(MPa)」可做数值比较');
+r = run(['--input', EXT, '--query', '{"type":"filter","where":[["设计压力","gt","1.0"]]}'], 'ext-unit2');
+eq(r.s.counts && r.s.counts.matched, 2, 'L5 「设计压力」解析到唯一同名带单位列「设计压力(MPa)」');
+ok((r.s.appliedFilters || []).some((f) => f.startsWith('设计压力(MPa)')), 'L6 生效条件写实际列名（含单位）');
+r = run(['--input', EXT, '--query', '{"type":"filter","where":[["压力","gt","1.0"]]}'], 'ext-unit3');
+eq(r.s.ok, false, 'L7 「压力」不按包含关系匹配到「设计压力(MPa)」，仍报字段不存在');
+r = run(['--input', EXT, '--query', 'P-01'], 'ext-detail');
+eq(r.j && r.j.records[0]['功率(kW)'], '132', 'L8 单台详情返回台账原有的功率列');
+ok(/\| 功率\(kW\) \| 132 \|/.test(r.md || ''), 'L9 md 详情表含功率列');
+eq(r.j && r.j.records[0]['设备名称'], '进料泵', 'L10 「设备名称」仍取标准列，不被「设备描述(备注)」抢走');
+eq(r.j && r.j.records[0]['设备描述(备注)'], '驱动端轴承', 'L11 「设备描述(备注)」作为其它列原样保留');
+r = run(['--input', EXT, '--describe'], 'ext-describe');
+ok(r.j && r.j.describe.some((d) => d.column === '设计压力(MPa)' && d.filled === 3), 'L12 --describe 列出其它列');
+ok(r.j && r.j.describe.some((d) => d.column === '功率(kW)' && d.filled === 2 && d.empty === 1), 'L13 --describe 其它列统计已填/空行数');
+// 「特护标记」不是重要度（ABC）：关键设备按 A 类还是特护要向用户确认，不能混成一列
+const TH = mk('th.xlsx', { '设备台账': [['位号', '设备名称', '特护标记'], ['P-01', '泵1', '是']] });
+r = run(['--input', TH, '--query', 'P-01'], 'th');
+eq(r.j && r.j.records[0]['重要度'], undefined, 'L14 无重要度列时「特护标记」不归入重要度');
+eq(r.j && r.j.records[0]['特护标记'], '是', 'L15 「特护标记」作为其它列原样保留');
+// --fields 中不存在的字段要进 result.json
+r = run(['--input', EXT, '--query', '{"type":"filter","where":[["专业","eq","动设备"]]}', '--fields', '位号,转速'], 'ext-fields');
+ok(r.j && r.j.fieldsNotFound.includes('转速'), 'L16 --fields 不存在的字段写入 result.json 的 fieldsNotFound');
+eq(r.j && r.j.counts.fieldsNotFound, 1, 'L17 counts.fieldsNotFound 计入 --fields 缺失字段');
+ok(r.j && r.j.warnings.some((w) => w.includes('转速')), 'L18 --fields 缺失字段 warning 写入 result.json');
+
 // ============ H. 参数校验 ============
 function raw(args) {
   const x = spawnSync(process.execPath, [Q, ...args], { encoding: 'utf8' });
@@ -282,6 +337,26 @@ ok(r.j.meta.baseDate, 'I7 记录计算基准日期');
   ok(sj.ok === true && sj.out && sj.out.startsWith(os.tmpdir()), 'I8 默认输出目录在 os.tmpdir()');
   ok(!fs.existsSync(path.join(work, 'elq-out')), 'I9 不在当前目录生成 elq-out');
 }
+
+// ============ M. 列名不被别名抢走：设备类型不进设备编号、不改名为专业（2026-11-04 复核补充） ============
+const NOEQ = mk('noeq.xlsx', { '设备台账': [['位号', '设备名称', '设备类型', '专业', '设计压力(MPa)'], ['P-1', '泵', '离心泵', '动设备', 1.6], ['P-2', '泵2', '往复泵', '动设备', 2.5]] });
+r = run(['--input', NOEQ, '--query', '{"type":"filter","where":[["设备类型","eq","离心泵"]]}'], 'noeq');
+eq(r.s.ok, true, 'M1 无设备编号列时「设备类型」不被前缀匹配进设备编号，可作筛选条件');
+eq(r.s.counts && r.s.counts.matched, 1, 'M2 按设备类型筛出 1 台');
+r = run(['--input', NOEQ, '--query', 'P-1'], 'noeq-detail');
+ok(r.j && r.j.records[0] && r.j.records[0]['设备编号'] == null, `M3 无设备编号列时设备编号为空，不取设备类型的值（实际 ${r.j && r.j.records[0] && r.j.records[0]['设备编号']}）`);
+eq(r.j && r.j.records[0]['设备类型'], '离心泵', 'M4 设备类型按原列名保留');
+const ONLYT = mk('onlytype.xlsx', { '设备台账': [['位号', '设备名称', '设备类型'], ['P-1', '泵', '离心泵']] });
+r = run(['--input', ONLYT, '--query', '{"type":"filter","where":[["设备类型","eq","离心泵"]]}'], 'onlytype');
+eq(r.s.ok, true, 'M5 无专业列时「设备类型」不被改名为「专业」，仍可按原列名筛选');
+r = run(['--input', ONLYT, '--describe'], 'onlytype-describe');
+ok(r.j && r.j.describe.some((d) => d.column === '设备类型') && !r.j.describe.some((d) => d.column === '专业' && d.filled > 0), 'M6 --describe 列出「设备类型」，不出现有值的「专业」');
+const NOEQ2 = mk('noeq2.xlsx', { '设备台账': [['位号', '设备类别', '设备等级', '设备名称'], ['P-1', '动设备', 'A', '泵']] });
+r = run(['--input', NOEQ2, '--query', 'P-1'], 'noeq2');
+ok(r.j && r.j.records[0] && r.j.records[0]['设备编号'] == null, 'M7 设备类别 / 设备等级也不被前缀匹配进设备编号');
+eq(r.j && r.j.records[0]['专业'], '动设备', 'M8 「设备类别」仍归专业（别名不变）');
+r = run(['--input', SAP, '--query', '1000-CDU-P1101A'], 'sap-tag2');
+eq(r.j && r.j.records[0]['设备编号'], '10001234', 'M9 SAP 表头恰为「设备」时仍归设备编号');
 
 console.log(`\n${'='.repeat(56)}`);
 console.log(`equipment-ledger-query 自测：${pass} 通过，${fail} 失败`);

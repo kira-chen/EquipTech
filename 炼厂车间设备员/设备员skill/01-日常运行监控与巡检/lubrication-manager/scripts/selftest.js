@@ -105,6 +105,27 @@ ok(r.lube.oilAnalysis.noLimit.every((x) => x.exceeded === undefined), '4.5 无�
 ok(r.lube.warnings.some((w) => w.includes('未引用通用限值')), '4.6 warning 明示未引用通用限值');
 ok(/未引用任何通用限值替代厂内标准/.test(r.md), '4.7 报告明示不引用通用限值');
 ok(r.lube.oilAnalysis.noLimit.some((x) => /第\d+行/.test(`${x.row}`) || x.row > 0), '4.8 无限值项保留出处行号');
+ok(!r.lube.warnings.some((w) => w.includes('不在本次润滑台账内')), '4.9 油液分析位号都在台账内时不提示');
+// 油液分析含台账外位号（如全厂导出混入其他车间）：照常列示，但 warning 点名，提示确认是否属本车间
+const oaOut = mk('oa-out.xlsx', {
+  '润滑台账': [LED_HDR, ['P-01', '泵1', '轴承箱', 'L-TSA46 透平油', '换油', '3个月', back(10), 8, 'VG46']],
+  '油液分析': [OA_HDR,
+    ['P-01', back(5), '水分(ppm)', 100, '≤300', '合格'],
+    ['Z-99', back(5), '水分(ppm)', 520, '≤300', '不合格'],
+    ['Z-99', back(5), '铁含量(ppm)', 10, '≤30', '合格'],
+  ],
+});
+r = run(oaOut, [], 'oa-out');
+ok(r.lube.warnings.some((w) => w.includes('Z-99') && w.includes('不在本次润滑台账内')), '4.10 油液分析位号 Z-99 不在润滑台账 → warning 点名');
+eq(r.lube.warnings.filter((w) => w.includes('不在本次润滑台账内')).length, 1, '4.11 台账外位号合并为一条 warning');
+// 第三轮 v1-3 改口径：台账外位号（如全厂导出混入其他车间）不计入本车间异常/正常计数，单列「台账外油样」，仍不静默丢弃
+eq(r.summary.counts.oaAbnormal, 0, '4.12 台账外位号的超限结果不计入本车间异常数（单列，不静默丢弃）');
+eq(r.summary.counts.oaOutOfLedger, 2, '4.13 台账外位号的油样单列计数（Z-99 两项）');
+ok(((r.lube.oilAnalysis || {}).outOfLedger || []).filter((x) => x.tag === 'Z-99').length === 2, '4.14 oilAnalysis.outOfLedger 列出 Z-99 两项');
+ok(((r.lube.oilAnalysis || {}).outOfLedger || []).some((x) => x.tag === 'Z-99' && x.exceeded === true && x.limit === '≤300'), '4.15 台账外油样照常标出是否超厂内限值，供核实');
+eq(r.summary.counts.oaNormal, 1, '4.16 正常项只计台账内位号');
+ok(/台账外油样/.test(r.md || '') && /不计入/.test(r.md || ''), '4.17 报告单列台账外油样并写明不计入');
+ok(!(r.lube.oilAnalysis.abnormal || []).some((x) => x.tag === 'Z-99'), '4.18 异常清单不含台账外位号');
 
 // ---- 5. 油液分析：检测值无法解析 → 不判异常且不按 0
 const oaBad = mk('oabad.xlsx', {
@@ -416,6 +437,15 @@ ok(r.lube.normal.some((x) => x.tag === 'K-04' && x.usedHours === 3500 && /--run-
 ok(r.lube.undetermined.some((x) => x.tag === 'K-05'), '21.27 K-05 仍缺上次加换油时小时数，--run-hours 不能替代');
 ok(r.lube.warnings.some((w) => w.includes('K-09') && w.includes('无法解析')), '21.28 runtime.json 中 cumHours 为空 warning');
 eq(r.lube.meta.runHoursProvided, true, '21.29 meta 记录 runHoursProvided');
+// runtime.json 中本期运行小时不可算（periodHours 为 null）：cumHours 只剩期初/上期值，偏小 → 用到该台时 warning
+const rtPart = path.join(work, 'runtime-partial.json');
+fs.writeFileSync(rtPart, JSON.stringify({ byEquipment: [{ tag: 'K-04', cumHours: 33500, periodHours: null, cumBasis: 'base' }, { tag: 'K-05', cumHours: 40000, periodHours: null }] }), 'utf8');
+r = run(rh, ['--run-hours', rtPart], 'rt-partial');
+ok(r.lube.warnings.some((w) => w.includes('K-04') && w.includes('本期运行小时') && w.includes('偏小')), '21.29a runtime.json 本期运行小时为空时 warning：累计偏小');
+ok(!r.lube.warnings.some((w) => w.includes('K-05') && w.includes('偏小')), '21.29b 未用到 --run-hours 累计的设备不提示');
+ok(r.lube.normal.some((x) => x.tag === 'K-04' && x.usedHours === 3500), '21.29c 仍按给出的累计判定，不臆测补齐');
+r = run(rh, ['--run-hours', rtJson], 'rt-full');
+ok(!r.lube.warnings.some((w) => w.includes('偏小')), '21.29d 本期运行小时可算时不提示偏小');
 const rtX = mk('rt.xlsx', { '累计运行小时': [['位号', '累计运行小时'], ['K-04', '33500h']] });
 r = run(rh, ['--run-hours', rtX], 'rtx');
 ok(r.lube.normal.some((x) => x.tag === 'K-04' && x.usedHours === 3500), '21.30 --run-hours 也接含「累计运行小时」的表（带单位可解析）');
@@ -424,6 +454,13 @@ eq(x.s.ok, false, '21.31 --run-hours 不存在报错');
 const rtBad = path.join(work, 'bad.json'); fs.writeFileSync(rtBad, '{"foo":1}', 'utf8');
 x = runRaw(['--input', rh, '--workshop', '车间', '--date', DATE, '--run-hours', rtBad]);
 eq(x.s.ok, false, '21.32 --run-hours JSON 无 byEquipment 报错');
+// 台账与 --run-hours 都有累计小时：以台账为准，不一致时 warning 提示核对（不静默取其一）
+const rtCmp = path.join(work, 'runtime-cmp.json');
+fs.writeFileSync(rtCmp, JSON.stringify({ byEquipment: [{ tag: 'K-01', cumHours: 19000 }, { tag: 'K-05', cumHours: 33500 }] }), 'utf8');
+r = run(rh, ['--run-hours', rtCmp], 'rtcmp');
+ok(r.lube.warnings.some((w) => w.includes('K-01') && w.includes('18650') && w.includes('19000') && w.includes('以台账为准')), '21.33 台账累计 18650 与 --run-hours 19000 不一致 → warning 写明两值、以台账为准');
+ok(r.lube.overdue.some((x) => x.tag === 'K-01' && x.usedHours === 2250), '21.34 不一致时仍按台账累计小时判定（2250h）');
+ok(!r.lube.warnings.some((w) => w.includes('K-05') && w.includes('不一致')), '21.35 两处累计小时一致时不提示');
 
 // ---- 22. --ref-standard：仅显式提供时作参考比对，单列、标注非厂内标准、不计入 oaAbnormal
 const refT = mk('ref.xlsx', { '参考限值': [['油品类型', '检测项', '限值', '标准号'], ['', '铁含量(ppm)', '≤20', 'Q/XX-虚构-002'], ['透平油', '闪点(℃)', '≥190', 'Q/XX-虚构-001'], ['齿轮油', '闪点(℃)', '≥150', 'Q/XX-虚构-001'], ['', '酸值', '随便', '']] });

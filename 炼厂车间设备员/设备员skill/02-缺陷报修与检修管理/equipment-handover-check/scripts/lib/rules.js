@@ -219,7 +219,8 @@ const RULES = [
     when: (ctx) => {
       if (ctx.hot === true) return true;
       if (ctx.hot === false) return false;
-      if (['column', 'exchanger', 'furnace', 'vessel'].includes(ctx.equip) || ctx.haz.effective === 'high') {
+      // 与 P1 同口径：承压设备与机组（热油泵、压缩机）未说明是否高温 → 未判定，不默认不需要降温
+      if (['column', 'exchanger', 'furnace', 'vessel'].includes(ctx.equip) || ROTATING.includes(ctx.equip) || ctx.haz.effective === 'high') {
         return { undetermined: '未说明设备是否高温（须给 --hot 是/否；--temp 数值只记录不推断）' };
       }
       return false;

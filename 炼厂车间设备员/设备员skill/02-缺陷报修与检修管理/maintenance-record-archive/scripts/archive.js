@@ -29,6 +29,9 @@ const ALIASES = C.mergeAliases({
   '位号': ['位号', '设备位号', '功能位置'],
 });
 
+// 规范表全部资料类型（不分分级与范围），仅用于说明待认领材料属于哪类
+const ALL_ITEMS = [...S.COMMON, ...Object.values(S.BY_TYPE).flat(), ...S.BY_SCOPE, ...S.SPECIAL_EQUIPMENT];
+
 function loadBook(p) { return fs.statSync(p).isDirectory() ? readCsvDir(p) : readXlsx(p); }
 
 /** 收集材料：目录 → 扫文件名；xlsx → 读「材料清单」表 */
@@ -95,9 +98,15 @@ function main() {
   for (const m of materials) {
     const keys = S.classify(m.name, required);
     if (!keys.length) {
-      unclassified.push({ name: m.name, rel: m.rel, declaredType: m.declaredType || null,
-        note: '文件名无法识别归属类型，请人工认领；未按文件名猜测强行归类' });
-      warnings.push(`材料「${m.name}」文件名无法识别归属类型，已列入待认领`);
+      // 能对上规范表中的其他类型、只是本次分级/范围不要求：如实说明，提示核对范围开关（不自动改范围）
+      const other = [...new Map(ALL_ITEMS.filter((it) => it.patterns.test(m.name)).map((it) => [it.name, it])).values()].map((it) => it.name);
+      const note = other.length
+        ? `文件名对应「${other.join('、')}」，但本次检修分级与范围开关未要求该项；若本次确实涉及，请核对 --scope-* / --special-equipment 后重跑，否则请人工认领`
+        : '文件名无法识别归属类型，请人工认领；未按文件名猜测强行归类';
+      unclassified.push({ name: m.name, rel: m.rel, declaredType: m.declaredType || null, note });
+      warnings.push(other.length
+        ? `材料「${m.name}」对应「${other.join('、')}」，本次分级与范围未要求该项，已列入待认领；请核对范围开关`
+        : `材料「${m.name}」文件名无法识别归属类型，已列入待认领`);
       continue;
     }
     for (const k of keys) {

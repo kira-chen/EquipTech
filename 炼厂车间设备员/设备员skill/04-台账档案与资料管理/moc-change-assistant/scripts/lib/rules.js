@@ -87,20 +87,39 @@ function normChangeType(v) {
   return null;
 }
 
+// ---------------------------------------------------------------- 牌号片段（类别识别、具体性与材质档位共用）
+/**
+ * 10# / 20# / 20号（钢）碳钢牌号：后面紧跟罐、机、泵、塔、炉、区、装置、台等汉字或 # / - 时是设备编号（10#罐、20号机组），不是牌号；
+ * 后接 钢 / 管 / 碳钢 / 无缝 / 锻件 / 板 / 棒 / 圆钢 / 材 / 料，或后接空白、标点、行尾时才算牌号（管束 10#、20#钢、20号钢）
+ */
+const CS_NUM_SRC = '(?<![\\d.])[12]0(?:#|号)(?![#\\-－]|(?!钢|管|碳|无缝|锻|板|棒|圆|材|料)[\\u4e00-\\u9fa5])';
+/** 单写 2205 = 双相钢；前后紧邻数字或字母（22205、S2205 另有规则）、带轴承后缀（可连写：2205 EKTN9、2205 ETN9、2205-2RS1、2205-2RSH）或同一描述写了轴承时不算 */
+const DUPLEX_2205_SRC = '(?<![\\dA-Za-z])2205(?![\\dA-Za-z])(?!(?:[-\\s]*(?:2RS1?|2Z|ZZ|RS|EK?|K|TN9|C[2-5]|M|H))+(?![A-Za-z]))(?!.*轴承)(?<!轴承.*)';
+
 // ---------------------------------------------------------------- 类别识别（从文本）
 const CAT_PATTERNS = [
   ['control', /联锁|连锁|报警值|报警定值|控制方案|控制回路|调节回路|逻辑|SIS|DCS组态|PID参数|整定值|保护值/],
   ['process', /操作压力|操作温度|设计压力|设计温度|工艺参数|操作条件|流量提至|提量|处理量|升温至|升压至|介质更换|换介质|操作弹性/],
-  ['structure', /增加管口|增开口|开孔|加管口|减少管口|堵管口|封堵|连接方式|焊接改法兰|法兰改焊接|改造|增设|拆除|切除|加装|支撑形式|结构改动|新增接管|新增.{0,6}管口|取样口|跨线|短接/],
-  ['material', /材质|碳钢|不锈钢|304|316|合金|双相钢|衬里|材料牌号|20#|Q345|15CrMo|钛材|哈氏合金/],
+  ['structure', /增加管口|增开口|开孔|加管口|减少管口|堵管口|封堵|连接方式|焊接改法兰|法兰改焊接|改造|增设|拆除|切除|加装|支撑形式|结构改动|新增接管|(新增|增加|增开|加开).{0,12}(管口|接管|开口|排凝口|放空口|导淋)|取样口|跨线|短接/],
+  ['material', new RegExp('材质|碳钢|不锈钢|(?<![\\dA-RT-Za-rt-z])(304|316|321)L?(?!\\d)|S3[0-2]\\d{3}|\\d{2,3}Cr\\d{2}Ni|合金|双相钢|衬里|材料牌号|'
+    + CS_NUM_SRC + '|' + DUPLEX_2205_SRC + '|Q345|Q245|15CrMo|钛材|哈氏合金')],
   ['substitute', /代用|替代品|其他厂家|另一厂家|国产替代|进口替代|同规格不同|换厂家|不同厂家/],
   ['model', /型号|规格|叶轮直径|扬程|流量|功率|转速|换热面积|公称直径|DN|台数|机型/],
-  ['management', /组织机构|岗位|定员|管理制度|操作规程修订|承包商更换|维保单位更换|人员资质|管理流程/],
+  ['management', /组织机构|岗位|定员|管理制度|操作规程修订|承包商|维保单位|检维修单位|维护单位|人员资质|管理流程/],
 ];
-/** 从原状态/变更后状态/原因文本识别类别；识别不出返回 'unknown' */
-function classifyCategory(text) {
+/**
+ * 从原状态/变更后状态/原因文本识别类别；识别不出返回 'unknown'
+ * ctx = {before, after} 时：前后材质牌号相同（材质没变）不按材质变更识别，继续匹配后续类别（如换厂家、型号规格）；
+ * 管理变更关键词只在原状态 / 变更后状态里匹配，变更原因里写「承包商检修时发现…」不算管理变更
+ */
+function classifyCategory(text, ctx) {
   const s = String(text || '');
-  for (const [k, re] of CAT_PATTERNS) if (re.test(s)) return k;
+  const ba = ctx ? `${ctx.before || ''} ${ctx.after || ''}` : s;
+  for (const [k, re] of CAT_PATTERNS) {
+    if (!re.test(k === 'management' ? ba : s)) continue;
+    if (k === 'material' && ctx && sameMaterial(ctx.before, ctx.after)) continue;
+    return k;
+  }
   return 'unknown';
 }
 
@@ -125,7 +144,10 @@ const VAGUE_PATTERNS = [/^换个?[一二三两]?[台个只根]?/, /^改一下/, 
 /** 位号样式（P-2101A、E-2201、1000-CDU-P1101A 等），不算"具体到参数或型号" */
 const TAG_TOKEN_RE = /\b[A-Za-z]{1,3}-\d{3,5}[A-Za-z]?\b(?!-\d)|\b\d{3,4}-[A-Z]{2,4}-[A-Za-z]{1,3}\d{3,5}[A-Za-z]?\b/g;
 /** 描述里是否出现参数或型号：数字+单位、牌号、型号串、材质牌号 */
-const CONCRETE_RE = /\d+(\.\d+)?\s*(MPa|kPa|bar|℃|度|°C|mm|m3\/h|m³\/h|t\/h|kW|kw|KW|V|A|Hz|rpm|r\/min|m2|m²|DN|寸|kg|MPag)|DN\s*\d+|[A-Za-z]{1,6}[-–]?\d{2,}|(304|316L?|321|Q235|Q345|20#|15CrMo|12Cr1MoV|2205|TA2|C276|N08800)/i;
+const CONCRETE_RE = /\d+(\.\d+)?\s*(MPa|kPa|bar|℃|度|°C|mm|m3\/h|m³\/h|t\/h|kW|kw|KW|V|A|Hz|rpm|r\/min|m2|m²|DN|寸|kg|MPag)|DN\s*\d+|[A-Za-z]{1,6}[-–]?\d{2,}|(?<![\d.\-–])(?!(19|20)\d{2}[-–]\d{1,2}(?!\d))\d{2,}[-–×xX]\d{2,}(?![\d.])|(?<![\d.])\d{4,5}\s*(C[2-5]|2RS1?|2Z|ZZ|RS|E|EC[APJ]?|ECM|BECBM|BEP|BECBP|M|MA|K)(?![A-Za-z])|(304|316L?|321|Q235|Q345|15CrMo|12Cr1MoV|2205|TA2|C276|N08800)/i;
+/** 10# / 20# 碳钢牌号（排除 10#罐、20号机组等设备编号），与 CONCRETE_RE 同用 */
+const CS_NUM_RE = new RegExp(CS_NUM_SRC);
+const isConcrete = (t) => CONCRETE_RE.test(t) || CS_NUM_RE.test(t);
 const TECH_NOUN_RE = /材质|型号|规格|压力|温度|流量|扬程|功率|转速|联锁|报警|管口|接管|法兰|焊接|厂家|牌号|衬里|叶轮|换热面积|定值|逻辑/;
 /**
  * describeQuality(text) → {concrete:boolean, reason}
@@ -136,14 +158,14 @@ function describeQuality(text) {
   const s = String(text || '').trim();
   if (!s) return { concrete: false, reason: '未填写' };
   const stripped = s.replace(TAG_TOKEN_RE, ' ');
-  const onlyTag = stripped.trim() !== s && !CONCRETE_RE.test(stripped) && !/碳钢|不锈钢|合金钢|双相钢|钛材|铸铁|衬里|衬胶|衬氟/.test(stripped);
+  const onlyTag = stripped.trim() !== s && !isConcrete(stripped) && !/碳钢|不锈钢|合金钢|双相钢|钛材|铸铁|衬里|衬胶|衬氟/.test(stripped);
   if (onlyTag && !(stripped.length >= 12 && /[：:，,、]/.test(stripped) && TECH_NOUN_RE.test(stripped))) {
     return { concrete: false, reason: `只给了位号（「${s}」），未说明具体参数或型号` };
   }
-  if (VAGUE_PATTERNS.some((re) => re.test(s)) && !CONCRETE_RE.test(stripped)) {
+  if (VAGUE_PATTERNS.some((re) => re.test(s)) && !isConcrete(stripped)) {
     return { concrete: false, reason: `描述笼统（「${s}」），未说明具体参数或型号` };
   }
-  if (CONCRETE_RE.test(stripped)) return { concrete: true, reason: '' };
+  if (isConcrete(stripped)) return { concrete: true, reason: '' };
   if (/碳钢|不锈钢|合金钢|双相钢|钛材|铸铁|衬里|衬胶|衬氟/.test(s)) return { concrete: true, reason: '' };
   if (s.length >= 12 && /[：:，,、]/.test(s) && TECH_NOUN_RE.test(s)) return { concrete: true, reason: '' };
   return { concrete: false, reason: `描述未具体到参数或型号（「${s}」）` };
@@ -151,13 +173,14 @@ function describeQuality(text) {
 
 // ---------------------------------------------------------------- 材质档位
 /** 材质等级序（数值越大耐蚀/耐温能力越强），用于判断是否降级 */
+// 牌号数字前后不得紧邻数字（轴承 6316 / 7316 / 2205 不是材质），316 前也不得紧邻字母（NU316 是轴承），S / SS 前缀除外
 const MATERIAL_RANK = [
   [/铸铁|HT\d/i, 1, '铸铁'],
-  [/碳钢|Q235|Q345|20#|20号|A105|碳素钢|16MnR/i, 2, '碳钢'],
-  [/15CrMo|12Cr1MoV|合金钢|铬钼钢/i, 3, '低合金钢'],
-  [/304L?|0Cr18|321|奥氏体不锈钢|不锈钢(?!.*(316|双相|2205))/i, 4, '304 系不锈钢'],
-  [/316L?|00Cr17|317/i, 5, '316 系不锈钢'],
-  [/2205|双相钢|双相不锈钢/i, 6, '双相钢'],
+  [new RegExp('碳钢|Q235|Q245|Q345|' + CS_NUM_SRC + '|20G|A105|碳素钢|16MnR?', 'i'), 2, '碳钢'],
+  [/15CrMo|12Cr1MoV|14Cr1Mo|12Cr2Mo1|Cr-?1Mo|1Cr5Mo|合金钢|铬钼钢/i, 3, '低合金钢'],
+  [/(?<![\dA-RT-Za-rt-z])(304|321)L?(?!\d)|S30[34]\d{2}|S321\d{2}|0[26]?Cr19Ni10|022Cr19Ni10|0Cr18|奥氏体不锈钢|不锈钢(?!.*(316|S316|Cr17Ni12Mo2|双相|2205))/i, 4, '304 系不锈钢'],
+  [/(?<![\dA-RT-Za-rt-z])31[67]L?(?!\d)|S31[67]\d{2}|0[26]?2?Cr17Ni12Mo2|00Cr17|022Cr17Ni12Mo2/i, 5, '316 系不锈钢'],
+  [new RegExp('(?<![\\dA-Za-z])2205(?!\\d)(?=.*双相)|(?<=双相.*)(?<![\\dA-Za-z])2205(?!\\d)|' + DUPLEX_2205_SRC + '|S220\\d{2}|双相钢|双相不锈钢', 'i'), 6, '双相钢'],
   [/TA[12]|钛材|哈氏合金|C276|Inconel|蒙乃尔|镍基/i, 7, '钛材/镍基合金'],
 ];
 function materialRank(text) {
@@ -167,6 +190,35 @@ function materialRank(text) {
     if (re.test(s) && (!best || rank > best.rank)) best = { rank, name };
   }
   return best;
+}
+/**
+ * 完整牌号（不含铸铁、碳钢、不锈钢等泛称），用于判断前后材质是否相同；按从长到短排列，区分位（HT250/HT200、Q345R/Q345D、
+ * 0Cr18Ni9/0Cr18Ni10Ti）不得截断。归一：大写、去空白、「号」→「#」、SS304 → 304
+ */
+const GRADE_RE = new RegExp([
+  'Z?G?\\d{0,3}Cr\\d+Ni\\d+(?:Mo\\d)?(?:Ti|N)?', // 0Cr18Ni9、0Cr18Ni10Ti、06Cr19Ni10、022Cr17Ni12Mo2
+  'Z?G?\\d{0,3}Cr\\d*Mo\\d*V?(?:R|G)?(?![A-Za-z])', // 15CrMo、12Cr1MoV、1Cr5Mo、Cr5Mo、14Cr1Mo、12Cr2Mo1；容器板 R / 锅炉管 G 后缀：15CrMoR、15CrMoG、12Cr1MoVG、14Cr1MoR、12Cr2Mo1R
+  'ZG\\d?Cr\\d+', '(?<![A-Za-z\\d])\\d?Cr\\d{2}(?![A-Za-z\\d])', // ZG1Cr13、1Cr13、Cr13
+  '(?<![A-Za-z])HT\\d{3}', '(?<![A-Za-z])QT\\d{3}(?:-\\d{1,2})?', '(?<![A-Za-z])ZG\\d{3}-\\d{3}',
+  '(?<![A-Za-z])Q\\d{3}[A-Z]{0,2}', '16Mn(?:D?R)?', '(?<![\\dA-Za-z])20G', '(?<![A-Za-z])A105', CS_NUM_SRC,
+  '(?<![A-Za-z])S\\d{5}', '(?<![\\dA-RT-Za-rt-z])(?:SS)?(?:304|316|317|321)[LH]?(?!\\d)', '(?<![\\dA-Za-z])00Cr17(?!Ni)',
+  DUPLEX_2205_SRC, '(?<=双相.*)(?<![\\dA-Za-z])2205(?!\\d)', '(?<![\\dA-Za-z])2205(?!\\d)(?=.*双相)',
+  '(?<![A-Za-z])TA[12](?!\\d)', '(?<![A-Za-z])C276', 'Inconel\\s*\\d{3}', '(?<![A-Za-z])N0\\d{4}',
+].join('|'), 'gi');
+/** 文本中识别出的完整牌号集合（大写去重排序）；只写泛称（铸铁、碳钢、不锈钢…）时为空集合 */
+function materialTokens(text) {
+  const s = String(text || '');
+  const set = new Set();
+  for (const m of s.matchAll(GRADE_RE)) {
+    const t = m[0].toUpperCase().replace(/\s+/g, '').replace(/号$/, '#').replace(/^SS(?=\d)/, '');
+    if (t) set.add(t);
+  }
+  return [...set].sort();
+}
+/** 前后都识别出完整牌号且牌号集合完全相同 → 材质没变；任一侧只有泛称（集合为空）时不判相同 */
+function sameMaterial(before, after) {
+  const a = materialTokens(before), b = materialTokens(after);
+  return a.length > 0 && b.length > 0 && a.join('|') === b.join('|');
 }
 function materialFamily(rank) {
   if (rank === null || rank === undefined) return null;
@@ -225,7 +277,7 @@ const RULE_TEXT = {
   R8: '管理变更（组织机构、制度、人员、承包商），级别按厂内制度确定',
   U1: '原状态或变更后状态未具体到参数或型号（单个位号不算），无法判定',
   U2: '变更类别无法识别，需用户明确属于哪一类改动',
-  U3: '材质类变更但原材质或变更后材质牌号无法识别，无法判断是否降级',
+  U3: '材质类变更但原材质或变更后材质牌号无法识别（或前后牌号相同），无法判断是否降级',
   U4: '型号规格类变更但「是否影响性能参数」未确认 / 工艺参数变更但「是否超出设计范围」未确认',
   U5: '临时变更但未给出恢复期限',
   U6: '管理变更的级别须由厂内制度（--spec）或主管部门确定',
@@ -295,6 +347,10 @@ function judge(input) {
     if (!rb || !ra) {
       return mkU('U3', [!rb ? '原材质牌号' : null, !ra ? '变更后材质牌号' : null].filter(Boolean),
         `${RULE_TEXT.U3}；在补齐前不得认定为「不需要走变更」`);
+    }
+    if (sameMaterial(before, after)) {
+      return mkU('U3', [`变更前后材质牌号相同（${materialTokens(before).join('、')}），请确认实际改变的是材质、厂家还是型号规格`],
+        `${RULE_TEXT.U3}；在确认前不得认定为「不需要走变更」`);
     }
     const downgrade = ra.rank < rb.rank;
     const familyChanged = materialFamily(ra.rank) !== materialFamily(rb.rank);
@@ -526,7 +582,7 @@ function docUpdates(category, temporary) {
 module.exports = {
   CAT_CN, CAT_ALIAS, CHANGE_TYPE, CAT_TO_TYPE, CAT_OWNER, isTempWord, normCategory, normChangeType, classifyCategory,
   PRESSURE_RE, detectPressure, STATUTORY_ITEMS,
-  describeQuality, materialRank, materialFamily, materialFamilyCn,
+  describeQuality, materialRank, materialTokens, sameMaterial, materialFamily, materialFamilyCn,
   parseBool, LEVEL_CN, RULE_TEXT, judge,
   ASSESS_MAP, DISCIPLINES, assessItems, DOC_MAP, docUpdates,
 };

@@ -584,6 +584,74 @@ ok(!/[☀-➿\u{1F300}-\u{1FAFF}]/u.test(r.md), '27.2 md 不含 emoji');
 ok(/--contractor-type|承包商类别/.test(r.md), '27.3 md 显示承包商类别');
 ok(/安全环保部门|安全部门/.test(r.md), '27.4 md 写明准入审批归口');
 
+// ---- 28. 与本次作业无关的作业类证书过期：不阻断，单列提示；相关证书、单位资质、通用项过期仍阻断；作业类型不完整时保持严格
+const PH28 = ['姓名', '岗位', '证书类型', '证书编号', '有效期至', '入厂教育日期', '体检日期'];
+const MED = D(-60);
+const irr = mk('irrelevant.xlsx', {
+  '单位资质': COMP_OK,
+  '人员证书': [
+    PH28,
+    ['周敬和', '架子工', '特种作业操作证（登高架设作业）', 'T0281', D(400), EDU, MED],
+    ['周敬和', '架子工', '特种作业操作证（熔化焊接与热切割）', 'T0282', D(-30), EDU, MED],
+    ['吴长海', '电工', '特种作业操作证（低压电工）', 'T0283', D(5), EDU, MED],
+  ],
+});
+r = run(irr, ['--work-type', '高处作业', '--medical-valid-days', '365'], 'irr-high');
+eq(r.summary.counts.expired, 0, '28.1 只做高处作业时焊工证过期、电工证作业期内失效均不计入已过期');
+eq(r.summary.counts.irrelevantExpired, 2, '28.2 与本次作业无关的过期证书单独计数');
+ok(r.summary.conclusion !== '不建议准入', '28.3 无关证书过期不判不建议准入');
+eq(r.summary.conclusion, '建议补充材料后再审', '28.4 无关证书仍按范围不符落到补充材料后再审');
+const irrW = (r.json.irrelevantExpired || []).find((x) => x.person === '周敬和');
+ok(irrW && irrW.certType === '焊接与热切割作业证' && /不得从事用火作业/.test(irrW.hint), '28.5 提示该人员不得从事对应的用火作业');
+ok((r.json.irrelevantExpired || []).some((x) => x.person === '吴长海' && /作业期内将失效/.test(x.reason) && /临时用电作业/.test(x.hint)), '28.6 作业期内失效的无关证书同样单列并提示对应作业');
+eq(r.json.personnelQual.find((p) => p.certNo === 'T0282').state, 'expired', '28.7 证书逐条状态仍如实记为已过期');
+ok(/5\.6 与本次作业无关的过期证书/.test(r.md) && /不得从事对应作业/.test(r.md), '28.8 md 单列无关过期证书一节并提示不得从事对应作业');
+ok(r.json.warnings.some((w) => /不计入阻断项/.test(w) && /周敬和/.test(w)), '28.9 warning 提示无关过期证书');
+ok(/与本次作业无关的过期证书/.test(r.json.conclusionBasis), '28.10 结论依据写明另有无关过期证书');
+r = run(irr, ['--work-type', '用火作业', '--medical-valid-days', '365'], 'irr-fire');
+eq(r.summary.counts.expired, 1, '28.11 做用火作业时焊工证过期计入已过期（电工证仍无关）');
+eq(r.summary.counts.irrelevantExpired, 1, '28.12 电工证仍单列为无关过期');
+eq(r.summary.conclusion, '不建议准入', '28.13 本次作业需要的证书过期仍不建议准入');
+r = run(irr, ['--work-type', '高处作业,脚手架搭设', '--medical-valid-days', '365'], 'irr-unknown');
+eq(r.summary.counts.expired, 2, '28.14 作业类型有未识别项时无法判断相关性，全部过期证书按阻断');
+eq(r.summary.counts.irrelevantExpired, 0, '28.15 严格口径下不单列无关过期');
+eq(r.summary.conclusion, '不建议准入', '28.16 严格口径下不建议准入');
+ok(r.json.warnings.some((w) => /无法区分过期证书是否与本次作业相关/.test(w)), '28.17 warning 说明无法区分是否与本次作业相关');
+// 单位资质、入厂教育记录、体检记录、未识别类型过期不受相关性影响
+const irr2 = mk('irrelevant2.xlsx', {
+  '单位资质': COMP_OK.concat([['质量管理体系认证证书（ISO 9001）', 'Q0281', '××认证中心', D(-10)]]),
+  '人员证书': [
+    PH28,
+    ['周敬和', '架子工', '特种作业操作证（登高架设作业）', 'T0284', D(400), EDU, MED],
+    ['周敬和', '架子工', '入厂三级安全教育记录', 'E0281', D(-3), EDU, MED],
+    ['冯广顺', '焊工', '特种作业操作证（熔化焊接与热切割）', 'T0285', D(400), EDU, MED],
+    ['冯广顺', '焊工', '职业健康体检合格证明', 'M0281', D(-3), EDU, MED],
+    ['王延青', '安全员', '某某省新型作业人员上岗资格证', 'X0281', D(-3), EDU, MED],
+  ],
+});
+r = run(irr2, ['--work-type', '用火作业', '--medical-valid-days', '365'], 'irr-generic');
+ok(r.json.expired.some((x) => x.scope === 'company' && /ISO 9001/.test(x.name)), '28.18 单位资质过期仍计入已过期');
+ok(r.json.expired.some((x) => x.type === '入厂安全教育记录'), '28.19 入厂安全教育记录过期仍计入已过期');
+ok(r.json.expired.some((x) => x.type === '体检合格证明'), '28.20 体检记录过期仍计入已过期');
+ok(r.json.expired.some((x) => x.certNo === 'X0281'), '28.21 未识别类型证书过期无法判断相关性，仍计入已过期');
+eq(r.summary.counts.irrelevantExpired, 0, '28.22 通用项与单位资质不进无关过期');
+eq(r.summary.conclusion, '不建议准入', '28.23 通用项/单位资质过期仍不建议准入');
+// 笼统的特种设备作业人员证：本次有吊装/压力容器焊接才视为相关
+const irr3 = mk('irrelevant3.xlsx', {
+  '单位资质': COMP_OK,
+  '人员证书': [
+    PH28,
+    ['钱司机', '司机', '特种设备作业人员证（Q2）', 'TS0281', D(400), EDU, MED],
+    ['孙指挥', '指挥', '特种设备作业人员证 Q1', 'TS0282', D(400), EDU, MED],
+    ['孙指挥', '指挥', '特种设备作业人员证', 'TS0283', D(-5), EDU, MED],
+    ['周敬和', '架子工', '特种作业操作证（登高架设作业）', 'T0286', D(400), EDU, MED],
+  ],
+});
+r = run(irr3, ['--work-type', '高处作业', '--medical-valid-days', '365'], 'irr-se-high');
+ok((r.json.irrelevantExpired || []).some((x) => x.certNo === 'TS0283') && !r.json.expired.some((x) => x.certNo === 'TS0283'), '28.24 只做高处作业时笼统特种设备作业人员证过期不阻断');
+r = run(irr3, ['--work-type', '吊装作业'], 'irr-se-hoist');
+ok(r.json.expired.some((x) => x.certNo === 'TS0283'), '28.25 吊装作业时笼统特种设备作业人员证过期计入已过期');
+
 // ---- 输出
 console.log(`\n${'='.repeat(56)}`);
 console.log(`contractor-qualification-check 自测：${pass} 通过，${fail} 失败`);

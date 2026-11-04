@@ -350,8 +350,42 @@ function main() {
 
   const all = [...companyQual, ...personnelQual];
 
+  // ---- 本次作业相关性：人员作业类证书只有本次作业类型需要的才阻断
+  // 作业类证书 = REQUIREMENTS 中出现的证书 + 笼统的特种设备作业人员证；入厂教育、培训合格证、体检、未识别类型不在此列（仍按原口径阻断）
+  const neededCerts = new Set();
+  for (const wt of workTypes) for (const req of REQUIREMENTS[wt]) for (const c of (req.anyOf || [req.cert])) neededCerts.add(c);
+  const CERT_WORK = {}; // 证书 → 对应作业类型（用于提示"不得从事对应作业"）
+  for (const [wt, reqs] of Object.entries(REQUIREMENTS)) {
+    for (const req of reqs) for (const c of (req.anyOf || [req.cert])) {
+      if (!CERT_WORK[c]) CERT_WORK[c] = [];
+      if (!CERT_WORK[c].includes(wt)) CERT_WORK[c].push(wt);
+    }
+  }
+  // 制冷与空调作业证不对应脚本的任何作业类型，按其自身作业归属
+  CERT_WORK['制冷与空调作业证'] = ['制冷与空调作业'];
+  // 笼统填写、未细分项目的特种设备作业人员证：本次有特种设备类作业（吊装/压力容器焊接）时视为相关
+  CERT_WORK['特种设备作业人员证'] = ['吊装作业', '压力容器焊接'];
+  const WORK_CERTS = new Set(Object.keys(CERT_WORK));
+  // 作业类型里有无法识别的项时，无法判断证书是否与本次作业相关 → 保持严格口径（全部过期证书都阻断）
+  const relevanceKnown = !unknownWorkTypes.length;
+  const notForThisWork = (x) => x.scope === 'personnel' && x.typeRecognized && WORK_CERTS.has(x.type)
+    && !CERT_WORK[x.type].some((wt) => workTypes.includes(wt));
+  const isIrrelevantWorkCert = (x) => relevanceKnown && notForThisWork(x);
+  const certWorkName = (t) => CERT_WORK[t].join('或');
+
   // ---- 分档
-  const expired = all.filter((x) => x.state === 'expired');
+  const expiredAll = all.filter((x) => x.state === 'expired');
+  const expired = expiredAll.filter((x) => !isIrrelevantWorkCert(x));
+  const irrelevantExpired = expiredAll.filter(isIrrelevantWorkCert).map((x) => ({
+    scope: 'personnel', person: x.person, certType: x.type, rawType: x.rawType, certNo: x.certNo, expiry: x.expiry,
+    nextReview: x.nextReview, relatedWorkTypes: CERT_WORK[x.type].slice(), reason: x.reason,
+    hint: `${x.person} 的「${x.type}」已过期或作业期内失效（${x.reason}），与本次作业类型（${workTypes.join('、')}）无关，不计入阻断项；换证/复审前该人员不得从事${certWorkName(x.type)}`,
+    sheet: x.sheet, row: x.row,
+  }));
+  for (const x of irrelevantExpired) warnings.push(`工作表「${x.sheet}」第${x.row}行 ${x.hint}`);
+  if (!relevanceKnown && expiredAll.some(notForThisWork)) {
+    warnings.push(`作业类型「${unknownWorkTypes.join('、')}」未识别，未给作业类型的完整口径，无法区分过期证书是否与本次作业相关，全部过期证书均按阻断处理`);
+  }
   const expiringSoon = all.filter((x) => x.state === 'expiringSoon');
   const undetermined = all.filter((x) => x.state === 'undetermined').map((x) => ({
     scope: x.scope, subject: x.scope === 'company' ? x.name : x.person,
@@ -419,9 +453,7 @@ function main() {
     }
   }
 
-  // ---- 范围不匹配：持有的已识别证书未对应任何本次作业类型要求
-  const neededCerts = new Set();
-  for (const wt of workTypes) for (const req of REQUIREMENTS[wt]) for (const c of (req.anyOf || [req.cert])) neededCerts.add(c);
+  // ---- 范围不匹配：持有的已识别证书未对应任何本次作业类型要求（neededCerts 见上文相关性判定）
   const GENERIC = new Set(['培训合格证', '体检合格证明', '特种设备作业人员证', '入厂安全教育记录']); // 通用材料，不算范围不符
   for (const p of personnelQual) {
     if (!p.typeRecognized) continue;
@@ -568,6 +600,7 @@ function main() {
     persons: persons.length,
     workTypes: workTypes.length,
     expired: expired.length,
+    irrelevantExpired: irrelevantExpired.length,
     expiringSoon: expiringSoon.length,
     scopeMismatch: scopeMismatch.length,
     missing: missing.length,
@@ -598,8 +631,9 @@ function main() {
     conclusionBasis = `所需证书齐备且在有效期内，其中 ${expiringSoon.length} 项将在 ${leadDays} 天内到期，作业期间需跟踪换证`;
   } else {
     conclusion = '建议准入';
-    conclusionBasis = '本次核验范围内的单位资质与人员证书均在有效期内，且覆盖所申报作业类型所需证书';
+    conclusionBasis = irrelevantExpired.length ? '本次作业所需的单位资质与人员证书均在有效期内，且覆盖所申报作业类型所需证书' : '本次核验范围内的单位资质与人员证书均在有效期内，且覆盖所申报作业类型所需证书';
   }
+  if (irrelevantExpired.length) conclusionBasis += `；另有 ${irrelevantExpired.length} 项与本次作业无关的过期证书，不计入阻断项，相关人员换证/复审前不得从事对应作业`;
 
   // ---- 产出 JSON
   C.ensureDir(outDir);
@@ -616,7 +650,7 @@ function main() {
     },
     counts, conclusion, conclusionBasis,
     companyQual, personnelQual, requirements, mandatory,
-    expired, expiringSoon, scopeMismatch, missing, advisories, undetermined, unrecognized,
+    expired, irrelevantExpired, expiringSoon, scopeMismatch, missing, advisories, undetermined, unrecognized,
     specExtra, history, warnings,
   };
   fs.writeFileSync(path.join(outDir, 'qualify.json'), JSON.stringify(result, null, 2), 'utf8');
@@ -636,7 +670,7 @@ function main() {
   L.push('');
   L.push(C.mdTable(['指标', '数量'], [
     ['单位资质条目', counts.companyQual], ['人员证书条目', counts.personnelCerts], ['涉及人员', counts.persons],
-    ['已过期', counts.expired], [`临期（${leadDays}天内）`, counts.expiringSoon],
+    ['已过期', counts.expired], ['与本次作业无关的过期证书（不阻断）', counts.irrelevantExpired], [`临期（${leadDays}天内）`, counts.expiringSoon],
     ['作业范围不符', counts.scopeMismatch], ['应有未提供', counts.missing],
     ['未判定', counts.undetermined], ['类型待确认', counts.unrecognized],
     ['必备材料未判定（入厂教育/安全协议/体检）', counts.mandatoryUndetermined],
@@ -688,6 +722,14 @@ function main() {
   L.push('');
   L.push(C.mdTable(['对象', '材料', '原因', '依据说明'],
     advisories.map((x) => [x.workType, x.required, x.reason, x.note])));
+  L.push('### 5.6 与本次作业无关的过期证书（不计入阻断）');
+  L.push('');
+  L.push(relevanceKnown
+    ? `> 以下人员作业类证书已过期或在作业期内失效，但不对应本次作业类型（${workTypes.join('、')}），**不计入 5.1 已过期、不作为不建议准入的依据**；换证/复审前该人员**不得从事对应作业**，作业票与现场监护须核对人员分工。单位资质、入厂安全教育、体检等通用项过期不在此列，仍按已过期处理。`
+    : `> 作业类型「${unknownWorkTypes.join('、')}」未识别，无法区分过期证书是否与本次作业相关，全部过期证书已按 5.1 已过期处理，本节不列项。`);
+  L.push('');
+  L.push(C.mdTable(['姓名', '证书', '证书编号', '有效期至', '对应作业', '说明'],
+    irrelevantExpired.map((x) => [x.person, x.certType, x.certNo || '—', x.expiry || '—', x.relatedWorkTypes.join('、'), `${x.reason}；换证/复审前不得从事${x.relatedWorkTypes.join('或')}`])));
   L.push('## 六、未判定项');
   L.push('');
   L.push('> 以下各项因判定所依赖的字段缺失或无法解析而无法判定，**一律未按有效处理**，须补齐材料后重新核验。');

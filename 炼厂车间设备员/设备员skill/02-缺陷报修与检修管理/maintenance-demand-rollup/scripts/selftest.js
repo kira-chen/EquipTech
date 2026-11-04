@@ -125,6 +125,15 @@ const spare2 = mk('spare2.xlsx', { '备件库存': [['备件名称', '备件型�
 r = run(['--input', full, ...BASE, '--spare', spare2], 'spare2');
 ok(r.j.demands.find((d) => d.basisNo === 'QX-001').spareStatus === '未核实', 'C14 型号不在库存表→未核实');
 ok(r.j.warnings.some((w) => w.includes('不在备件库存表中')), 'C15 型号查不到 warning');
+// 需求写了型号、库存表里同名备件只有别的型号 → 不能借用别的规格的库存，按未核实
+const spare3 = mk('spare3.xlsx', { '备件库存': [['备件名称', '备件型号', '库存数量'], ['机械密封', 'JM-80B', 5]] });
+r = run(['--input', full, ...BASE, '--spare', spare3], 'spare3');
+eq(r.j.demands.find((d) => d.basisNo === 'QX-001').spareState, 'unverified', 'C15b 型号 JM-50A 不在库存表、同名备件只有 JM-80B → 未核实，不借用别的型号库存');
+// 库存表没有型号列时才按名称匹配，并 warning 未核对型号
+const spare4 = mk('spare4.xlsx', { '备件库存': [['备件名称', '库存数量'], ['机械密封', 5]] });
+r = run(['--input', full, ...BASE, '--spare', spare4], 'spare4');
+eq(r.j.demands.find((d) => d.basisNo === 'QX-001').spareState, 'ok', 'C15c 库存表无型号列时按名称匹配');
+ok(r.j.warnings.some((w) => /按名称匹配/.test(w) && /型号/.test(w)), 'C15d 按名称匹配时 warning 未核对型号');
 
 // ============ D. 无依据项不进正式清单 ============
 r = run(['--input', full, ...BASE], 'nobasis');
@@ -409,6 +418,176 @@ ok(/大检修（停工检修）\/ 日常维修 \/ 抢修 \/ 专项/.test(r.md), 
   ok(sj2.ok && sj2.out.startsWith(os.tmpdir()) && !fs.existsSync(path.join(path.dirname(full), 'mdr-out')), 'N16 默认输出目录为 os.tmpdir()/mdr-out');
 }
 
+// ============ P. 设备资产管理系统（MCP）导出形态：工期以小时计、工单带通知单号 ============
+const mcpSrc = mk('mcp.xlsx', {
+  '通知单': [['通知单号', '位号', '设备名称', '描述', '缺陷等级', '优先级', '状态', '发现时间', '是否需停机', '预计工期'],
+    ['10046656', 'E-1201', '柴油-原油换热器', 'E-1201 管束内漏，需抽芯试压', 'B', '2', 'NOPR', '2026-10-31 09:36', '是', '72小时'],
+    ['10046668', 'V-1101', '原油电脱盐罐', 'V-1101 排凝阀关不严，还在漏', 'A', '1', 'NOPR', '2026-11-02 10:16', '否', '4小时'],
+    ['10046700', 'P-2104A', '常顶回流泵', 'P-2104A 机封渗漏', 'C', '3', 'NOPR', '2026-10-20 08:00', '是', '8小时'],
+    ['10046701', 'P-2106A', '侧线泵', 'P-2106A 轴承温度高', 'C', '3', 'OSNO', '2026-11-03 08:00', '否', '2天']],
+  '工单': [['工单号', '通知单号', '位号', '设备编号', '设备名称', '订单描述', '工单类型', '优先级', '状态', '基本结束日期', '是否需停机', '预计工期'],
+    ['20033053', '10046656', 'E-1201', '10002212', '柴油-原油换热器', 'E-1201 管束内漏，需抽芯试压', 'PM01', '', 'PCNF', '2026-11-07', '是', '72小时'],
+    ['20033064', '10046668', 'V-1101', '10002275', '原油电脱盐罐', 'V-1101 排凝阀关不严，还在漏', 'PM03', '1', 'CRTD', '2026-11-03', '否', '4小时'],
+    ['20033010', '10046700', 'P-2104A', '10002140', '常顶回流泵', 'P-2104A 机封渗漏', 'PM01', '3', 'TECO', '2026-10-25', '是', '8小时'],
+    ['20033099', '', 'P-2105A', '10002156', '常压塔底泵', 'P-2105A 联轴器对中检查', 'PM02', '4', 'PCNF', '2026-11-30', '', '4小时']],
+});
+r = run(['--input', mcpSrc, ...BASE], 'mcp');
+eq(r.s.ok, true, 'P1 设备资产管理导出形态可读');
+const pE = r.j.demands.find((d) => d.basisNo === '20033053');
+eq(pE && pE.durationDays, 3, 'P2 预计工期「72小时」按 24 小时折为 3 天，不当 72 天');
+eq(r.j.demands.find((d) => d.basisNo === '20033064').durationDays, 0.17, 'P3 「4小时」折为 0.17 天');
+eq(r.j.demands.find((d) => d.basisNo === '10046701').durationDays, 2, 'P4 「2天」按天');
+ok(!r.j.demands.some((d) => d.basisNo === '10046656' || d.basisNo === '10046668'), 'P5 已转工单的通知单不再单列（工单「通知单号」明确对应）');
+eq(r.j.counts.demands, 4, 'P6 正式清单 4 条：未闭环工单 3 + 未转工单的通知单 1（TECO 工单及其通知单不重复申报）');
+eq(r.j.counts.linkedNotif, 3, 'P7 counts.linkedNotif 记 3 条已转工单的通知单（含 TECO 工单对应的 1 条）');
+eq(pE.notifNo, '10046656', 'P8 工单需求带对应通知单号');
+ok(/通知单 10046656/.test(pE.reason), 'P9 申报理由写明对应通知单');
+eq(pE.priority, 2, 'P10 工单无优先级时沿用对应通知单的缺陷等级（B→高），不判未判定');
+ok(!r.j.possibleDuplicate.some((p) => p.tag === 'E-1201' || p.tag === 'V-1101'), 'P11 通知单与其工单不再报疑似重复');
+eq(r.j.counts.needShutdown, 1, 'P12 需停机只按工单计 1 项（E-1201），不因通知单再计一次');
+ok(r.s.warnings.some((w) => /已转工单/.test(w)), 'P13 已转工单的通知单有 warning 说明');
+
+// ============ W. 通知单↔工单配对的字段沿用、CLSD 工单、前导零；库存合计；表头单位 ============
+{
+  const link = mk('w-link.xlsx', {
+    '通知单': [['通知单号', '位号', '设备名称', '描述', '缺陷等级', '状态', '发现时间', '是否需停机', '预计工期', '备件需求', '备件型号', '需求数量', '专业'],
+      ['10046656', 'P-01', '进料泵A', 'P-01 机封泄漏', 'B', 'NOPR', '2026-10-31', '是', '2天', '机械密封', 'JM-50A', 1, '动设备（机泵）']],
+    '工单': [['工单号', '通知单号', '位号', '设备名称', '订单描述', '工单类型', '优先级', '状态', '基本结束日期', '是否需停机', '预计工期'],
+      ['20033053', '10046656', 'P-01', '进料泵A', '', 'PM01', '2', 'CRTD', '2026-11-07', '是', '2天']],
+  });
+  const sp0 = mk('w-spare0.xlsx', { '备件库存': [['备件名称', '备件型号', '库存数量'], ['机械密封', 'JM-50A', 0]] });
+  r = run(['--input', link, ...BASE, '--spare', sp0], 'w-link');
+  const d = ((r.j && r.j.demands) || []).find((x) => x.basisNo === '20033053') || {};
+  ok(d.spareName === '机械密封' && d.spareModel === 'JM-50A' && d.spareQty === 1, 'W1 工单无备件信息时沿用通知单的备件名称、型号、数量');
+  eq(d.spareState, 'short', 'W2 沿用后按库存判不足（不再判「无备件需求」）');
+  eq(d.desc, 'P-01 机封泄漏', 'W3 工单内容为空时沿用通知单描述');
+  eq(d.discipline, '动设备（机泵）', 'W4 工单专业为空时沿用通知单专业');
+
+  const clsd = mk('w-clsd.xlsx', {
+    '通知单': [['通知单号', '位号', '设备名称', '描述', '缺陷等级', '状态', '发现时间'],
+      ['10046656', 'P-01', '进料泵A', 'P-01 机封泄漏', 'B', 'OSNO', '2026-10-31']],
+    '工单': [['工单号', '通知单号', '位号', '设备名称', '订单描述', '工单类型', '优先级', '状态', '基本结束日期'],
+      ['20033053', '10046656', 'P-01', '进料泵A', 'P-01 机封泄漏', 'PM01', '2', 'CLSD', '2026-11-07'],
+      ['20033099', '', 'P-02', '泵B', 'P-02 检查', 'PM02', '3', 'CRTD', '2026-11-30']],
+  });
+  r = run(['--input', clsd, ...BASE], 'w-clsd');
+  ok(r.j && !r.j.demands.some((x) => x.basisNo === '10046656'), 'W5 工单已 CLSD、通知单仍 OSNO：通知单不再申报');
+  eq(r.j && r.j.counts.linkedNotif, 1, 'W6 CLSD 工单对应的通知单记入 linkedNotif');
+  ok(r.j && r.j.warnings.some((w) => w.includes('10046656→20033053') && w.includes('已闭环')), 'W7 warning 写明工单已闭环、本期不申报');
+  const dlfl = mk('w-dlfl.xlsx', {
+    '通知单': [['通知单号', '位号', '设备名称', '描述', '缺陷等级', '状态', '发现时间'],
+      ['10046656', 'P-01', '进料泵A', 'P-01 机封泄漏', 'B', 'OSNO', '2026-10-31']],
+    '工单': [['工单号', '通知单号', '位号', '设备名称', '订单描述', '工单类型', '优先级', '状态', '基本结束日期'],
+      ['20033053', '10046656', 'P-01', '进料泵A', 'P-01 机封泄漏', 'PM01', '2', 'DLFL', '2026-11-07']],
+  });
+  r = run(['--input', dlfl, ...BASE], 'w-dlfl');
+  ok(r.j && r.j.demands.some((x) => x.basisNo === '10046656'), 'W7b 工单已取消（DLFL），通知单仍未闭环 → 通知单照常申报');
+
+  const zero = mk('w-zero.xlsx', {
+    '通知单': [['通知单号', '位号', '设备名称', '描述', '缺陷等级', '状态', '发现时间'],
+      ['000010046656', 'P-01', '进料泵A', 'P-01 机封泄漏', 'B', 'NOPR', '2026-10-31']],
+    '工单': [['工单号', '通知单号', '位号', '设备名称', '订单描述', '工单类型', '优先级', '状态', '基本结束日期'],
+      ['20033053', '10046656', 'P-01', '进料泵A', 'P-01 机封泄漏', 'PM01', '2', 'CRTD', '2026-11-07']],
+  });
+  r = run(['--input', zero, ...BASE], 'w-zero');
+  ok(r.j && !r.j.demands.some((x) => x.basisNo === '000010046656') && r.j.counts.linkedNotif === 1, 'W8 通知单号带前导零（000010046656 与 10046656）仍配对');
+
+  const need = mk('w-need.xlsx', {
+    '缺陷台账': [['缺陷编号', '位号', '设备名称', '缺陷描述', '等级', '状态', '发现时间', '是否需停机', '预计工期', '备件需求', '备件型号', '需求数量'],
+      ['QX-001', 'P-01', '进料泵A', '机封处持续滴漏', 'B', '处理中', '2026-09-03', '是', 2, '机械密封', 'JM-50A', 1]] });
+  const sp2 = mk('w-spare2.xlsx', { '备件库存': [['备件名称', '备件型号', '库存地点', '库存数量'], ['机械密封', 'JM-50A', '0001', 1], ['机械密封', 'JM-50A', '0002', 0]] });
+  r = run(['--input', need, ...BASE, '--spare', sp2], 'w-need');
+  const dn = ((r.j && r.j.demands) || [])[0] || {};
+  ok(dn.spareState === 'ok' && dn.spareStock === 1, 'W9 同一型号多个库位的库存合计（1+0=1），不被后一行覆盖成 0');
+
+  const hdr = mk('w-hdr.xlsx', {
+    '缺陷台账': [['缺陷编号', '位号', '设备名称', '缺陷描述', '等级', '状态', '发现时间', '是否需停机', '预计工期(h)'],
+      ['QX-001', 'P-01', '进料泵A', '机封处持续滴漏', 'B', '处理中', '2026-09-03', '是', 72],
+      ['QX-002', 'P-02', '进料泵B', '轴承异响', 'B', '处理中', '2026-09-03', '是', '2天']] });
+  r = run(['--input', hdr, ...BASE], 'w-hdr');
+  eq(((r.j && r.j.demands) || []).find((x) => x.basisNo === 'QX-001') && r.j.demands.find((x) => x.basisNo === 'QX-001').durationDays, 3, 'W10 表头「预计工期(h)」、值 72 → 按小时折 3 天');
+  eq(((r.j && r.j.demands) || []).find((x) => x.basisNo === 'QX-002') && r.j.demands.find((x) => x.basisNo === 'QX-002').durationDays, 2, 'W11 同列值自带「天」后缀仍按天');
+  ok(r.j && r.j.warnings.some((w) => w.includes('预计工期(h)') && w.includes('24 小时')), 'W12 表头带小时单位有 warning');
+
+  // 来源表根本没有备件列（MCP 通知单/工单表即如此）≠ 有备件列但为空：前者备件需求未知，不能写「无备件需求」
+  const nocol = mk('w-nocol.xlsx', {
+    '通知单': [['通知单号', '位号', '设备名称', '描述', '缺陷等级', '状态', '发现时间'],
+      ['10046700', 'P-03', '回流泵', 'P-03 轴承温度高', 'B', 'OSNO', '2026-10-31']],
+    '工单': [['工单号', '通知单号', '位号', '设备名称', '订单描述', '工单类型', '优先级', '状态', '基本结束日期'],
+      ['20033090', '', 'P-04', '进料泵', 'P-04 联轴器对中检查', 'PM02', '4', 'CRTD', '2026-11-07']],
+  });
+  r = run(['--input', nocol, ...BASE], 'w-nocol');
+  const dsN = (r.j && r.j.demands) || [];
+  ok(dsN.length === 2 && dsN.every((x) => x.spareState === 'unknown'), 'W13 来源表无备件列 → 备件需求未知（state=unknown），不判「无备件需求」');
+  ok(dsN.every((x) => x.spareStatus !== '无备件需求' && /未核实/.test(x.spareStatus)), 'W14 来源表无备件列 → 备件到位写「未核实」');
+  ok(r.j && r.j.warnings.some((w) => /缺陷台账/.test(w) && /无备件列/.test(w)) && r.j.warnings.some((w) => /工单台账/.test(w) && /无备件列/.test(w)), 'W15 每张无备件列的来源表各给一条 warning');
+  eq(r.j && r.j.counts.spareNeedUnknown, 2, 'W16 counts.spareNeedUnknown 计 2');
+  ok(r.md && /无备件列/.test(r.md) && !/无备件需求/.test(r.md), 'W17 md 写明来源表无备件列，不出现「无备件需求」');
+  // 有备件列但该行为空 → 仍为「无备件需求」
+  const emptycol = mk('w-emptycol.xlsx', {
+    '通知单': [['通知单号', '位号', '设备名称', '描述', '缺陷等级', '状态', '发现时间', '备件需求', '备件型号', '需求数量'],
+      ['10046701', 'P-05', '回流泵', 'P-05 地脚螺栓松动', 'C', 'OSNO', '2026-10-31', '', '', '']],
+    '工单': [['工单号', '通知单号', '位号', '设备名称', '订单描述', '工单类型', '优先级', '状态', '基本结束日期'],
+      ['20033091', '10046701', 'P-05', '回流泵', 'P-05 地脚螺栓紧固', 'PM01', '3', 'CRTD', '2026-11-07']],
+  });
+  r = run(['--input', emptycol, ...BASE], 'w-emptycol');
+  const dE = ((r.j && r.j.demands) || [])[0] || {};
+  eq(dE.spareState, 'none', 'W18 工单表无备件列、对应通知单有备件列且为空 → 沿用通知单，判「无备件需求」');
+  eq(r.j && r.j.counts.spareNeedUnknown, 0, 'W19 有备件列的来源不计入 spareNeedUnknown');
+}
+
+// ============ X. 周期项按申报周期筛到期（--include-cyclic） ============
+{
+  const cycWin = mk('cycwin.xlsx', {
+    '周期检修项': [
+      ['周期项编号', '位号', '设备名称', '项目名称', '检修周期', '上次检修', '是否需停机', '预计工期'],
+      ['ZQ-A', 'P-A', '进料泵A', '轴承加脂', '6个月', '2026-04-20', '否', 1],      // 2026-10-17 本期到期
+      ['ZQ-B', 'P-B', '进料泵B', '机封检查', '6个月', '2026-01-10', '是', 2],      // 2026-07-09 已超期
+      ['ZQ-C', 'E-C', '换热器C', '管束清洗', '6个月', '2026-06-01', '是', 3],      // 2026-11-28 周期外
+      ['ZQ-D', 'V-D', '缓冲罐D', '安全阀校验', '1年', '', '否', 1],                 // 缺上次日期 → 到期日未知
+      ['ZQ-E', 'V-E', '缓冲罐E', '安全阀校验', '1年', '2025-11-01', '否', 1],       // 2026-11-01 周期外（边界次日）
+      ['ZQ-F', 'V-F', '缓冲罐F', '安全阀校验', '1年', '2025-10-31', '否', 1],       // 2026-10-31 等于周期末 → 纳入
+      ['ZQ-G', 'P-G', '回流泵G', '联轴器对中', '看情况', '2026-01-01', '否', 1],   // 周期无法解析 → 到期日未知
+    ],
+  });
+  r = run(['--input', cycWin, ...BASE, '--include-cyclic'], 'x-cycwin');
+  const ids = (r.j && r.j.demands || []).map((d) => d.basisNo);
+  eq(r.j && r.j.counts.bySource['周期性检修项'], 5, 'X1 到期日不晚于周期末的 5 条纳入（本期到期 2 + 已超期 1 + 到期日未知 2）');
+  ok(!ids.includes('ZQ-C') && !ids.includes('ZQ-E'), 'X2 下次到期日晚于周期末的不进申报清单');
+  eq(r.j && r.j.counts.cyclicOutOfPeriod, 2, 'X3 counts.cyclicOutOfPeriod 单独计数 2');
+  eq(((r.j && r.j.cyclicOutOfPeriod) || []).map((x) => x.basisNo).join(','), 'ZQ-C,ZQ-E', 'X4 cyclicOutOfPeriod 列出 ZQ-C、ZQ-E');
+  eq(((r.j && r.j.cyclicOutOfPeriod) || []).map((x) => x.nextDue).join(','), '2026-11-28,2026-11-01', 'X5 周期外项带下次到期日');
+  ok(ids.includes('ZQ-F'), 'X6 下次到期日等于周期末（2026-10-31）的纳入');
+  const dB = (r.j && r.j.demands || []).find((d) => d.basisNo === 'ZQ-B') || {};
+  ok(dB.overdue === true && dB.dueStatus === '已超期' && /已超期/.test(dB.reason || ''), 'X7 已过期未做的照常纳入并标注已超期');
+  const dA = (r.j && r.j.demands || []).find((d) => d.basisNo === 'ZQ-A') || {};
+  ok(dA.overdue === false && dA.dueStatus === '本期到期', 'X8 本期内到期的标「本期到期」，不标超期');
+  const dD = (r.j && r.j.demands || []).find((d) => d.basisNo === 'ZQ-D') || {};
+  const dG = (r.j && r.j.demands || []).find((d) => d.basisNo === 'ZQ-G') || {};
+  ok(dD.dueStatus === '到期日未知' && dG.dueStatus === '到期日未知' && dD.priority === null && dG.priority === null, 'X9 到期日算不出的照常纳入、优先级未判定');
+  ok((r.j && r.j.warnings || []).some((w) => /ZQ-D|V-D/.test(w) && /下次到期日算不出/.test(w)) && (r.j && r.j.warnings || []).some((w) => /P-G/.test(w) && /下次到期日算不出/.test(w)), 'X10 到期日算不出的逐条 warning');
+  ok((r.j && r.j.warnings || []).some((w) => /2 条/.test(w) && /晚于申报周期末/.test(w) && /本期不申报/.test(w)), 'X11 warning 写明剔除条数');
+  eq(r.j && r.j.counts.cyclicOverdue, 1, 'X12 counts.cyclicOverdue 1');
+  eq(r.j && r.j.counts.cyclicDueUnknown, 2, 'X13 counts.cyclicDueUnknown 2');
+  eq(r.j && r.j.meta.periodEnd, '2026-10-31', 'X14 meta.periodEnd 为 --period 月末');
+  ok(/## 附：周期外周期项（本期不申报）/.test(r.md || '') && /\| ZQ-C \|/.test(r.md || '') && /2026-11-28/.test(r.md || ''), 'X15 md 单列周期外周期项');
+  ok(/\| 周期外周期项（本期不申报） \| 2 \|/.test(r.md || ''), 'X16 md 汇总概览单列周期外计数');
+  const xs = r.xlsx && r.xlsx['周期外周期项（本期不申报）'];
+  ok(!!xs && xs.some((row) => (row || []).includes('ZQ-C')) && xs.some((row) => (row || []).includes('ZQ-E')), 'X17 xlsx 有「周期外周期项」表并列出 ZQ-C、ZQ-E');
+  ok(!(r.xlsx && r.xlsx['检修需求表'] || []).some((row) => (row || []).includes('ZQ-C')), 'X18 xlsx 检修需求表不含周期外项');
+  // 给了 --due 仍按周期末筛
+  r = run(['--input', cycWin, ...BASE, '--include-cyclic', '--due', '2026-09-25'], 'x-cycdue');
+  const ids2 = (r.j && r.j.demands || []).map((d) => d.basisNo);
+  ok(ids2.includes('ZQ-A') && ids2.includes('ZQ-F') && !ids2.includes('ZQ-C') && r.j.counts.cyclicOutOfPeriod === 2, 'X19 给了 --due 也以周期末为准（不按截止日筛）');
+  // 不加 --include-cyclic：不产生周期外列表，md/xlsx 不出现该节
+  r = run(['--input', full, ...BASE], 'x-nocyc');
+  ok(r.j.counts.cyclicOutOfPeriod === 0 && !/周期外周期项/.test(r.md) && !(r.xlsx && r.xlsx['周期外周期项（本期不申报）']), 'X20 未加 --include-cyclic 时无周期外一节');
+  // 全部周期项都在本期之后 → 无需上报，错误信息说明周期外条数
+  const cycAllOut = mk('cycallout.xlsx', { '周期检修项': [['周期项编号', '位号', '项目名称', '检修周期', '上次检修'], ['ZQ-Z', 'P-Z', '轴承加脂', '3个月', '2026-09-15']] });
+  const eZ = run(['--input', cycAllOut, ...BASE, '--include-cyclic'], 'x-allout');
+  ok(eZ.s.ok === false && /1 条周期项下次到期日晚于申报周期末/.test(eZ.s.error || ''), 'X21 全部周期项都在周期外时报错并说明条数');
+}
+
 // ============ O. examples 预期计数（目录不存在则跳过） ============
 const EX = path.join(__dirname, '..', 'examples');
 if (fs.existsSync(path.join(EX, 'sample-demand-sources-2026-10.xlsx'))) {
@@ -417,9 +596,13 @@ if (fs.existsSync(path.join(EX, 'sample-demand-sources-2026-10.xlsx'))) {
   eq(r.j.counts.priorityUndetermined, 2, 'O2 examples 主样例优先级未判定 2（无等级工单 + B级隐患）');
   eq(r.j.counts.skippedDone, 1, 'O3 examples 已完成工单本期不重复申报');
   r = run(['--input', path.join(EX, 'sample-demand-sources-2026-10.xlsx'), ...BASE, '--include-cyclic', '--spare', path.join(EX, 'sample-spare-stock.xlsx')], 'ex-cyc');
-  ok(r.j.counts.demands === 13 && r.j.counts.needShutdown === 6, 'O4 examples 含周期项：正式 13、需停机 6');
-  eq(r.j.counts.priorityUndetermined, 5, 'O5 examples 周期项 3 条优先级未判定（不按中默认）');
+  // 周期项按申报周期筛到期：ZQ-002（1年，上次 2025-11-10 → 2026-11-10）晚于 2026-10-31，本期不申报
+  ok(r.j.counts.demands === 12 && r.j.counts.needShutdown === 5 && r.j.counts.bySource['周期性检修项'] === 2, 'O4 examples 含周期项：正式 12（周期项 2 条本期到期）、需停机 5');
+  eq(r.j.counts.priorityUndetermined, 4, 'O5 examples 本期到期的 2 条周期项优先级未判定（不按中默认）');
+  ok(r.j.counts.cyclicOutOfPeriod === 1 && r.j.cyclicOutOfPeriod[0].basisNo === 'ZQ-002' && r.j.cyclicOutOfPeriod[0].nextDue === '2026-11-10', 'O5b examples ZQ-002 下次到期 2026-11-10 晚于周期末，单列周期外');
   ok(r.j.demands.find((d) => d.basisNo === 'QX-20260908-002').spareState === 'short' && r.j.demands.find((d) => d.basisNo === 'QX-20260903-001').spareState === 'ok', 'O6 examples 备件到位/不足判定');
+  eq(r.j.demands.find((d) => d.basisNo === 'GD-2609-104').spareState, 'unverified', 'O6b examples DN150-PN16 不在库存表 → 未核实（不借用 DN300-PN40 的库存）');
+  eq(r.j.demands.find((d) => d.basisNo === 'ZQ-001').spareState, 'short', 'O6c examples LT-8 库存 0 → 不足');
   r = run(['--input', path.join(EX, 'sample-sap-export.xlsx'), ...BASE], 'ex-sap');
   ok(r.s.ok && r.j.counts.demands === 4 && r.j.counts.skippedDone === 1 && r.j.counts.statusUndetermined === 0 && r.j.demands.some((d) => d.basisNo === '40023001' && d.category === '抢修'), 'O7 examples SAP 导出：通知单 2 + 订单 2 纳入、TECO 1 条不重复申报、PM03→抢修');
   r = run(['--input', path.join(EX, 'sample-no-basis.xlsx'), ...BASE], 'ex-nobasis');

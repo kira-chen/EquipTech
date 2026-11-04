@@ -13,8 +13,18 @@
 | 1 | E-1201 补焊，票上定的一级用火，现场要盯哪些？ | `--work-type "用火作业" --level "一级用火" --scope "换热器封头法兰焊缝补焊" --location "E-1201（常压一区）" --medium 石脑油 --duration 4 --headcount 3` | 23 项要点（18 项「用火作业」+ 5 项「作业许可通用」S01~S05：双监护、JSA 交底、属地确认人）；作业票级别一级用火 → 高风险口径，级别口径提示「用火全过程旁站」；每 30 分钟巡查，约 8 轮；无组合加严项 |
 | 2 | 进罐补焊，用火加进罐两张票，监督要点合一起给我 | `--work-type "动火作业,受限空间作业" --scope "缓冲罐内部腐蚀部位补焊" --location "V-1301（常压一区）" --medium 硫化氢 --duration 6 --headcount 5` | 42 项（用火 18 + 受限空间 19 + S 系列 5，只算一份），每条标来源类型；3 项加严（X-HC-1/2/3）；高风险；未传 `--level` → 判定依据注明「频次按作业类型默认口径」 |
 | 3 | 今晚拍片子探伤，出个检查表 | `--work-type "放射性探伤作业" --scope "管线焊口射线探伤" --location "管廊三层（常压二区）" --medium 柴油 --duration 3` | `generic=true`，只出 10 项通用监督框架，不纳入 S 系列；2 条 warning 标注「待安全专业补充」 |
-| 4 | 进料管线加盲板，介质是我们自己的助剂 | `--work-type "盲板抽堵作业" --scope "进料管线加装盲板" --location "P-2101A 出口管线" --medium "XK-7 特种助剂" --duration 2 --headcount 2` | 18 项要点（13 B + 5 S）；`mediumKnown=false`，按最严口径（易燃易爆+有毒有害）；warning 提示核实 MSDS；高风险 |
+| 4 | 进料管线加盲板，介质是我们自己的助剂 | `--work-type "盲板抽堵作业" --scope "进料管线加装盲板" --location "P-2103A 出口管线" --medium "XK-7 特种助剂" --duration 2 --headcount 2` | 18 项要点（13 B + 5 S）；盲板抽堵不分级，判定依据注明「不分级」；`mediumKnown=false`，按最严口径（易燃易爆+有毒有害）；warning 提示核实 MSDS；高风险 |
 | 5 | 循环水泵抽芯，日常维修怎么盯 | `--work-type "常规检修作业" --scope "循环水泵抽芯检修、更换机封" --location "P-3101B（循环水站）" --medium 循环水 --duration 8 --headcount 4` | 14 项要点；常规检修单独作业不纳入 S 系列；低危介质不上调，判为低风险；每 2 小时巡查，约 4 轮 |
+
+## MCP 取数对照
+
+平台接入作业票系统 MCP 时不上传附件：`get_permits`（`workshop`：常减压车间，按需加 `tag`）读出那张票，按 SKILL.md「数据获取（MCP）」把各列填成命令行参数（开始/结束时间改写为 `YYYY-MM-DDTHH:mm:00+08:00`，级别为空不传 `--level`）；用火、受限空间、高处、吊装、盲板抽堵票再用 `get_permit_document` 下载 docx 作 `--permit`。演示数据每天按剧本重置，下表只写每天稳定的结论。
+
+| # | 示例问题 | MCP 调用 | 运行参数 | 预期结果 |
+|---|---|---|---|---|
+| M1 | 今天 E-1201 那张一级用火票，现场要盯哪些？多久看一次？ | 作业票系统 `get_permits`（`workshop`：常减压车间，`tag`：E-1201）取用火作业行；`get_permit_document`（`permit_no`：该票编号） | `--work-type 用火作业 --level 一级 --scope "E-1201 头盖法兰密封面焊缝补焊" --location "E-1201（1#常减压装置常压蒸馏区）" --medium 柴油 --start/--end <票面时间+08:00> --duration <差值> --headcount 3 --unit 示例检维修公司 --permit <docx>` | `permitLevel` 一级用火；23 项（用火 18 + S 系列 5）；高风险，每 30 分钟巡查；级别口径「一级用火：用火全过程旁站」；无组合加严项；无 warning |
+| M2 | E-1201 管束今天下午抽芯吊装，票上三级，属地要确认什么？ | 同上，取吊装作业行 | `--work-type 吊装作业 --level 三级 --medium 柴油 --headcount 5 --unit 示例吊装公司 …`（其余同 M1 取法） | `permitLevel` 吊装作业三级；22 项（吊装 17 + S 系列 5）；吊装基础高风险不因三级降级，仍为高风险；级别口径「吊装三级：起吊与落钩到场确认」 |
+| M3 | V-1301 进罐清理的受限空间票（昨天开、今天上午结束），出监督要点 | 作业票系统 `get_permits`（`workshop`：常减压车间，`tag`：V-1301）；`get_permit_document` | `--work-type 受限空间作业 --medium 含油污水 --start <昨天 09:00+08:00> --end <今天 11:00+08:00> …`，不传 `--level` | 24 项（受限空间 19 + S 系列 5）；判定依据写「受限空间作业不分级」；介质「含油污水」不在危险特性库 → 按最严口径（易燃易爆、有毒有害）+ warning 核实 MSDS；高风险；作业起止跨两天照常显示 |
 
 ## 关键验证点
 

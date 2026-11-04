@@ -26,7 +26,7 @@ node "<技能目录>/scripts/daily.js" \
 
 | 传入 | 来源技能 | 识别特征 | 提供章节 |
 |---|---|---|---|
-| `status.json` | inspection-data-digest | `byEquipment` + `abnormal` | 一、设备状态（仅运行/异常/未判定三档，备用/检修/停用写未提供并 warning） |
+| `status.json` | inspection-data-digest | `byEquipment` + `abnormal` | 一、设备状态（有 `counts.sixTier` 取六档；旧版仅运行/异常/未判定三档，备用/检修/停用写未提供并 warning）；二、特护设备（`byEquipment[].special`） |
 | `orders.json` | work-order-tracker | `byStatus` 或 `metrics.closeRate` | 四、工单执行（待验收取 `counts.pendingAccept` 或 `byStatus['待验收']`） |
 | `defects.json` | defect-intake-grading | `defects` + `counts.byLevel` | 三、新增缺陷 |
 | `leaks.json` | leak-point-tracker | `counts.leaks` + `repaired` | 六、泄漏点 |
@@ -40,14 +40,14 @@ node scripts/daily.js --input /tmp/insp/status.json,/tmp/ord/orders.json,/tmp/de
 
 ### xlsx 工作表（sheet 名包含匹配）
 
-巡检汇总 / 特护设备 / 缺陷台账（通知单） / 工单台账（订单） / 作业票（作业许可） / 泄漏点（漏点、密封点、LDAR） / 隐患台账 / 异常事件 / 检修进度。列名别名见 `references/input-spec.md`，含 SAP PM / 智能巡检 / 作业许可系统导出列名。
+巡检汇总 / 特护设备 / 缺陷台账（通知单） / 工单台账（订单） / 作业票（作业许可、作业票清单、以「作业清单」开头的表；「检修作业清单」不算） / 泄漏点（漏点、密封点、LDAR） / 隐患台账 / 异常事件 / 检修进度。列名别名见 `references/input-spec.md`，含 SAP PM / 智能巡检 / 作业许可系统导出列名。
 
 ### 口径要点
 
 - 设备状态六档：运行 / 备用 / 检修 / 停用 / 异常 / 未判定。空值或无法归档 → 未判定，不计运行。
 - 缺陷与工单状态按 SAP 六态归一；「已完成 / 完工 / TECO / 技术完成」归**待验收**单列，不算闭环；否定前缀（未/待/不/非）先判；已取消不计。
 - 作业票「动火」统一显示为「用火」；级别以票面为准，脚本不自判；属地监护人未填仅计数提示。
-- 隐患等级只认「重大隐患 / 一般隐患」；「A/B/C 级」不映射（多为管理层级），原文展示并 warning；无整改期限 → 未判定，不默认天数。
+- 隐患等级只认「重大隐患 / 一般隐患」（HSE 平台的「重大 / 一般」同样识别）；「A/B/C 级」不映射（多为管理层级），原文展示并 warning；无整改期限 → 未判定，不默认天数；完成态（已整改 / 已完成 / 已销号 / 已处理等，词表与 hazard-closure-tracker 同口径）有验收记录计已闭环，无验收记录单列已整改未验收，不判超期；验收情况「验收未通过 / 否 / 不合格」等不算通过；验收人、验收日期独立读列，验收情况为空时填了任一项即算有验收记录。
 - 泄漏率不在日报核算（周报月报核算），日报只列点数；表输入不算修复率，修复率来自 leaks.json。
 
 ### 产出
@@ -79,4 +79,4 @@ node scripts/make-sample.js --out examples [--seed <n>] [--date <YYYY-MM-DD>]
 node scripts/selftest.js
 ```
 
-158 条断言，覆盖全量 xlsx、缺数据不补零、五类上游 JSON 对接与合并、六档状态、待验收单列、特护设备、作业票术语、泄漏点、隐患等级与未判定、SAP 列名（设备编号不是位号）、完成比例异常值、环比、次日计划不编造、参数校验、产出结构与声明行、别名与合计行。
+186 条断言，覆盖全量 xlsx、缺数据不补零、五类上游 JSON 对接与合并（含 status.json 六档 `sixTier` 与特护标记）、六档状态、待验收单列、特护设备、作业票术语、泄漏点、隐患等级与未判定、SAP 列名（设备编号不是位号）、HSE 平台隐患台账与作业票系统作业清单列名（整改状态、要求整改期限、已整改未验收；完成态与验收态判定与 hazard-closure-tracker 同口径：完成词开头归已整改、否定写法归未整改、无验收记录不计闭环；验收人/验收日期独立列）、「检修作业清单」不当作业票、完成比例异常值、环比、次日计划不编造、参数校验、产出结构与声明行、别名与合计行。

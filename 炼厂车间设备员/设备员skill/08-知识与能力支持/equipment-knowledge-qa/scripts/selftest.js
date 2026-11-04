@@ -490,6 +490,21 @@ r = run(['--question', '我们厂备用泵怎么规定的', '--docs', DOCS], 'sh
 eq(r.j.guidance.canAnswer, true, 'K19 「厂备用泵」切词后命中厂内资料，可作答');
 ok(r.j.passages.some((p) => /一用一备/.test(p.text) && p.keywords.includes('备用')), 'K20 命中段落为车间备用件规定原文');
 
+// ============ L. 缺陷修复（2026-11-04 核查：问图纸尺寸漏判为未判定）============
+eq(ct('附件里有一张装配图 PDF，帮我看看图上标的密封腔尺寸。'), 'numeric/N4', 'L1 问图上标的尺寸按数值标准类拦截（N4），不落到未判定');
+ok(R.whereToLook('帮我看看图上标的密封腔尺寸').some((w) => w.ruleId === 'W2' && /装配图/.test(w.where)), 'L2 尺寸类指路到随机装配图（W2）');
+eq(ct('叶轮切削对扬程有什么影响'), 'undetermined/U1', 'L3 反例：不含尺寸量值的问句分类不变');
+// 「原因/造成/导致…」这类泛化词单独命中不算资料依据：问 E-1201 管束内漏，不得因一段「会造成液击」的原文就判可作答
+{
+  const d = path.join(work, 'docs-generic');
+  fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, '培训教材.md'), '# 往复压缩机液击\n\n入口带液进入气缸会造成液击，损坏气阀与连杆。\n\n液击的原因是入口分液罐液位过高。\n', 'utf8');
+  const g = run(['--question', 'E-1201 换热器管束内漏一般是什么原因造成的？', '--docs', d], 'generic');
+  eq(g.j.counts.passages, 0, 'L4 泛化词「原因」「造成」不单独作检索命中');
+  eq(`${g.j.questionType}/${g.j.guidance.canAnswer}/${g.j.guidance.answerBasis}`, 'plant/false/none', 'L5 无相关原文时本厂类明确答不了');
+  ok(!R.splitQuery('为什么会造成汽蚀').some((k) => /^(造成|原因|导致|引起)$/.test(k)) && R.splitQuery('为什么会造成汽蚀').includes('汽蚀'), 'L6 切词去掉泛化词、保留实义词');
+}
+
 console.log(`\n${'='.repeat(56)}`);
 console.log(`equipment-knowledge-qa 自测：${pass} 通过，${fail} 失败`);
 if (failures.length) { console.log('\n失败项：'); failures.forEach((f) => console.log('  ✗ ' + f)); }

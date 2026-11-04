@@ -44,6 +44,7 @@ function main() {
 
   // ---- 设备范围：从清单或从 --scope 文本
   const types = new Map();   // type -> [{tag,name,area}]
+  const ledgerRecs = [];     // 清单有效设备 {type,tag,name,area}
   if (a.ledger) {
     if (!fs.existsSync(a.ledger)) throw new Error(`设备清单不存在: ${a.ledger}`);
     const rows = C.pickSheet(loadBook(a.ledger), '设备台账', '设备清单', '台账', '设备');
@@ -54,19 +55,42 @@ function main() {
       if (!tag) { warnings.push(`工作表「设备台账」第${r._row}行 位号为空，已跳过`); continue; }
       const declared = C.str(r['设备类型']);
       const t = declared ? S.typeOf(declared) : S.typeOf(C.str(r['设备名称']));
-      if (!types.has(t)) types.set(t, []);
-      types.get(t).push({ tag, name: C.str(r['设备名称']), area: C.str(r['区域']) });
+      ledgerRecs.push({ type: t, tag, name: C.str(r['设备名称']), area: C.str(r['区域']) });
     }
-    if (!types.size) throw new Error('设备清单中没有有效设备行');
+    if (!ledgerRecs.length) throw new Error('设备清单中没有有效设备行');
   }
-  if (a.scope) {
-    for (const piece of a.scope.split(/[,，、]/).map((x) => x.trim()).filter(Boolean)) {
-      const t = S.typeOf(piece);
-      if (t === '通用' && !/通用|全部|所有/.test(piece)) {
-        warnings.push(`设备类型「${piece}」不在覆盖范围内，已归入通用框架；具体观察要点待安全专业补充`);
+  const scopePieces = a.scope
+    ? a.scope.split(/[,，、]/).map((x) => x.trim()).filter(Boolean).map((piece) => ({ piece, type: S.typeOf(piece), all: /通用|全部|所有/.test(piece) }))
+    : [];
+  // 清单 + scope 同时给：按 scope 过滤清单（设备类型命中，或位号 / 名称 / 区域含该片段）；scope 为「全部 / 所有」或只有识别不出的条目时不过滤
+  const recMatch = (rec, p) => (p.type !== '通用' && rec.type === p.type)
+    || [rec.tag, rec.name, rec.area].some((v) => v && v.includes(p.piece));
+  const byText = (p) => p.type === '通用' && ledgerRecs.some((rec) => recMatch(rec, p));
+  let keptRecs = ledgerRecs;
+  if (ledgerRecs.length && scopePieces.length && !scopePieces.some((p) => p.all)) {
+    const filtering = scopePieces.filter((p) => p.type !== '通用' || byText(p));
+    if (filtering.length) {
+      keptRecs = ledgerRecs.filter((rec) => filtering.some((p) => recMatch(rec, p)));
+      const dropped = ledgerRecs.filter((rec) => !keptRecs.includes(rec));
+      if (dropped.length) {
+        warnings.push(`已按 --scope「${a.scope}」过滤设备清单：保留 ${keptRecs.length} 台，剔除 ${dropped.length} 台（${[...new Set(dropped.map((rec) => rec.type))].join('、')}）`);
       }
-      if (!types.has(t)) types.set(t, []);
+    } else {
+      warnings.push(`--scope「${a.scope}」中没有可识别的设备类型或清单位号，设备清单未过滤，按清单全部 ${ledgerRecs.length} 台生成`);
     }
+  }
+  for (const rec of keptRecs) {
+    if (!types.has(rec.type)) types.set(rec.type, []);
+    types.get(rec.type).push({ tag: rec.tag, name: rec.name, area: rec.area });
+  }
+  for (const p of scopePieces) {
+    if (byText(p)) continue;                       // 位号 / 区域类条目只用于过滤清单
+    if (p.all && ledgerRecs.length) continue;      // 有清单时「全部」只表示不过滤
+    if (p.type === '通用' && !p.all) {
+      warnings.push(`设备类型「${p.piece}」不在覆盖范围内，已归入通用框架；具体观察要点待安全专业补充`);
+    }
+    if (ledgerRecs.length && p.type !== '通用' && !types.has(p.type)) warnings.push(`设备清单中没有「${p.type}」类设备，该节只列通用观察要点，不列位号`);
+    if (!types.has(p.type)) types.set(p.type, []);
   }
 
   // ---- 自拟处置动作的职责边界校验
@@ -208,7 +232,9 @@ function main() {
   L.push('');
   for (const e of reportPath.elements) L.push(`- ${e}`);
   L.push('');
-  L.push('> 说现象，不用说原因。「泵响得比平时大很多，轴承那里烫手」比「轴承坏了」更有用。');
+  L.push(noTouch
+    ? '> 说现象，不用说原因。「泵响得比平时大很多，轴承箱那里有焦糊味」比「轴承坏了」更有用。'
+    : '> 说现象，不用说原因。「泵响得比平时大很多，轴承那里烫手」比「轴承坏了」更有用。');
   L.push('');
   idx++;
 

@@ -39,3 +39,13 @@
 node scripts/make-sample.js --out examples            # 默认 seed=1，date=2026-09-21
 node scripts/make-sample.js --out examples --seed 7   # 承修单位与人名变化，上述结论不变
 ```
+
+## MCP 取数对照
+
+> 平台接入设备资产管理 MCP 时不上传附件：五个工具的 csv（项目清单、材料到货、人员到位、开工条件、三查四定）放同一个新建目录作 `--input`；`get_turnaround_projects` 返回说明里给出 `--project`「柴油加氢装置 2026 年秋季检修」与计划窗口 `--start / --end`（剧本日前 10 天至后 12 天）。
+
+| # | 示例问题 | MCP 调用 | 运行参数 | 预期结果 |
+|---|---|---|---|---|
+| M1 | 柴油加氢装置秋季检修今天的大修进度日报，哪些滞后、三查四定几项没关 | 设备资产管理 `get_turnaround_projects`、`get_material_arrivals`、`get_workforce_status`、`get_startup_conditions`、`get_punch_list` → 同一目录 | `--input <目录> --workshop 加氢车间 --project "柴油加氢装置 2026 年秋季检修" --date <今天> --start <返回说明> --end <返回说明>` | 11 项（DX-01~DX-11），DX-02 已中交、DX-11 取消；滞后 2 项：DX-06 超计划开工日未开工、DX-04 已过计划完工日未完工；DX-08「施工中」但完成比例 100% → 列入状态-比例矛盾、两字段不修正；材料缺口为 C-5302A 活塞杆填料环、P-5101A 机械密封未到货，V-5101 人孔垫片到货未判定；开工条件「受限空间作业票办理」待确认 → 未判定；三查四定 SC-001 超期、SC-004 四定不全（缺定措施、定人员）；另出 `进度表.xlsx` |
+| M2 | 关键路径 DX-04、DX-06，关键路径滞后单列 | 同 M1 | M1 参数加 `--critical "DX-04,DX-06"` | 滞后仍为 DX-06、DX-04 两项，均标关键路径（criticalLagging 2），对应材料缺口与条件缺口也标关键路径 |
+| M3 | 按计划节点线性推算，找进度落后的项目 | 同 M1 | M1 参数加 `--linear-check` | 滞后由 2 项增为 4 项：新增 DX-05、DX-03「完成比例落后应有进度」；DX-08 仍因状态-比例矛盾不参与滞后判定 |

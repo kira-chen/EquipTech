@@ -115,7 +115,7 @@
 | `category:<类别>` | 条款要求与资料落在同一个**具体**资料类别 | 条款「应当建立设备台账」↔ 资料「常减压车间设备台账2026.xlsx」 |
 | `feature:<词>` | 条款里的**具体**特征词直接出现在资料名中 | 条款「P-1101A 应当按期更换润滑油」↔ 资料「P-1101A润滑油更换台账.xlsx」 |
 
-资料类别共 25 类，见 `scripts/lib/compliance-spec.js` 的 `CATEGORIES`。
+资料类别共 26 类，见 `scripts/lib/compliance-spec.js` 的 `CATEGORIES`。
 
 ### 泛词不作为对应依据
 
@@ -185,7 +185,7 @@
 
 > 本表状态仅有「已见对应材料 / 未见对应材料 / 材料不完整 / 需进一步确认」四档，不表述为「符合」或「不符合」；材料在不在是事实，达标与否是监管部门、内审或法务的结论，两回事
 
-## 十、材料类别词表（25 类）与 inspection-evidence-package 的差异
+## 十、材料类别词表（26 类）与 inspection-evidence-package 的差异
 
 脚本按 `scripts/lib/compliance-spec.js` 的 `CATEGORIES` 归类，条款侧（rule）与资料侧（file）各一组词，**条款侧刻意收紧**：
 
@@ -204,8 +204,9 @@
 | maintenance | 检修与维护保养记录 | 检修、维修记录、维修台账、保养、维护保养、大修、中修 | 检修、维修、保养、维护、大修、中修 |
 | plan | 计划与方案 | 年度计划、检修计划、施工方案、检修方案、实施方案 | 计划、方案 |
 | procedure | 操作规程与作业指导书 | 操作规程、作业指导书、工艺规程、安全操作规程、规程 | 同左 |
-| permit | 作业票与作业许可 | 作业票、作业许可、动火、受限空间、高处作业、吊装、临时用电、盲板、动土、断路 | 同左（高处） |
-| defect | 缺陷隐患排查治理记录 | 隐患排查、隐患治理、缺陷、报修、故障、隐患登记 | 隐患、缺陷、报修、故障 |
+| permit | 作业票与作业许可 | 作业票、作业许可、用火、动火、受限空间、高处作业、吊装、临时用电、盲板、动土、断路 | 同左（高处） |
+| defect | 缺陷与故障记录 | 缺陷、报修、故障 | 缺陷、报修、故障 |
+| hazard | 隐患排查治理记录 | 隐患排查、隐患治理、隐患登记、事故隐患、隐患 | 隐患 |
 | training | 培训教育与持证记录 | 培训、教育、持证、取证、操作证、上岗证、资格、考核、作业人员资格 | 培训、教育、持证、操作证、上岗证、资格、考核、证书 |
 | drill | 应急预案与演练记录 | 应急预案、应急演练、演练、事故预案、应急处置 | 应急、演练、预案 |
 | accident | 事故与异常情况报告 | 事故报告、事故调查、异常情况报告、事故处理、险情 | 事故、调查报告、异常情况、险情 |
@@ -227,11 +228,11 @@
 
 资料清单带「资料类型」列时先读该列，再读资料名称，两者认出的类别合并（`materialCategories`）；「台账」「记录」这类泛称不落任何类别。
 
-> permit 类的「动火」在词表中与「用火」并列保留（旧票面与旧条款仍大量使用「动火」），中石化口径的正式名称是**用火作业**。
+> permit 类的「动火」在词表中与「用火」并列保留（旧票面与旧条款仍大量使用「动火」），中石化口径的正式名称是**用火作业**。「用火」按正则匹配：前面是「备 / 使 / 启 / 停 / 采 / 选 / 利」或后面是「炬 / 嘴」的不算（「备用火炬运行记录」「使用火炬系统」「备用火嘴」不归 permit），「用火作业 / 用火票 / 用火监护」照常归入；与 inspection-evidence-package 同口径。
 
-**与 `inspection-evidence-package`（`scripts/lib/evidence-spec.js`，2026-10-26 起为 25 类，差异表见其 `references/evidence-rules.md` 第八节）的差异**（同源抽取由主代理后续统一处理，此处只记录差异，不自行改动对方）：
+**与 `inspection-evidence-package`（`scripts/lib/evidence-spec.js`，2026-11-04 起为 26 类，差异表见其 `references/evidence-rules.md` 第八节）的差异**（同源抽取由主代理后续统一处理，此处只记录差异，不自行改动对方）：
 
-| 差异 | 本技能（25 类） | inspection-evidence-package（25 类） |
+| 差异 | 本技能（26 类） | inspection-evidence-package（26 类） |
 |---|---|---|
 | 拆分更细 | periodicInspection / ndt 分开；safetyValve / interlock 分开；registration、accident、change、contractor 单列 | inspectionReport 合并定期检验与无损；safetyDevice 合并安全阀与联锁报警；无 registration/accident/change/contractor |
 | 对方独有 | 无 specialEquipment 类（本技能把压力容器/压力管道等放在 FEATURE_TERMS 特征词里按词命中） | specialEquipment（特种设备、压力容器、压力管道、锅炉、起重机、使用登记） |

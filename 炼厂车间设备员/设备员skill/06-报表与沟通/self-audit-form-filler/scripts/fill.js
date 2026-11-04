@@ -369,7 +369,46 @@ function filterRows(text, kind, t, where) {
       rows = hit;
     }
   }
-  return { rows, notes, suffix, extra: Object.keys(extra).length ? extra : null, missing: null };
+
+  // 人员证书：只计特种作业类证书，入厂教育、体检、培训记录、资质证明等不算证书
+  if (t.sourceKey === 'training' && S.wantsSpecialCert(text)) {
+    const f = S.certTypeField(t.header);
+    if (!f) {
+      notes.push(`台账无证书类型列，未区分特种作业类证书与入厂教育、体检等记录，按全部 ${rows.length} 条取数，须人工核对`);
+      warnOnce(`台账「${where}」无证书类型列，特种作业证书类自查项未区分证书与教育、体检记录，按全部记录取数，须人工核对`);
+    } else {
+      const cert = [], non = [], unk = [];
+      for (const r of rows) { const c = S.certClass(r[f]); (c === 'cert' ? cert : c === 'non' ? non : unk).push(r); }
+      if (!cert.length) {
+        return { missing: `数据表「${where}」列「${f}」中没有特种作业类证书记录${non.length ? `（另有 ${non.length} 条入厂教育、体检、培训等记录）` : ''}${unk.length ? `，${unk.length} 条证书类型不详` : ''}，未拿其他记录充数` };
+      }
+      const nf = S.nameField(t.header);
+      const allPersons = nf && kind === 'count' && S.wantsPersons(text) ? new Set(rows.map((r) => C.str(r[nf])).filter(Boolean)).size : null;
+      notes.push(`按列「${f}」只计特种作业类证书 ${cert.length} 条${non.length ? `，排除入厂教育、体检、培训记录、资质证明等 ${non.length} 条` : ''}${unk.length ? `；证书类型不详 ${unk.length} 条未计入：${rowList(unk, f)}` : ''}${allPersons !== null ? `（台账共 ${allPersons} 人有记录，只有培训、教育、体检记录的人不计持证）` : ''}；证书口径须人工核对`);
+      if (unk.length) suffix.push(`证书类型不详 ${unk.length} 条`);
+      Object.assign(extra, { certRows: cert.length, nonCertRows: non.length, certUnknown: unk.length });
+      rows = cert;
+    }
+  }
+  // 数量类：缺陷、隐患记录剔除已删除标记（DLFL / 已取消），作废的单子不算登记数量
+  if (kind === 'count' && t.sourceKey === 'defect') {
+    const f = findField(t.header, ['系统状态', '通知单状态', '用户状态', '状态']);
+    if (f) {
+      const del = rows.filter((r) => C.normSapStatus(r[f]) === '已取消');
+      if (del.length) {
+        notes.push(`剔除列「${f}」为已删除标记（DLFL / 已取消）的 ${del.length} 条`);
+        Object.assign(extra, { deleted: del.length });
+        rows = rows.filter((r) => C.normSapStatus(r[f]) !== '已取消');
+      }
+    }
+  }
+  // 人数：按姓名去重；没有姓名列做不到去重，不按记录行数充数
+  let personField = null;
+  if (kind === 'count' && S.wantsPersons(text)) {
+    personField = S.nameField(t.header);
+    if (!personField) return { missing: `数据表「${where}」没有姓名列，人数无法按人去重（一人可有多条证书或记录），未按记录行数计，须人工核对` };
+  }
+  return { rows, notes, suffix, extra: Object.keys(extra).length ? extra : null, missing: null, personField, text };
 }
 
 /** 按取数方式从（已过滤的）数据表取值。flt.suffix 为「不详」说明，追加在预填内容末尾 */
@@ -385,6 +424,18 @@ function takeValue(kind, t, where, asOf, flt) {
       };
     }
     case 'count': {
+      if (flt.personField) {
+        const pf = flt.personField;
+        const names = new Set(t.records.map((r) => C.str(r[pf])).filter(Boolean));
+        const blank = t.records.filter((r) => !C.str(r[pf])).length;
+        const bs = blank ? `（另有${[`姓名为空 ${blank} 条`, ...flt.suffix].join('、')}未计入）` : sfx;
+        return {
+          value: `${names.size}${bs}`,
+          sourceNote: `数据来源：${where}，按列「${pf}」去重计人数（${t.records.length} 条记录 → ${names.size} 人）；人数须人工核对`,
+          evidence: `${where} 列「${pf}」`, table: where,
+          extra: { persons: names.size, records: t.records.length, nameBlank: blank },
+        };
+      }
       return {
         value: `${t.records.length}${sfx}`,
         sourceNote: `数据来源：${where}，按记录行计数`,
@@ -447,8 +498,15 @@ function takeValue(kind, t, where, asOf, flt) {
       if (!f) return { value: null, reason: 'noField', missing: `数据表「${where}」中没有可用于判断条目完整性的字段（日期/记录/状态）`, table: where };
       const filled = t.records.filter((r) => C.str(r[f])).length;
       const blank = t.records.length - filled;
+      // 整改、闭环类问「是否全部」时，只报「已填 N 条」容易被读成已全部整改：按状态取值分档计数
+      let byState = '';
+      if (/状态/.test(f) && /整改|闭环|消缺|处理/.test(flt.text || '')) {
+        const m = new Map();
+        for (const r of t.records) { const k = C.str(r[f]); if (k) m.set(k, (m.get(k) || 0) + 1); }
+        byState = `；按「${f}」分档：${[...m].map(([k, n]) => `${k} ${n} 条`).join('、')}${blank ? `、空缺 ${blank} 条` : ''}`;
+      }
       return {
-        value: `共 ${t.records.length} 条，列「${f}」已填 ${filled} 条、空缺 ${blank} 条${sfx}`,
+        value: `共 ${t.records.length} 条，列「${f}」已填 ${filled} 条、空缺 ${blank} 条${byState}${sfx}`,
         sourceNote: `数据来源：${where}，按列「${f}」填报情况计数；**齐全与否由责任人判断，此处只报条目计数**`,
         evidence: `${where} 列「${f}」`, table: where,
         extra: { total: t.records.length, filled, blank },

@@ -448,6 +448,38 @@ ok(!/^- 现象描述$/m.test(r.md), 'P8 md 补充数据清单不含「现象描�
 eq(R.scoreCandidate({ supports: ['gradual'], againsts: ['gradual'] }, { sudden: '否' }).supports.length, 1,
   'P9 同一探针只计一次');
 
+// ============ T. 现象口语：温度偏高、换热器内漏 ============
+ok(R.classifySymptoms('电机温度偏高').includes('temperature'), 'T1 「温度偏高」识别为温度异常（不落到其他现象）');
+ok(R.classifySymptoms('轴承温度升高了').includes('temperature'), 'T2 「温度升高」识别为温度异常');
+ok(R.classifySymptoms('换热器管束内漏').includes('performance'), 'T3 「内漏」同时进性能类（换热器内漏口径 SF2 在性能表）');
+ok(R.triage({ equipType: '换热器', symptoms: R.classifySymptoms('怀疑管束内漏'), evidence: {} }).candidates.some((c) => c.ruleId === 'SF2'),
+  'T4 换热器「内漏」候选含 SF2 内漏（管束穿孔或内件损坏）');
+ok(!R.classifySymptoms('出口温度偏低').includes('temperature'), 'T5 「温度偏低」不按温升口径套过热原因');
+// 「内漏」只按设备类型补对应性能条目，不把整张性能表并进来压过泄漏表
+{
+  const tri = (equipType, text) => R.triage({ equipType, symptoms: R.classifySymptoms(text), evidence: {}, symptomText: text }).candidates.map((c) => c.ruleId);
+  const gate = tri('闸阀', '闸阀关不严，内漏');
+  eq(gate[0], 'SL1', 'T6 闸阀「关不严，内漏」首位候选回到泄漏表 SL1（不被换热器结垢 SF1 压过）');
+  ok(!gate.some((x) => /^SF/.test(x)), 'T7 闸阀内漏不并入换热器/塔器性能条目');
+  const psv = tri('安全阀', '安全阀内漏');
+  eq(psv[0], 'VL1', 'T8 安全阀内漏首位候选回到 VL1 阀座密封面损伤（不被 VF1 频跳压过）');
+  const seal = tri('离心泵', '机封内漏');
+  eq(seal[0], 'PL1', 'T9 离心泵「机封内漏」首位候选回到 PL1 机械密封失效（不被 PF1 汽蚀压过）');
+  ok(!seal.some((x) => /^PF/.test(x)), 'T10 机封内漏不补泵性能条目');
+  const hx = tri('换热器', 'E-1201 换热器管束内漏');
+  ok(hx.includes('SF2') && !hx.includes('SF1') && !hx.includes('SF3'), 'T11 换热器管束内漏仍列 SF2，只补 SF2 不并整张性能表');
+  const ring = tri('离心泵', '口环间隙大，泵内漏');
+  ok(ring.includes('PF2') && !ring.includes('PF1'), 'T12 泵在口环/叶轮内漏语境下只补 PF2');
+  const cmp = tri('往复压缩机', '气阀内漏');
+  ok(cmp.includes('CF2') && cmp.includes('CF3') && !cmp.includes('CF1') && !cmp.some((x) => /^G/.test(x)), 'T13 压缩机内漏补 CF2/CF3，不落通用框架');
+  const flow = tri('离心泵', '口环磨损内漏，打不上量');
+  ok(flow.includes('PF1') && flow.includes('PF3'), 'T14 同时有「打不上量」等性能现象时整张性能表照常进入');
+  const rc = run(['--symptom', '闸阀关不严，内漏', '--equip-type', '闸阀', '--tag', 'XV-101'], 'gate-internal');
+  eq(((rc.j && rc.j.candidates) || [])[0] && rc.j.candidates[0].ruleId, 'SL1', 'T15 脚本端到端：闸阀内漏首位候选 SL1');
+  ok(['温度较高', '温度稍高', '温度很高', '温度越来越高'].every((t) => R.classifySymptoms('轴承' + t).includes('temperature')), 'T16 温度口语「较高、稍高、很高、越来越高」识别为温度异常');
+  ok(!R.classifySymptoms('温度较低').includes('temperature'), 'T17 「温度较低」仍不进温升口径');
+}
+
 // ============ Q. 文档、上架信息与口径一致性 ============
 {
   const ROOT = path.join(__dirname, '..');

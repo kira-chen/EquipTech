@@ -260,6 +260,29 @@ ok(r.json.dataGaps.some((g) => g.position === '整个时间窗口'), '9.11 无�
 ok(r.summary.warnings.some((w) => w.includes('未提供运行参数')), '9.12 无运行参数数据 warning');
 // 事件型记录不按缺口论
 ok(r.json.dataGaps.every((g) => g.dataType === '运行参数'), '9.13 操作/值班等事件型记录不判缺口');
+// 窗口终点晚于当前时间（平台取数时 --after 常超过当前时刻）：尚未到达的时段没有数据是正常的，不计缺口
+{
+  const C2 = require('./lib/common');
+  const nowMs = Date.now();
+  const hm = (ms) => C2.localDateTime(new Date(ms)).slice(0, 16);
+  const evIso = new Date(nowMs - 2 * 3600000).toISOString();
+  const runAt = (file, name) => {
+    const out = path.join(work, name + '-out');
+    spawnSync(process.execPath, [SCRIPT, '--tag', 'P-3201A', '--time', evIso, '--symptom', '振动升高', '--records', file,
+      '--before', '4', '--after', '24', '--gap', '120', '--out', out], { encoding: 'utf8' });
+    return JSON.parse(fs.readFileSync(path.join(out, 'investigation.json'), 'utf8'));
+  };
+  const hdr = ['时间', '位号', '参数名', '参数值', '单位', '来源'];
+  const futA = mk('future-a.xlsx', { '运行参数': [hdr, ...[-5, -4, -3, -2, -1].map((h) => [hm(nowMs + h * 3600000), 'P-3201A', '轴承温度', 70, '℃', 'DCS'])] });
+  const jA = runAt(futA, 'future-a');
+  eq(jA.dataGaps.length, 0, '9.14 窗口终点晚于当前时间：末条记录之后尚未到达的时段不计数据缺口');
+  ok(jA.warnings.some((w) => /晚于当前时间/.test(w)), '9.15 窗口终点晚于当前时间时 warning 说明缺口只判到当前时间');
+  ok(!jA.toInvestigate.some((x) => x.id === 'T11'), '9.16 未到时段不触发 T11 缺口待查项');
+  const futB = mk('future-b.xlsx', { '运行参数': [hdr, ...[-5, -4].map((h) => [hm(nowMs + h * 3600000), 'P-3201A', '轴承温度', 70, '℃', 'DCS'])] });
+  const jB = runAt(futB, 'future-b');
+  const tail = jB.dataGaps.find((g) => /末条记录/.test(g.position));
+  ok(!!tail && tail.minutes >= 235 && tail.minutes <= 245, '9.17 当前时间之前的尾部空档仍记缺口，止点为当前时间（约 240 分钟）');
+}
 
 // ================================================================ 10. 硬约束五：不涉及姓名与追责性内容
 const blame = mk('blame.xlsx', {
@@ -508,6 +531,24 @@ eq(r.json.maintenanceHistory[0].orderNo, '400013120', '19.19 订单→工单号�
 eq(r.json.maintenanceHistory[1].noticeNo, '100223344', '19.20 通知单→通知单号');
 ok(/400013120/.test(r.md), '19.21 md 显示工单号');
 ok(!r.summary.warnings.some((w) => w.includes('缺少列')), '19.22 SAP 列名无缺列 warning');
+ok(r.json.maintenanceHistory.every((x) => !['TECO', 'CLSD'].includes(x.source)), '19.22b SAP「系统状态」列不被别名「系统」当作来源');
+// 报警记录里有「系统状态」列、没有来源列时，来源不取系统状态的值
+const sysStat = mk('sysstat.xlsx', {
+  '报警记录': [
+    ['报警时间', '位号', '报警内容', '系统状态'],
+    [`${DATE} 10:12`, 'P-3201A', '轴承温度高报', '已确认'],
+  ],
+});
+r = run(sysStat, [], 'sysstat');
+ok(r.json.timeline.length === 1 && r.json.timeline[0].source !== '已确认', '19.22c 报警记录「系统状态」列不进「来源」');
+const sysSrc = mk('syssrc.xlsx', {
+  '报警记录': [
+    ['报警时间', '位号', '报警内容', '系统'],
+    [`${DATE} 10:12`, 'P-3201A', '轴承温度高报', 'DCS'],
+  ],
+});
+r = run(sysSrc, [], 'syssrc');
+eq(r.json.timeline[0].source, 'DCS', '19.22d 列名正好是「系统」时仍作来源');
 // 「设备编号」不再是位号别名：SAP 8 位设备编号列不会被当作位号
 const sapDev = mk('sapdev.xlsx', {
   '报警记录': [

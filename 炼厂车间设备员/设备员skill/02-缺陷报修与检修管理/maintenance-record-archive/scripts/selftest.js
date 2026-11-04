@@ -51,6 +51,23 @@ eq(S.classify('检修方案.docx', minor).includes('plan'), true, 'A11 文件名
 eq(S.classify('用火作业许可证.pdf', minor).includes('permit'), true, 'A12 文件名归类-用火作业许可证');
 eq(S.classify('动火作业票.pdf', minor).includes('permit'), true, 'A13 文件名归类-旧称动火票仍可归作业票');
 eq(S.classify('随便.txt', minor).length, 0, 'A14 无法归类返回空数组');
+// 作业票系统下载的 Word 原件以许可证编号命名（如 YH-20261104-003.docx），须认作作业票
+eq(S.classify('YH-20261104-003.docx', minor).includes('permit'), true, 'A14a 许可证编号命名的作业票原件（YH-）归作业票');
+eq(S.classify('MB-20261104-001.docx', minor).includes('permit'), true, 'A14b 盲板抽堵许可证编号（MB-）归作业票');
+// 不是作业票的单据不能顶作业票（作业票为必备，误归会掩盖缺失）
+eq(S.classify('盲板台账.xlsx', minor).includes('permit'), false, 'A14c 盲板台账不是作业票');
+eq(S.classify('用火分析单.pdf', minor).includes('permit'), false, 'A14d 用火分析单不是作业票');
+// 质量验收记录（H/W 点见证）不是完工验收单
+eq(S.classify('质量验收记录（H点见证）.pdf', minor).includes('acceptance'), false, 'A14e 质量验收记录不顶完工验收单');
+eq(S.classify('完工验收单.pdf', minor).includes('acceptance'), true, 'A14f 完工验收单归验收单');
+eq(S.classify('检修质量验收单.pdf', minor).includes('acceptance'), true, 'A14g 「检修质量验收单」带「验收单」字样，归验收单（不被「质量」排除）');
+eq(S.classify('P-101机封更换质量验收单.docx', minor).includes('acceptance'), true, 'A14h 「…质量验收单」归验收单');
+eq(S.classify('质量竣工验收报告.pdf', minor).includes('acceptance'), true, 'A14i 「竣工验收」归验收单');
+// 无损检测的 RT/UT/MT/PT 只认独立缩写，PTA、MTBE、PPT 不是无损检测报告
+const seReq = S.requiredMaterials('大检修', { ndt: true }, true);
+eq(S.classify('PTA装置检修方案.docx', seReq).some((k) => k === 'ndt' || k === 'seNdt'), false, 'A14g PTA 不当 PT 检测');
+eq(S.classify('MTBE单元检修总结.docx', seReq).some((k) => k === 'ndt' || k === 'seNdt'), false, 'A14h MTBE 不当 MT 检测');
+eq(S.classify('焊缝RT检测报告.pdf', seReq).includes('seNdt'), true, 'A14i 「RT检测报告」归无损检测报告');
 ok(major.some((x) => x.key === 'summary' && x.mandatory), 'A15 **大检修的检修总结为必备**');
 ok(['qcRecord', 'trialRecord', 'spareIssue', 'partCert', 'tcfdRecord', 'midHandover'].every((k) => major.some((x) => x.key === k)), 'A16 大检修追加质量验收记录/试车记录/备件领用单/更换部件质量证明/三查四定/中交记录');
 ok(S.requiredMaterials('抢修').some((x) => x.key === 'failureRecord'), 'A17 抢修追加故障（事件）记录');
@@ -125,6 +142,12 @@ eq(r.s.counts.unclassified, 2, 'E1 两份无法归类');
 ok(r.j.unclassified.every((x) => /未按文件名猜测强行归类/.test(x.note)), 'E2 说明未强行归类');
 ok(r.j.warnings.filter((w) => w.includes('无法识别归属类型')).length === 2, 'E3 各有 warning');
 ok(/## 四、待认领材料/.test(r.md) && /会议纪要/.test(r.md), 'E4 待认领单列一节');
+// 认得出类型、只是本次范围没要求的材料：仍进待认领、不计入已归档，但说明对应类型并提示核对范围开关（不说成「无法识别」）
+const UNC2 = mk('unc2.xlsx', { '材料清单': [['文件名'], ['检修记录卡.xlsx'], ['焊工资质证明及焊接记录.pdf']] });
+r = run([...BASE, '--type', '日常维修', '--materials', UNC2], 'unclassified2');
+const wq = r.j.unclassified.find((x) => /焊工资质/.test(x.name));
+ok(wq && /焊接记录与焊工资质|焊工资质证明与焊接记录/.test(wq.note) && /范围开关|--scope/.test(wq.note), 'E5 范围外的已知类型材料说明对应类型并提示核对范围开关');
+ok(!r.j.archived.some((x) => x.files.some((f) => /焊工资质/.test(f.name))), 'E6 范围外材料不计入已归档');
 
 // ============ F. 目录扫描 ============
 const dir = path.join(work, 'mdir');

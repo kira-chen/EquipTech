@@ -449,6 +449,84 @@ ok(readXlsx(path.join(msOut, 'sample-sap-export.xlsx'))['技术对象清单'][2]
 r = run(['--ledger', path.join(msOut, 'sample-sap-export.xlsx'), '--audience', '新员工'], 'ms-sap');
 eq(r.s.counts.equipment, 5, 'N49 SAP 样例读到 5 台设备（seed 变化不变）');
 
+// ============ P. 缺陷修复（2026-11-04 核查）============
+// 数值题干遮蔽：区间两端、比较词后不带单位的数、分数都要遮，题干不得留答案数值
+{
+  const RS = mkMd('spec-range.md', '# 离心泵\n4.1 联轴器对中径向偏差控制在 0.05~0.10 mm。\n4.2 轴承箱油位不低于 1/2 视镜。\n4.3 冷却水回水温度不高于 40。\n4.4 备用泵盘车角度 180°。\n4.5 润滑油每 3 个月更换一次。\n');
+  r = run(['--scope', '离心泵', '--audience', '在岗', '--docs', RS, '--types', '简答'], 'mask');
+  const nq = r.j.questions.filter((q) => q.kind === '数值类');
+  const stemOf = (k) => (nq.find((q) => q.answer.includes(k)) || {}).stem || '';
+  ok(!/0\.05|0\.10/.test(stemOf('0.05~0.10')), `P1 区间两端都遮蔽（实际题干：${stemOf('0.05~0.10')}）`);
+  ok(!/1\/2/.test(stemOf('1/2')), `P2 「不低于 1/2」比较词后的分数遮蔽（实际题干：${stemOf('1/2')}）`);
+  ok(!/40/.test(stemOf('不高于 40')), `P3 比较词后不带单位的数遮蔽（实际题干：${stemOf('不高于 40')}）`);
+  ok(T.hasNumericValue('备用泵盘车角度 180°') && nq.some((q) => q.answer.includes('180°')) && !/180/.test(stemOf('180°')), 'P4 「180°」识别为数值条款并遮蔽');
+  ok(nq.every((q) => T.digitsOf(q.stem) === ''), 'P5 数值题干中不留任何技术数值');
+  eq(r.s.counts.clausesNumeric, 5, 'P6 五条均识别为数值条款');
+}
+// 数值题干遮蔽：连字符区间两端、负数（负号前为比较词/空白/句首时算数的一部分）都要遮；字母后的「-」按位号不遮
+{
+  const RS2 = mkMd('spec-neg.md', '# 离心泵\n5.1 轴承间隙应为0.05-0.10mm。\n5.2 环境温度低于-10℃时应停机。\n5.3 冷却水温度控制在 -20~-5℃。\n5.4 P-2101A 出口压力不低于 1.2 MPa。\n5.5 密封冲洗压差 0.1-0.2。\n');
+  r = run(['--scope', '离心泵', '--audience', '在岗', '--docs', RS2, '--types', '简答'], 'mask-neg');
+  const nq = r.j.questions.filter((q) => q.kind === '数值类');
+  const stemOf = (k) => (nq.find((q) => q.answer.includes(k)) || {}).stem || '';
+  ok(!!stemOf('0.05-0.10') && !/0\.05|0\.10/.test(stemOf('0.05-0.10')), `P5a 连字符区间两端都遮蔽（实际题干：${stemOf('0.05-0.10')}）`);
+  ok(!!stemOf('-10℃') && !/10/.test(stemOf('-10℃')) && !/低于\s*-/.test(stemOf('-10℃')), `P5b 「低于-10℃」负数连同负号遮蔽（实际题干：${stemOf('-10℃')}）`);
+  ok(!!stemOf('-20~-5') && !/20|5℃|-\s*＿/.test(stemOf('-20~-5')), `P5c 负数区间两端连同负号遮蔽（实际题干：${stemOf('-20~-5')}）`);
+  ok(/P-2101A/.test(stemOf('P-2101A')) && !/1\.2/.test(stemOf('P-2101A')), `P5d 字母后的「-」按位号保留，规定值遮蔽（实际题干：${stemOf('P-2101A')}）`);
+  ok(!!stemOf('0.1-0.2') && !/0\.1|0\.2/.test(stemOf('0.1-0.2')), `P5e 不带单位的连字符区间右端也遮（实际题干：${stemOf('0.1-0.2')}）`);
+}
+// 反应器归塔器容器（与 operator-anomaly-guide 同源）
+eq(T.typeOf('加氢精制反应器'), '塔器容器', 'P7 「反应器」归塔器容器，不落到通用');
+// 资料目录里的 PDF 与不支持格式不得静默丢弃：逐个 warning，PDF 提示先转 txt/docx
+{
+  const dd = path.join(work, 'docs-pdf');
+  fs.mkdirSync(dd, { recursive: true });
+  fs.writeFileSync(path.join(dd, '规定.md'), '# 离心泵\n4.1 备用泵每 7 天盘车一次。\n', 'utf8');
+  fs.writeFileSync(path.join(dd, '压缩机说明书.pdf'), '%PDF-1.4', 'utf8');
+  fs.writeFileSync(path.join(dd, '课件.pptx'), 'x', 'utf8');
+  r = run(['--scope', '离心泵', '--audience', '在岗', '--docs', dd], 'pdfdir');
+  ok(r.s.warnings.some((w) => /压缩机说明书\.pdf/.test(w) && /pdf 技能/.test(w)), 'P8 目录中的 PDF 逐个 warning 并提示先用平台 pdf 技能转 txt/docx');
+  ok(r.s.warnings.some((w) => /课件\.pptx/.test(w) && /已跳过/.test(w)), 'P9 目录中不支持的格式逐个 warning');
+  eq(r.s.counts.clausesNumeric, 1, 'P10 受支持的资料照常抽取');
+  const one = run(['--scope', '离心泵', '--audience', '在岗', '--docs', path.join(dd, '压缩机说明书.pdf')], 'pdfone');
+  ok(one.s.warnings.some((w) => /pdf 技能/.test(w)), 'P11 单独传 PDF 同样提示前置转换');
+}
+
+// 「数字-数字」编号（E-1201-3、M20-8.8 级）不是区间，尾段不遮；真区间与带单位规定值照常遮
+{
+  const RS3 = mkMd('spec-code.md', '# 换热器\n6.1 E-1201-3 次试压记录应存档。\n6.2 法兰螺栓采用 M20-8.8级。\n6.3 管程试验压力为 1.6 MPa。\n6.4 每 3-5 天检查一次。\n');
+  r = run(['--scope', '换热器', '--audience', '在岗', '--docs', RS3, '--types', '简答'], 'mask-code');
+  const nq = r.j.questions.filter((q) => q.kind === '数值类');
+  const stemOf = (k) => (nq.find((q) => q.answer.includes(k)) || {}).stem || '';
+  ok(/E-1201-3\s*次/.test(stemOf('E-1201-3')), `P12 「E-1201-3 次」编号尾段不遮（实际题干：${stemOf('E-1201-3')}）`);
+  ok(/M20-8\.8级/.test(stemOf('M20-8.8')), `P13 「M20-8.8级」编号尾段不遮（实际题干：${stemOf('M20-8.8')}）`);
+  ok(!!stemOf('1.6 MPa') && !/1\.6/.test(stemOf('1.6 MPa')), `P14 带单位规定值照常遮（实际题干：${stemOf('1.6 MPa')}）`);
+  ok(!!stemOf('3-5 天') && !/3|5/.test(stemOf('3-5 天')), `P15 「3-5 天」真区间两端照常遮（实际题干：${stemOf('3-5 天')}）`);
+}
+// 同时给 --ledger 与 --scope：按 scope 过滤台账，不再把台账全部设备类型都带进来
+{
+  const LED3 = mkXlsx('led3.xlsx', {
+    '设备台账': [['位号', '设备名称', '设备类型', '区域'],
+      ['P-01', '进料泵', '离心泵', '一区'],
+      ['P-02', '回流泵', '离心泵', '一区'],
+      ['M-01', '鼓风机电机', '电机', '二区'],
+      ['E-01', '原油换热器', '换热器', '二区']],
+  });
+  r = run(['--ledger', LED3, '--scope', '离心泵', '--audience', '新员工'], 'ledger-scope');
+  eq(r.s.ok, true, 'I10 台账 + scope 可生成');
+  eq(r.s.counts.equipTypes, 1, 'I11 台账按 scope 过滤后只剩离心泵一类');
+  eq(r.s.counts.equipment, 2, 'I12 过滤后只剩 2 台泵');
+  ok(!/M-01|E-01/.test(r.outline) && /P-01/.test(r.outline), 'I13 提纲不列 scope 以外的设备位号');
+  ok(r.s.warnings.some((w) => /--scope/.test(w) && /保留 2 台/.test(w) && /2 台/.test(w)), 'I14 warning 写明按 scope 过滤的保留 / 剔除台数');
+  r = run(['--ledger', LED3, '--scope', '离心泵,压缩机', '--audience', '新员工'], 'ledger-scope2');
+  eq(r.s.counts.equipTypes, 2, 'I15 scope 中台账没有的类型仍保留一节');
+  ok(r.s.warnings.some((w) => /清单中没有「压缩机」类设备/.test(w)), 'I16 scope 中台账没有的类型 warning');
+  r = run(['--ledger', LED3, '--scope', 'E-01', '--audience', '新员工'], 'ledger-scope3');
+  eq(r.s.counts.equipment, 1, 'I17 scope 写位号时按位号过滤台账');
+  r = run(['--ledger', LED3, '--scope', '全部', '--audience', '新员工'], 'ledger-scope4');
+  eq(r.s.counts.equipment, 4, 'I18 scope「全部」不过滤台账');
+}
+
 console.log(`\n${'='.repeat(56)}`);
 console.log(`training-material-generator 自测：${pass} 通过，${fail} 失败`);
 if (failures.length) { console.log('\n失败项：'); failures.forEach((f) => console.log('  ✗ ' + f)); }

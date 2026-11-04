@@ -103,7 +103,9 @@ function extractFromJson(name, j) {
     if (j.metrics) push('平均闭环时长', j.metrics.avgCycleDays, '天');
     // work-order-tracker：vendor = 承修单位/工作中心，owner = 责任人（个人）。责任方写单位，不点人名；无 vendor 时才退回 owner
     for (const o of (j.overdue || []).slice(0, 10)) {
-      out.issues.push({ text: `${o.no || o.orderNo || ''} ${o.tag || ''} 超期 ${o.overdueDays ?? '—'} 天，责任方 ${o.vendor || o.owner || '未填写'}`, tag: o.tag, source: name });
+      // 带设备名称与故障描述：公司层级去位号、工单号后仍能看出是哪台设备、什么问题（去位号不等于去信息）
+      const what = [o.name, o.fault || o.desc].filter(Boolean).join('，');
+      out.issues.push({ text: `${o.no || o.orderNo || ''} ${o.tag || ''} 超期 ${o.overdueDays ?? '—'} 天，责任方 ${o.vendor || o.owner || '未填写'}${what ? `（${what}）` : ''}`, tag: o.tag, source: name });
     }
   } else if (j.counts && j.counts.byLevel && j.defects) {                 // defects.json
     out.type = '缺陷登记';
@@ -111,10 +113,35 @@ function extractFromJson(name, j) {
     for (const [k, v] of Object.entries(j.counts.byLevel || {})) push(`　${k}`, v);
   } else if (j.metrics && j.failures !== undefined && j.dataGaps !== undefined) {   // periodic.json（equipment-weekly-monthly-report）
     out.type = '周报月报';
-    for (const k of Object.keys(METRIC_CN)) if (k in j.metrics && (typeof j.metrics[k] === 'number' || j.metrics[k] === null)) push(cnLabel(k), j.metrics[k], cnUnit(k));
+    // 需按厂内口径复算的指标（含其分列）不引用数值：正常的 periodic.json 已置为 null，旧样例或手工 JSON 可能仍带数
+    const recompute = new Set(((j.dataGaps && j.dataGaps.recompute) || []).map((x) => x.metric));
+    const isRecompute = (label) => recompute.has(label) || (recompute.has('检修计划完成率') && /^(大检修|日常维修)计划完成率$/.test(label));
+    for (const k of Object.keys(METRIC_CN)) {
+      if (!(k in j.metrics) || !(typeof j.metrics[k] === 'number' || j.metrics[k] === null)) continue;
+      if (isRecompute(cnLabel(k))) {
+        if (typeof j.metrics[k] === 'number') warnings.push(`${name} 把「${cnLabel(k)}」列为需复算，却仍带数值 ${j.metrics[k]}，已不引用该数值`);
+        continue;
+      }
+      push(cnLabel(k), j.metrics[k], cnUnit(k));
+    }
     if (j.metrics.basedOn) out.items.push({ text: `数据覆盖：${j.metrics.basedOn}`, source: name });
     if (j.dataGaps && Array.isArray(j.dataGaps.recompute)) for (const x of j.dataGaps.recompute) out.issues.push({ text: `${x.metric} 需按厂内口径复算，本期未出数`, source: name });
-    for (const h of (j.highlights || []).slice(0, 10)) out.issues.push({ text: `${h.type}：${h.text}`, source: name });
+    // 责任方写单位，不点人名：超期工单优先用 highlights.unit / overdueList.workCenter（工作中心）；
+    // 旧版 periodic.json 只有「责任方 <责任人>」文字，检修计划只有「责任人」，一律去掉人名并 warning
+    const ovByNo = new Map(((j.orders && j.orders.overdueList) || []).filter((o) => o && o.no).map((o) => [String(o.no), o]));
+    let dropped = 0;
+    for (const h of (j.highlights || []).slice(0, 10)) {
+      let text = C.str(h.text);
+      if (h.type === '超期工单' && !h.unit) {
+        const no = h.no || (text.match(/^(\S+)/) || [])[1];
+        const unit = no && ovByNo.get(String(no)) ? ovByNo.get(String(no)).workCenter : null;
+        text = text.replace(/，责任方 ([^，。；]*)$/, (m0, who) => { if (unit) return `，责任方 ${unit}`; if (who && who !== '未记录') dropped++; return ''; });
+      } else if (h.type === '检修计划未完成') {
+        text = text.replace(/，责任人 ([^，。；]*)$/, (m0, who) => { if (who && who !== '未记录') dropped++; return ''; });
+      }
+      out.issues.push({ text: `${h.type}：${text}`, tag: h.tag, source: name });
+    }
+    if (dropped) warnings.push(`${name} 有 ${dropped} 条重点事项的责任方是责任人姓名（未带工作中心），汇报稿责任方写单位、不点人名，已去掉；如需写明责任单位，请用新版 equipment-weekly-monthly-report 重新生成（带工作中心）或由汇报人补充`);
   } else if (j.counts && j.status !== undefined && j.orders !== undefined) {  // daily.json（equipment-daily-report）
     out.type = '设备日报';
     for (const [k, v] of Object.entries(j.counts)) if (typeof v === 'number') push(cnLabel(k), v, cnUnit(k));
@@ -207,12 +234,21 @@ function main() {
     }
   }
 
-  // ---- 需决策与遗留
+  // ---- 去位号（公司层级或 --hide-tags）：去工单号与位号，保留设备名称
+  const strip = (t) => t
+    .replace(/^(WO|GD)-[\w-]+\s*/i, '')              // 开头的工单号
+    .replace(/\b[A-Z]{1,3}-\d{3,}[A-Z]?\s*/g, '')    // 位号
+    .replace(/\b\d{7,8}\b\s*/g, '')                 // SAP 订单/通知单号
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  const tagFree = (t) => (spec.tagLevel ? t : (strip(t) || '（去位号后无剩余内容，由汇报人补充）'));
+
+  // ---- 需决策与遗留（公司层级或 --hide-tags 同样去位号、工单号）
   const needDecision = a['need-decision']
     ? a['need-decision'].split(/[;；\n]/).map((x) => x.trim()).filter(Boolean)
-      .map((x) => ({ text: x, note: '须写清请求决策的具体内容与可选方案' }))
+      .map((x) => ({ text: tagFree(x), note: '须写清请求决策的具体内容与可选方案', ...(tagFree(x) !== x ? { tagsRemoved: true } : {}) }))
     : [];
-  const pending = a.pending ? a.pending.split(/[;；\n]/).map((x) => x.trim()).filter(Boolean) : [];
+  const pending = a.pending ? a.pending.split(/[;；\n]/).map((x) => x.trim()).filter(Boolean).map(tagFree) : [];
   if (!needDecision.length) warnings.push('未提供需决策事项（--need-decision），该节留空由汇报人填写');
 
   // ---- 时间分配（按听众层级默认权重，或 --weights）
@@ -230,13 +266,6 @@ function main() {
     needDecision: needDecision.length, pending: pending.length,
   };
 
-  // ---- 去位号（公司层级或 --hide-tags）：去工单号与位号，保留设备名称
-  const strip = (t) => t
-    .replace(/^(WO|GD)-[\w-]+\s*/i, '')              // 开头的工单号
-    .replace(/\b[A-Z]{1,3}-\d{3,}[A-Z]?\s*/g, '')    // 位号
-    .replace(/\b\d{7,8}\b\s*/g, '')                 // SAP 订单/通知单号
-    .replace(/\s{2,}/g, ' ')
-    .trim();
   const issueText = (it) => (spec.tagLevel ? it.text : (strip(it.text) || '（该条目去除位号后无剩余信息，详见附表）'));
   const issueLimit = spec.detail === 'low' ? 5 : 20;
 

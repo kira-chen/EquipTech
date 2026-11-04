@@ -6,6 +6,7 @@
  * 可选：--periods <回溯期数> --from <起始日期> --equipment "<位号,位号>" --param "<参数名>"
  *       --threshold <斜率阈值> --r2-min <R²下限,默认0.5> --horizon <到限关注窗口天数,默认365>
  *       --wide（强制按宽表读取）--wide-param "<参数名>"（宽表无参数名列时统一指定）
+ *       --status <设备台账/DCS 启停记录 xlsx、csv 文件或 csv 目录>（判定设备是否停运）
  * 产出：<out>/trends.json、alert.md、summary.json
  *
  * 硬约束：
@@ -16,6 +17,12 @@
  *   5. 斜率方向与限值方向不一致（如下降 vs 上限）→ 不预测到限时间
  *   6. 采集时间重复 → warning 并保留，不自动去重
  *   7. 宽表（一列一期）自动识别并转为长表；日期列头须含年份或为 Excel 日期
+ *   8. 停运设备（备用/停运/停用/检修）：低值不判越低报/低低报、不做劣化趋势判定，单列「停运中（不判定）」+ warning；
+ *      越高报/高高报照常判。运行状态：启停记录 > 台账 > 数据自判（同设备电流/转速最新值≈0 → 疑似停运）；
+ *      只对有设备位号的序列生效（只有测点号的序列归属不定，不套用）
+ *   9. 在运设备回溯窗口里的停机期点（启停记录停机段内，或无启停记录时同期电流/转速≈0）剔出回归与劣化判定；
+ *      窗口内有停机期（切泵）的序列，剔除后少于 4 期 → 数据不足（切泵后运行期数偏少），不判劣化、不预测到限；
+ *      窗口内无停机期的序列最低仍为 3 期；越限判定照常用剩余点
  */
 const fs = require('fs');
 const os = require('os');
@@ -25,7 +32,7 @@ const C = require('./lib/common');
 
 const warnings = [];
 const num = C.makeNum(warnings);
-const VALUE_OPTS = ['input', 'workshop', 'date', 'out', 'periods', 'from', 'equipment', 'param', 'threshold', 'r2-min', 'horizon', 'wide-param'];
+const VALUE_OPTS = ['input', 'workshop', 'date', 'out', 'periods', 'from', 'equipment', 'param', 'threshold', 'r2-min', 'horizon', 'wide-param', 'status'];
 const FLAG_OPTS = ['help', 'wide'];
 
 /**
@@ -45,6 +52,14 @@ const ALIASES = C.mergeAliases({
   '上上限': ['高高报', '高高限', '高高报值', '高高报限值', '上上限', 'HH', 'PHH', '联锁上限'],
   '下限': ['报警下限', '下限值', '下限', '低限', '低报', '低报值', '低报限值', 'L', 'LO', 'PL'],
   '下下限': ['低低报', '低低限', '低低报值', '低低报限值', '下下限', 'LL', 'PLL', '联锁下限'],
+  // 停运自判的比较基准（可选列，参数记录或报警限值里给均可）
+  '额定值': ['额定值', '额定电流', '额定转速'],
+  '量程上限': ['量程上限', '量程高限'],
+  // --status：DCS 启停记录（一行一个运行段）与设备台账
+  '开机时间': ['开机时间', '启动时间', '开车时间', '投运时间'],
+  '停机时间': ['停机时间', '停车时间', '停运时间', '停止时间'],
+  '运行状态': ['运行状态', '运转状态', '开停状态', '启停状态'],
+  '使用状态': ['使用状态', '设备状态', '状态'],
 });
 
 /** R² 分档的置信提示 */
@@ -162,6 +177,92 @@ function numWide(v, label) {
   return null;
 }
 
+// ---------------------------------------------------------------- 运行状态（停运设备不判低限）
+/** 台账状态值：备用/停运/停用/检修 → 停运；明确「运行」→ 运行；「在用」等只说明在册、不说明在转 → 不下结论 */
+const STOPPED_RE = /备用|停运|停用|检修|停机|停车/;
+const RUNNING_RE = /^(运行|运行中|运转|在运|在运行|开机)$/;
+function ledgerState(v) {
+  const t = C.str(v).replace(/\s+/g, '');
+  if (!t) return null;
+  if (STOPPED_RE.test(t)) return 'stopped';
+  if (RUNNING_RE.test(t)) return 'running';
+  return null;
+}
+const eqKey = (t) => C.str(t).replace(/\s+/g, '').toUpperCase();
+/** 运行指示位号：电流 / 转速 */
+function runIndicator(param, unit) {
+  if (/电流/.test(param)) return 'current';
+  if (/转速/.test(param) || /^(r\/min|rpm)$/i.test(unit || '')) return 'speed';
+  return null;
+}
+
+/**
+ * 读 --status：xlsx / 单个 csv / csv 目录；按表头识别「启停记录」（位号 + 开机时间/停机时间）与「设备台账」（位号 + 运行状态/使用状态）。
+ * 返回 { runs: Map(eqKey→[{start,stop,startText,stopText}]), ledger: Map(eqKey→{state,text}), sheets:[...] }
+ */
+function loadStatus(p) {
+  if (!fs.existsSync(p)) throw new Error(`--status 不存在: ${p}`);
+  let book;
+  if (fs.statSync(p).isDirectory()) book = readCsvDir(p);
+  else if (/\.csv$/i.test(p)) {
+    const name = path.basename(p, path.extname(p));
+    book = { [name]: readCsvDir(path.dirname(p))[name] };
+  } else book = readXlsx(p);
+  const norm = (r) => (r || []).map((c) => C.str(c).replace(/\s+/g, ''));
+  const has = (rows, name) => rows.slice(0, 10).some((r) => C.findCol(norm(r), name, ALIASES) >= 0 && C.findCol(norm(r), '位号', ALIASES) >= 0);
+  const runs = new Map(), ledger = new Map(), sheets = [];
+  for (const [sheet, rows] of Object.entries(book)) {
+    if (!rows || !rows.length) continue;
+    if (has(rows, '开机时间') || has(rows, '停机时间')) {
+      sheets.push({ sheet, kind: '启停记录' });
+      const recs = C.toRecords(rows, ['位号', '开机时间', '停机时间'], sheet, ['设备名称'], [], ALIASES);
+      for (const r of recs) {
+        const k = eqKey(r['位号']);
+        if (!k) continue;
+        const st = C.str(r['开机时间']), sp = C.str(r['停机时间']);
+        const start = st ? ts(st) : -Infinity, stop = sp ? ts(sp) : null;
+        if (st && start === null) { warnings.push(`--status「${sheet}」第${r._row}行 开机时间「${st}」无法解析，该行不参与运行状态判定`); continue; }
+        if (sp && stop === null) { warnings.push(`--status「${sheet}」第${r._row}行 停机时间「${sp}」无法解析，该行不参与运行状态判定`); continue; }
+        if (!st && !sp) continue;
+        if (stop !== null && stop < start) { warnings.push(`--status「${sheet}」第${r._row}行 停机时间早于开机时间，该行不参与运行状态判定`); continue; }
+        if (!runs.has(k)) runs.set(k, []);
+        runs.get(k).push({ start, stop, startText: st ? C.normDateTime(st) : null, stopText: sp ? C.normDateTime(sp) : null });
+      }
+    } else if (has(rows, '运行状态') || has(rows, '使用状态')) {
+      sheets.push({ sheet, kind: '设备台账' });
+      const recs = C.toRecords(rows, ['位号'], sheet, ['运行状态', '使用状态'], [], ALIASES);
+      const col = recs.hasCol('运行状态') ? '运行状态' : '使用状态';
+      for (const r of recs) {
+        const k = eqKey(r['位号']);
+        if (!k) continue;
+        ledger.set(k, { state: ledgerState(r[col]), text: C.str(r[col]), col });
+      }
+    }
+  }
+  if (!sheets.length) throw new Error('--status 里未识别出 DCS 启停记录（位号 + 开机时间/停机时间）或设备台账（位号 + 使用状态/运行状态），请检查文件');
+  return { runs, ledger, sheets };
+}
+/** 启停记录：取开机时间不晚于 ref 的最近一段；该段停机时间为空或晚于 ref → 运行，否则停运；无此类记录 → null */
+function runsState(segs, ref) {
+  const before = segs.filter((g) => g.start <= ref).sort((x, y) => x.start - y.start);
+  if (!before.length) {
+    const next = segs.filter((g) => Number.isFinite(g.start)).sort((x, y) => x.start - y.start)[0];
+    return next ? { state: 'stopped', basis: `启停记录：最早一次开机 ${next.startText} 晚于最新数据采集时间` } : null;
+  }
+  const g = before[before.length - 1];
+  if (g.stop === null || g.stop > ref) return { state: 'running', basis: g.startText ? `启停记录：${g.startText} 开机${g.stopText ? `，${g.stopText} 停机（晚于最新数据采集时间）` : '，未停机'}` : '启停记录：未停机' };
+  return { state: 'stopped', basis: `启停记录：${g.stopText} 停机后无开机记录` };
+}
+
+/**
+ * 启停记录：t 时刻落在停机段内 → true。不在任何运行段内，且此前有停机记录、或此后有开机记录（开机即说明开机前处于停机）。
+ * 启停记录导出只含与导出窗口有交集的运行段，所以首段开机之前的采集点按停机处理。
+ */
+function inStopGap(segs, t) {
+  if (segs.some((g) => g.start <= t && (g.stop === null || t < g.stop))) return false;
+  return segs.some((g) => (g.stop !== null && g.stop <= t) || (Number.isFinite(g.start) && g.start > t));
+}
+
 function main() {
   const a = C.parseArgs(process.argv.slice(2), VALUE_OPTS, FLAG_OPTS);
   if (!a.input) throw new Error('缺少 --input');
@@ -196,6 +297,7 @@ function main() {
   const only = a.equipment ? new Set(a.equipment.split(/[,，]/).map((x) => x.trim()).filter(Boolean)) : null;
   const onlyParam = a.param ? new Set(a.param.split(/[,，]/).map((x) => x.trim()).filter(Boolean)) : null;
   const outDir = a.out || path.join(os.tmpdir(), 'pta-out');
+  const status = a.status ? loadStatus(a.status) : null;
 
   const book = loadBook(a.input);
 
@@ -212,7 +314,7 @@ function main() {
   } else if (a['wide-param']) {
     warnings.push('--wide-param 仅在宽表时生效，本次输入为长表，已忽略');
   }
-  const recs = C.toRecords(recSheet, ['采集时间', '数值'], '参数记录', ['位号', '测点号', '设备名称', '参数名', '单位'], warnings, ALIASES);
+  const recs = C.toRecords(recSheet, ['采集时间', '数值'], '参数记录', ['位号', '测点号', '设备名称', '参数名', '单位', '额定值', '量程上限'], warnings, ALIASES);
   if (!recs.hasCol('采集时间')) throw new Error('「参数记录」没有采集时间列（长表须有采集时间列；宽表的日期列头须含年份，如 2026-09-01，脚本不猜年份）');
   if (!recs.hasCol('数值')) throw new Error('「参数记录」没有数值（测值/测量值/PV）列');
   if (!recs.hasCol('位号') && !recs.hasCol('测点号')) throw new Error('「参数记录」既无位号（功能位置/设备位号）列也无测点号（仪表位号）列，无法构成序列');
@@ -226,6 +328,7 @@ function main() {
   for (const r of recs) {
     const pointTag = C.str(r['测点号']);
     let tag = C.str(r['位号']);
+    const equipTag = tag;   // 只有设备位号列给出的才算设备归属；测点号兜底的序列不套用停运判定
     let param = C.str(r['参数名']);
     if (!tag && pointTag) { tag = pointTag; pointTagAsTag++; }
     if (!param && pointTag) { param = pointTag; pointTagAsParam++; }
@@ -234,8 +337,16 @@ function main() {
     if (only && !only.has(tag) && !only.has(pointTag)) continue;
     if (onlyParam && !onlyParam.has(param) && !onlyParam.has(pointTag)) continue;
     const k = key(tag, param);
-    if (!series.has(k)) series.set(k, { tag, pointTag, name: C.str(r['设备名称']), param, unit: C.str(r['单位']), points: [], badPoints: [] });
+    if (!series.has(k)) series.set(k, { tag, pointTag, equipTag: equipTag || null, name: C.str(r['设备名称']), param, unit: C.str(r['单位']), points: [], badPoints: [], ref: null });
     const s = series.get(k);
+    if (!s.equipTag && equipTag) s.equipTag = equipTag;
+    if (s.ref === null) {
+      for (const col of ['额定值', '量程上限']) {
+        if (C.str(r[col]) === '') continue;
+        const rv = num(r[col], { sheet: '参数记录', row: r._row, col });
+        if (rv !== null && rv > 0) { s.ref = { v: rv, kind: col }; break; }
+      }
+    }
     if (!s.name && C.str(r['设备名称'])) s.name = C.str(r['设备名称']);
     if (!s.unit && C.str(r['单位'])) s.unit = C.str(r['单位']);
     if (!s.pointTag && pointTag) s.pointTag = pointTag;
@@ -265,7 +376,7 @@ function main() {
   const limits = new Map();   // tag||param -> {hi, hh, lo, ll, unit}
   let twoLevel = false;
   if (limSheet) {
-    const lrecs = C.toRecords(limSheet, ['参数名'], '报警限值', ['位号', '测点号', '上限', '上上限', '下限', '下下限', '单位'], warnings, ALIASES);
+    const lrecs = C.toRecords(limSheet, ['参数名'], '报警限值', ['位号', '测点号', '上限', '上上限', '下限', '下下限', '单位', '额定值', '量程上限'], warnings, ALIASES);
     twoLevel = lrecs.hasCol('上上限') || lrecs.hasCol('下下限');
     for (const r of lrecs) {
       const tag = C.str(r['位号']) || C.str(r['测点号']), param = C.str(r['参数名']) || C.str(r['测点号']);
@@ -274,7 +385,14 @@ function main() {
       const hh = num(r['上上限'], { sheet: '报警限值', row: r._row, col: '上上限' });
       const lo = num(r['下限'], { sheet: '报警限值', row: r._row, col: '下限' });
       const ll = num(r['下下限'], { sheet: '报警限值', row: r._row, col: '下下限' });
+      let ref = null;
+      for (const col of ['额定值', '量程上限']) {
+        if (C.str(r[col]) === '') continue;
+        const rv = num(r[col], { sheet: '报警限值', row: r._row, col });
+        if (rv !== null && rv > 0) { ref = { v: rv, kind: col }; break; }
+      }
       if (hi === null && lo === null && hh === null && ll === null) {
+        if (ref) { limits.set(key(tag, param), { hi, hh, lo, ll, unit: C.str(r['单位']), ref, refOnly: true }); continue; }
         warnings.push(`工作表「报警限值」第${r._row}行 设备「${tag}」参数「${param}」高报/高高报/低报/低低报均为空或无法解析，该项不判越限`);
         continue;
       }
@@ -283,17 +401,99 @@ function main() {
       if (lo !== null && ll !== null && ll > lo) warnings.push(`工作表「报警限值」第${r._row}行 设备「${tag}」参数「${param}」低低报（${ll}）大于低报（${lo}），已原样保留，请核实限值表`);
       const k = key(tag, param);
       if (limits.has(k)) warnings.push(`工作表「报警限值」第${r._row}行 设备「${tag}」参数「${param}」限值重复出现，以后一条为准，请核实`);
-      limits.set(k, { hi, hh, lo, ll, unit: C.str(r['单位']) });
+      limits.set(k, { hi, hh, lo, ll, unit: C.str(r['单位']), ref });
     }
   } else {
     warnings.push('未提供「报警限值」工作表，只计算趋势不判越限，也不预测到限时间');
   }
 
-  // ---- 逐条序列计算
-  const overLimit = [], deteriorating = [], stable = [], insufficientData = [], items = [];
+  const limOf = (s) => {
+    const l = limits.get(key(s.tag, s.param)) || (s.pointTag ? limits.get(key(s.pointTag, s.param)) || limits.get(key(s.pointTag, s.pointTag)) : null) || null;
+    return l;
+  };
+
+  // ---- 运行状态：启停记录 > 台账 > 数据自判（同设备电流/转速最新值≈0）。按设备位号归属，参考时刻 = 该设备最新一期数据的采集时间
+  const equipSeries = new Map();   // eqKey -> [series]
   for (const s of series.values()) {
-    const k = key(s.tag, s.param);
-    const lim = limits.get(k) || (s.pointTag ? limits.get(key(s.pointTag, s.param)) || limits.get(key(s.pointTag, s.pointTag)) : null) || null;
+    if (!s.equipTag) continue;
+    const k = eqKey(s.equipTag);
+    if (!equipSeries.has(k)) equipSeries.set(k, []);
+    equipSeries.get(k).push(s);
+  }
+  /** 电流/转速位号的≈0 阈值：额定值或量程上限的 2%；无基准时电流 ≤0.5 A、转速 =0 */
+  const zeroThr = (s, kind) => {
+    const lim = limOf(s);
+    const base = s.ref || (lim && lim.ref) || null;
+    const unit = s.unit || (lim && lim.unit) || '';
+    const thr = base ? base.v * 0.02 : kind === 'current' && (!unit || /^A$/i.test(unit)) ? 0.5 : 0;
+    const thrText = base ? `≤${base.kind} ${C.fmt(base.v, 3)} 的 2%` : thr ? `≤${thr} A` : '=0';
+    return { thr, thrText, unit };
+  };
+  const runState = new Map();   // eqKey -> { state, source, basis }
+  const stopAt = new Map();     // eqKey -> { source, test(t) }：逐期判停机，用于剔除在运设备回溯窗口里的停机期点
+  for (const [k, list] of equipSeries) {
+    const indAll = list.map((s) => ({ s, kind: runIndicator(s.param, s.unit) })).filter((x) => x.kind && x.s.points.length);
+    if (status && status.runs.has(k)) {
+      const segs = status.runs.get(k);
+      stopAt.set(k, { source: '启停记录', test: (t) => inStopGap(segs, t) });
+    } else if (indAll.length) {
+      // 同期（同一采集时刻）所有有读数的电流/转速位号都≈0 → 该期停机；该时刻没有电流/转速读数 → 不判
+      const zeroByT = new Map();
+      for (const { s, kind } of indAll) {
+        const { thr } = zeroThr(s, kind);
+        for (const p of s.points) zeroByT.set(p.t, (zeroByT.has(p.t) ? zeroByT.get(p.t) : true) && p.v <= thr);
+      }
+      stopAt.set(k, { source: '数据自判', test: (t) => zeroByT.get(t) === true });
+    }
+    const pts = list.flatMap((s) => s.points);
+    if (!pts.length) continue;
+    const ref = Math.max(...pts.map((p) => p.t));
+    let rs = null;
+    if (status && status.runs.has(k)) {
+      const x = runsState(status.runs.get(k), ref);
+      if (x) rs = { ...x, source: '启停记录' };
+    }
+    if (!rs && status && status.ledger.has(k)) {
+      const l = status.ledger.get(k);
+      if (l.state) rs = { state: l.state, source: '设备台账', basis: `设备台账${l.col}：${l.text}` };
+    }
+    if (!rs) {
+      // 数据自判：该设备全部电流/转速位号的最新值都≈0 → 疑似停运；没有可判位号 → 维持原逻辑
+      const ind = indAll;
+      if (ind.length) {
+        const zero = ind.map(({ s, kind }) => {
+          const lastPt = s.points.reduce((m, p) => (p.t >= m.t ? p : m));
+          const { thr, thrText, unit } = zeroThr(s, kind);
+          return { z: lastPt.v <= thr, text: `${s.param}最新值 ${C.fmt(lastPt.v, 3)}${unit ? ' ' + unit : ''}（${thrText}，${lastPt.time}）`, short: `${s.param} ${C.fmt(lastPt.v, 3)}${unit ? ' ' + unit : ''}` };
+        });
+        rs = zero.every((x) => x.z)
+          ? { state: 'suspectedStopped', source: '数据自判', basis: zero.map((x) => x.text).join('；'), short: zero.map((x) => x.short).join('、') }
+          : { state: 'running', source: '数据自判', basis: zero.filter((x) => !x.z).map((x) => x.text).join('；') };
+      }
+    }
+    if (rs) runState.set(k, rs);
+  }
+  const rsOf = (s) => (s.equipTag ? runState.get(eqKey(s.equipTag)) || null : null);
+  const isStoppedState = (rs) => !!rs && (rs.state === 'stopped' || rs.state === 'suspectedStopped');
+
+  // 同设备各序列回溯窗口内的停机期时刻：停机时不记读数的参数（如轴承温度）自身无点可剔，但窗口内同样发生过停机/切泵
+  const eqStopTimes = new Map();   // eqKey -> 停机期采集时刻数组
+  for (const s of series.values()) {
+    if (!s.equipTag) continue;
+    const k = eqKey(s.equipTag);
+    const sa = stopAt.get(k);
+    if (!sa || isStoppedState(runState.get(k))) continue;
+    const pts = [...s.points].sort((x, y) => x.t - y.t);
+    for (const p of pts.slice(Math.max(0, pts.length - periods))) if (sa.test(p.t)) (eqStopTimes.get(k) || eqStopTimes.set(k, []).get(k)).push(p.t);
+  }
+
+  // ---- 逐条序列计算
+  const overLimit = [], deteriorating = [], stable = [], insufficientData = [], stopped = [], items = [];
+  for (const s of series.values()) {
+    let lim = limOf(s);
+    if (lim && lim.refOnly) lim = null;
+    const rs = rsOf(s);
+    const isStopped = isStoppedState(rs);
     if (!lim && limSheet) {
       warnings.push(`设备「${s.tag}」参数「${s.param}」在「报警限值」中查不到限值，只算趋势不判越限`);
     }
@@ -309,20 +509,28 @@ function main() {
       }
     }
 
-    // 回溯窗口：取最近 periods 期
+    // 回溯窗口：取最近 periods 期；在运设备窗口内的停机期点剔出（硬约束 9），停运设备整条单列不在此处理
     const all = s.points;
-    const used = all.slice(Math.max(0, all.length - periods));
+    const windowPts = all.slice(Math.max(0, all.length - periods));
+    const sa = !isStopped && s.equipTag ? stopAt.get(eqKey(s.equipTag)) || null : null;
+    const excludedPts = sa ? windowPts.filter((p) => sa.test(p.t)) : [];
+    const used = excludedPts.length ? windowPts.filter((p) => !sa.test(p.t)) : windowPts;
     const n = used.length;
     const first = n ? used[0] : null;
     const last = n ? used[n - 1] : null;
     const spanDays = n >= 2 ? C.round((last.t - first.t) / DAY, 2) : null;
 
     // 越限判定（有限值且有最新有效值时才判）：先判 HH/LL（更高等级），再判 H/L
-    let limitState = null, exceedBy = null, limitLevel = null, limitValue = null;
+    // 停运设备：只判高报/高高报；低于低报/低低报属停运低值，不判越限（记 lowIgnored 说明）
+    let limitState = null, exceedBy = null, limitLevel = null, limitValue = null, lowIgnored = null;
     if (lim && last) {
       if (lim.hh !== null && last.v > lim.hh) { limitState = 'overHighHigh'; limitLevel = 'HH'; limitValue = lim.hh; exceedBy = C.round(last.v - lim.hh, 3); }
       else if (lim.hi !== null && last.v > lim.hi) { limitState = 'overHigh'; limitLevel = 'H'; limitValue = lim.hi; exceedBy = C.round(last.v - lim.hi, 3); }
-      else if (lim.ll !== null && last.v < lim.ll) { limitState = 'overLowLow'; limitLevel = 'LL'; limitValue = lim.ll; exceedBy = C.round(lim.ll - last.v, 3); }
+      else if (isStopped) {
+        if (lim.ll !== null && last.v < lim.ll) lowIgnored = 'LL';
+        else if (lim.lo !== null && last.v < lim.lo) lowIgnored = 'L';
+        else limitState = 'within';
+      } else if (lim.ll !== null && last.v < lim.ll) { limitState = 'overLowLow'; limitLevel = 'LL'; limitValue = lim.ll; exceedBy = C.round(lim.ll - last.v, 3); }
       else if (lim.lo !== null && last.v < lim.lo) { limitState = 'overLow'; limitLevel = 'L'; limitValue = lim.lo; exceedBy = C.round(lim.lo - last.v, 3); }
       else limitState = 'within';
     }
@@ -338,21 +546,48 @@ function main() {
       limitLow: lim ? lim.lo : null, limitLowLow: lim ? lim.ll : null,
       limitProvided: !!lim,
       limitState, limitLevel, limitLevelText: limitLevel ? LEVEL_TEXT[limitLevel] : null, limitValue, exceedBy,
+      runState: rs ? rs.state : null, runStateSource: rs ? rs.source : null, runStateBasis: rs ? rs.basis : null,
+      excludedStoppedPeriods: excludedPts.map((p) => ({ row: p.row, time: p.time, value: p.v })),
+      excludedStoppedSource: excludedPts.length ? sa.source : null,
       duplicateTimes: dupTimes,
       invalidPoints: s.badPoints,
       points: used.map((p) => ({ row: p.row, time: p.time, value: p.v })),
     };
 
-    // 硬约束 1：期数 < 3 不做回归、不预测
-    if (n < 3) {
+    // 硬约束 8：停运设备不做劣化趋势判定、不预测到限；越高报/高高报照常进越限清单
+    if (isStopped) {
+      const tagText = rs.state === 'stopped' ? '设备停运中' : '设备疑似停运';
+      const lowText = lowIgnored ? `最新值低于${LEVEL_TEXT[lowIgnored]}，属停运低值，不判越限；` : '';
+      const item = {
+        ...base, category: isOver ? 'overLimit' : 'stopped', lowIgnored,
+        slope: null, changeRate: null, r2: null, confidence: null, daysToLimit: null, etaDate: null,
+        etaNote: `${tagText}，不做劣化趋势判定，也不预测到限时间`,
+        note: `${tagText}（${rs.source}）：${lowText}不做劣化趋势判定；越高报/高高报照常判定`,
+      };
+      items.push(item);
+      if (isOver) overLimit.push(item); else stopped.push(item);
+      continue;
+    }
+
+    // 硬约束 1：期数 < 3 不做回归、不预测；窗口内有停机期（切泵）时门槛为 4 期（硬约束 9）
+    // 本序列无点可剔、但同设备在本序列首期之前的窗口内有停机期（停机时该参数不记读数）→ 同样视为切泵后序列
+    const sibStops = !excludedPts.length && sa && windowPts.length ? (eqStopTimes.get(eqKey(s.equipTag)) || []).filter((t) => t < windowPts[0].t) : [];
+    const stopInWindow = excludedPts.length > 0 || sibStops.length > 0;
+    base.stopInWindow = stopInWindow;
+    const minPeriods = stopInWindow ? 4 : 3;
+    if (n < minPeriods) {
       const item = {
         ...base, category: 'insufficientData',
         slope: null, changeRate: null, r2: null, confidence: null, daysToLimit: null, etaDate: null,
-        note: `有效期数 ${n} 期，少于 3 期，不计算趋势斜率，也不预测到限时间（两点连线不构成趋势）`,
+        note: excludedPts.length
+          ? `数据不足（切泵后运行期数偏少，剩 ${n} 期）：回溯窗口 ${windowPts.length} 期中 ${excludedPts.length} 期为停机期（含停机期，${sa.source}）已剔除，窗口内发生过停机/切泵时剩余少于 4 期不做劣化判定，不计算趋势斜率，也不预测到限时间`
+          : stopInWindow
+            ? `数据不足（切泵后运行期数偏少，剩 ${n} 期）：同设备回溯窗口内有停机期（含停机期，${sa.source}），本参数停机时无读数，切换后仅 ${n} 期，少于 4 期不做劣化判定，不计算趋势斜率，也不预测到限时间`
+            : `有效期数 ${n} 期，少于 3 期，不计算趋势斜率，也不预测到限时间（两点连线不构成趋势）`,
       };
       items.push(item);
       insufficientData.push(item);
-      warnings.push(`设备「${s.tag}」参数「${s.param}」有效期数仅 ${n} 期，不足 3 期，**未计算趋势，也未预测到限时间**`);
+      if (!stopInWindow) warnings.push(`设备「${s.tag}」参数「${s.param}」有效期数仅 ${n} 期，不足 3 期，**未计算趋势，也未预测到限时间**`);
       // 期数不足但已越限，仍应在越限清单中体现（越限是单点事实，不依赖趋势）
       if (isOver) overLimit.push(item);
       continue;
@@ -449,6 +684,29 @@ function main() {
   deteriorating.sort((x, y) => (x.daysToLimit === null ? 1e9 : x.daysToLimit) - (y.daysToLimit === null ? 1e9 : y.daysToLimit));
   stable.sort((x, y) => x.tag.localeCompare(y.tag, 'zh'));
   insufficientData.sort((x, y) => x.tag.localeCompare(y.tag, 'zh'));
+  stopped.sort((x, y) => x.tag.localeCompare(y.tag, 'zh') || x.param.localeCompare(y.param, 'zh'));
+
+  // 停运 warning：按依据汇总点名（只点有序列的设备）
+  const stopEq = [...runState.entries()].filter(([, v]) => isStoppedState(v));
+  const nameOfEq = (k) => equipSeries.get(k)[0].equipTag;
+  const RULE_TEXT = '其参数单列「停运中（不判定）」，不判越低报/低低报、不做劣化趋势判定；越高报/高高报照常判定';
+  for (const src of ['启停记录', '设备台账']) {
+    const list = stopEq.filter(([, v]) => v.source === src).map(([k]) => nameOfEq(k));
+    if (list.length) warnings.push(`以下 ${list.length} 台设备按${src}判为停运中（备用/停运/停用/检修）：${list.join('、')}；${RULE_TEXT}`);
+  }
+  const exList = items.filter((x) => x.excludedStoppedPeriods.length);
+  const exTotal = exList.reduce((n, x) => n + x.excludedStoppedPeriods.length, 0);
+  if (exList.length) {
+    warnings.push(`以下 ${exList.length} 条在运设备序列的回溯窗口里有停机期采集点（启停记录停机段内，或同期电流/转速≈0），共 ${exTotal} 个点已剔出回归与劣化判定：${exList.map((x) => `${x.tag} ${x.param}（${x.excludedStoppedPeriods.length} 期，${x.excludedStoppedSource}）`).join('、')}`);
+  }
+  const exShort = items.filter((x) => x.stopInWindow && x.category === 'insufficientData');
+  if (exShort.length) {
+    warnings.push(`以下 ${exShort.length} 条序列数据不足（含停机期）：回溯窗口内发生过停机/切泵，剔除停机期点后（或停机时本参数无读数）剩余少于 4 期，判「数据不足（切泵后运行期数偏少）」，**未做劣化判定，也未预测到限时间**（越限照常判定）：${exShort.map((x) => `${x.tag} ${x.param}（剩 ${x.periodsUsed} 期）`).join('、')}`);
+  }
+  const sus = stopEq.filter(([, v]) => v.state === 'suspectedStopped');
+  if (sus.length) {
+    warnings.push(`以下 ${sus.length} 台设备电流/转速最新值≈0（≤额定或量程的 2%；无基准时电流 ≤0.5 A、转速 =0），**疑似停运**：${sus.map(([k, v]) => `${nameOfEq(k)}（${v.short}）`).join('、')}${status ? '（--status 中没有其启停记录，台账状态也不能说明是否在运行，如「在用」）' : ''}；已按停运处理，${RULE_TEXT}。请提供设备台账（使用状态/运行状态）或 DCS 启停记录（--status）确认`);
+  }
 
   const counts = {
     series: items.length,
@@ -458,6 +716,11 @@ function main() {
     deteriorating: deteriorating.length,
     stable: stable.length,
     insufficientData: insufficientData.length,
+    stopped: stopped.length,
+    stoppedEquipment: stopEq.length,
+    suspectedStoppedEquipment: sus.length,
+    excludedStoppedPoints: exTotal,
+    seriesWithExcludedStopped: exList.length,
     invalidPoints: items.reduce((n, x) => n + x.invalidPoints.length, 0),
     duplicateTimes: items.reduce((n, x) => n + x.duplicateTimes.length, 0),
     limitsProvided: !!limSheet,
@@ -475,8 +738,10 @@ function main() {
       confidenceRule: 'R²≥0.8 趋势明显；0.5≤R²<0.8 趋势一般；R²<0.5 数据离散，趋势不明显；有效期数<5 期再降一档',
       limitRule: '越限先判高高报/低低报（HH/LL），再判高报/低报（H/L）；两级都给时先向最近一级外推到限时间；限值以 DCS 组态或厂内限值表为准，脚本不自定限值',
       r2Min: R2_MIN, horizonDays: HORIZON,
+      statusProvided: !!status, statusSheets: status ? status.sheets : [],
+      runStateRule: '停运设备（备用/停运/停用/检修）低值不判越低报/低低报、不做劣化趋势判定，越高报/高高报照常判；运行状态按 启停记录（该设备最新数据采集时刻前最近一段）> 设备台账（使用状态/运行状态，「在用」不说明在运行）> 数据自判（同设备电流/转速最新值≈0：≤额定或量程的 2%，无基准时电流 ≤0.5 A、转速 =0，判疑似停运）；只对有设备位号的序列生效',
     },
-    counts, overLimit, deteriorating, stable, insufficientData, items, warnings,
+    counts, overLimit, deteriorating, stable, insufficientData, stopped, items, warnings,
   };
   fs.writeFileSync(path.join(outDir, 'trends.json'), JSON.stringify(result, null, 2), 'utf8');
 
@@ -499,6 +764,7 @@ function main() {
     ['趋势恶化', counts.deteriorating],
     ['趋势稳定', counts.stable],
     ['数据不足（<3 期）', counts.insufficientData],
+    ['停运中（不判定）', counts.stopped],
     ['数值无法解析的采集点', counts.invalidPoints],
     ['采集时间重复', counts.duplicateTimes],
   ]));
@@ -508,7 +774,8 @@ function main() {
   else {
     L.push(C.mdTable(['位号（测点号）', '设备名称', '参数', '单位', '最新值', '采集时间', '越限等级', '限值', '超限幅度'],
       overLimit.map((x) => [tagCell(x), x.name || '—', x.param, u(x), C.fmt(x.lastValue, 3), x.lastTime || '—',
-        x.limitLevelText, C.fmt(x.limitValue, 3), C.fmt(x.exceedBy, 3)])));
+        x.limitLevelText + (isStoppedState(x.runState ? { state: x.runState } : null) ? `（${x.runState === 'stopped' ? '停运中' : '疑似停运'}）` : ''), C.fmt(x.limitValue, 3), C.fmt(x.exceedBy, 3)])));
+    if (overLimit.some((x) => x.runState === 'stopped' || x.runState === 'suspectedStopped')) L.push('> 标「停运中/疑似停运」的为停运设备仍越高报/高高报的参数，请核实设备实际状态与测点。\n');
     if (counts.overHighHigh) L.push('【注意】越高高报/低低报（HH/LL）的参数属高一级报警，请立即核对 DCS 报警记录，报车间设备主任并视情况报工程师处置；是否停机由工艺/设备主管按规程决定，本技能不做停机判定。\n');
   }
   L.push('## 三、趋势恶化');
@@ -535,6 +802,15 @@ function main() {
     L.push('> 以上参数未计算趋势斜率，也未预测到限时间。两点连线不构成趋势，需补齐至少 3 期数据后重算。');
     L.push('');
   }
+  if (stopped.length) {
+    L.push('### 停运中（不判定）');
+    L.push('');
+    const rsText = { stopped: '停运中', suspectedStopped: '疑似停运' };
+    L.push(C.mdTable(['位号（测点号）', '设备名称', '参数', '单位', '最新值', '采集时间', '运行状态', '依据'],
+      stopped.map((x) => [tagCell(x), x.name || '—', x.param, u(x), C.fmt(x.lastValue, 3), x.lastTime || '—', rsText[x.runState], x.runStateBasis || '—'])));
+    L.push('> 以上为停运（备用/停运/停用/检修）设备的参数：停运期间的低值不是参数越限，不判越低报/低低报，也不做劣化趋势判定；越高报/高高报照常判定（见「二、已越限」）。「疑似停运」为按电流/转速≈0 自判，请用设备台账或 DCS 启停记录确认。');
+    L.push('');
+  }
   const badList = items.filter((x) => x.invalidPoints.length);
   if (badList.length || counts.duplicateTimes) {
     L.push('### 数据质量明细');
@@ -551,8 +827,12 @@ function main() {
   }
   L.push('## 六、趋势研判与建议');
   L.push('');
+  if (exTotal) {
+    L.push(`> 已剔除停机期 ${exTotal} 个点（${exList.length} 条在运设备序列，依据启停记录或同期电流/转速≈0），这些点未参与回归与劣化判定；剔除后少于 4 期的归「数据不足（切泵后运行期数偏少）」。明细见 trends.json 的 excludedStoppedPeriods。`);
+    L.push('');
+  }
   L.push('<!-- ANALYSIS_START -->');
-  L.push('（由模型依据 references/interpretation.md 口径撰写 200~400 字，结构：总体情况 → 已越限设备（先 HH/LL 后 H/L） → 趋势恶化设备与建议动作 → 数据不足说明。斜率、变化率、预计到限时间一律引用 trends.json，并注明预测基于线性外推、仅供参考；振动只按 ISO 10816 / GB/T 6075 分区概念表述，不自定数值。）');
+  L.push('（由模型依据 references/interpretation.md 口径撰写 200~400 字，结构：总体情况 → 已越限设备（先 HH/LL 后 H/L） → 趋势恶化设备与建议动作 → 数据不足说明（停运中的设备只说明停运依据，不写越低报或劣化；有停机期点被剔除的，写明剔除点数并引用研判段上方的说明行）。斜率、变化率、预计到限时间一律引用 trends.json，并注明预测基于线性外推、仅供参考；振动只按 ISO 10816 / GB/T 6075 分区概念表述，不自定数值。）');
   L.push('<!-- ANALYSIS_END -->');
   L.push('');
   L.push('---');

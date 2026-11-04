@@ -13,16 +13,26 @@
 /* ------------------------------------------------------------------ 资料类别词表
  * 每一类给出「检查项中出现的说法」与「材料文件名中出现的说法」两组词。
  * 检查项与材料只有落在同一类别、或直接共享特征词时才算匹配。
- * 共 25 类；与 regulation-compliance-check 的 compliance-spec.js（25 类）不是同一张表，差异见 references/evidence-rules.md 第八节。
+ * 共 26 类；与 regulation-compliance-check 的 compliance-spec.js（26 类）不是同一张表，差异见 references/evidence-rules.md 第八节。
  * 术语：作业许可按中石化八大类，「用火作业」为正式名称，「动火」作旧写法别名保留。
  */
+/** 「用火」作业票词：前面不是「备 / 使 / 启 / 停 / 采 / 选 / 利」（备用火炬、使用火炬、启用火炬……），后面不是「炬 / 嘴」 */
+const USE_FIRE = /(?<![备使启停采选利])用火(?![炬嘴])/;
+/** 词表项可以是字符串（包含匹配）或正则 */
+const hasWord = (t, k) => (k instanceof RegExp ? k.test(t) : t.includes(k));
+
 const CATEGORIES = [
-  { key: 'ledger', name: '设备台账', item: ['设备台账', '设施台账', '设备清单', '设备总表', '资产清单', '设备总账'], file: ['设备台账', '设施台账', '设备清单', '设备总表', '资产清单'] },
+  // fileNot：材料名命中这些写法时不归本类（「特种设备台账」含「设备台账」四字，但只是特种设备的专项台账，不能充全车间设备台账）。
+  // 只排除专项写法（特种设备台账 / 特种设备使用台账 / 以「特种设备」开头），「设备台账（含特种设备）」照常归设备台账。
+  { key: 'ledger', name: '设备台账', item: ['设备台账', '设施台账', '设备清单', '设备总表', '资产清单', '设备总账'], file: ['设备台账', '设施台账', '设备清单', '设备总表', '资产清单'], fileNot: [/特种设备(使用)?台账/, /^特种设备/] },
   { key: 'inspection', name: '巡检点检记录', item: ['巡检', '点检', '班检'], file: ['巡检', '点检', '班检'] },
   { key: 'maintenance', name: '检修与维修记录', item: ['检修', '维修', '保养', '维护'], file: ['检修', '维修', '保养', '维护'] },
   { key: 'plan', name: '计划与方案', item: ['检修计划', '施工方案', '检修方案', '作业指导书', '操作规程', '管理规程'], file: ['计划', '方案', '作业指导书', '规程'] },
-  { key: 'permit', name: '作业票（作业许可）', item: ['作业票', '作业许可', '用火', '动火', '受限空间', '高处作业', '吊装', '临时用电', '盲板', '动土', '断路'], file: ['作业票', '作业许可', '用火', '动火', '受限空间', '高处', '吊装', '临时用电', '盲板', '动土', '断路'] },
-  { key: 'defect', name: '缺陷与隐患记录', item: ['缺陷', '隐患', '报修', '故障'], file: ['缺陷', '隐患', '报修', '故障'] },
+  // 「用火」用正则 USE_FIRE：排除「备用火炬 / 备用火嘴 / 使用火炬 / 启用火炬」等子串误命中（与 regulation-compliance-check 的 compliance-spec.js 同口径）
+  { key: 'permit', name: '作业票（作业许可）', item: ['作业票', '作业许可', USE_FIRE, '动火', '受限空间', '高处作业', '吊装', '临时用电', '盲板', '动土', '断路'], file: ['作业票', '作业许可', USE_FIRE, '动火', '受限空间', '高处', '吊装', '临时用电', '盲板', '动土', '断路'] },
+  // 缺陷故障与隐患分两类：设备缺陷/故障走 SAP PM 通知单，隐患走隐患排查治理台账，是两本账，不能互相充数
+  { key: 'defect', name: '缺陷与故障记录', item: ['缺陷', '报修', '故障'], file: ['缺陷', '报修', '故障'] },
+  { key: 'hazard', name: '隐患排查治理记录', item: ['隐患'], file: ['隐患'] },
   { key: 'inspectionReport', name: '检验检测报告', item: ['检验报告', '检测报告', '定期检验', '法定检验', '定期检测', '检验有效期', '检验'], file: ['检验报告', '检测报告', '定期检验', '检验', '探伤', '无损', '测厚'] },
   { key: 'calibration', name: '校验检定记录', item: ['校验', '检定', '计量', '标定'], file: ['校验', '检定', '计量', '标定'] },
   { key: 'safetyDevice', name: '安全附件与安全设施记录', item: ['安全阀', '安全附件', '报警器', '可燃气体', '联锁', '安全设施', '消防设施'], file: ['安全阀', '安全附件', '报警器', '可燃气体', '联锁', '安全设施', '消防'] },
@@ -56,15 +66,31 @@ function norm(s) {
 function itemCategories(text) {
   const t = norm(text);
   const hit = [];
-  for (const c of CATEGORIES) if (c.item.some((k) => t.includes(k))) hit.push(c.key);
+  for (const c of CATEGORIES) if (c.item.some((k) => hasWord(t, k))) hit.push(c.key);
   return hit;
 }
 
-/** 材料名称落在哪些类别（可多类） */
+/**
+ * 材料侧别名：系统导出文件（EAM / SAP PM / 作业票系统）的常用名称，类别词表认不出时补充。
+ * 与 regulation-compliance-check 的 FILE_ALIASES 同口径，只收「这个名称本身就是该类资料」的说法：
+ *  - 故障记录、检修历史、工单：EAM 故障历史/工单导出，每行带检修做法，算检修记录（「故障」二字仍归缺陷与故障类）。
+ *  - 通知单：SAP PM 维修通知单，即缺陷/故障报修单；「停电通知单」「会议通知单」「整改通知单」不归。
+ *  - 作业清单：作业票系统导出的作业票清单；只认开头是「作业清单」的，「检修作业清单」说的是检修工作量。
+ */
+const FILE_ALIASES = [
+  { key: 'maintenance', re: /故障记录|故障维修|故障处理记录|检修历史|维修历史|维修工单|检修工单|^工单/i },
+  { key: 'defect', re: /(?:^|维修|缺陷|故障|报修|设备|PM|SAP)通知单/i },
+  { key: 'permit', re: /^作业清单|作业票清单|特殊作业/i },
+];
+
+/** 材料名称落在哪些类别（可多类）：类别词表 + 材料侧别名 */
 function fileCategories(name) {
   const t = norm(name);
   const hit = [];
-  for (const c of CATEGORIES) if (c.file.some((k) => t.includes(k))) hit.push(c.key);
+  for (const c of CATEGORIES) {
+    const byWord = c.file.some((k) => hasWord(t, k)) && !(c.fileNot || []).some((k) => hasWord(t, k));
+    if (byWord || FILE_ALIASES.some((a) => a.key === c.key && a.re.test(t))) hit.push(c.key);
+  }
   return hit;
 }
 

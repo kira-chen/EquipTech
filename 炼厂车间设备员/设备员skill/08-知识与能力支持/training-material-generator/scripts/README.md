@@ -15,8 +15,8 @@ node "<技能目录>/scripts/training.js" \
 | 参数 | 必需 | 说明 |
 |---|---|---|
 | `--audience` | 是 | 培训对象：新员工 / 在岗 / 转岗 / 复岗 / 四新 / 三级安全教育（支持别名，见 `references/input-spec.md`）。**决定内容深度，无法识别时报错，不猜**；三级安全教育只做车间级、班组级 |
-| `--scope` | 与 `--ledger` 二选一 | 设备类型或主题，逗号分隔 |
-| `--ledger` | 与 `--scope` 二选一 | 设备清单 xlsx / CSV 目录，自动按类型归组；支持 SAP PM IH08 技术对象导出列名（功能位置 / 设备描述 / 对象类型 / 工厂区段），8 位「设备」流水号不作位号 |
+| `--scope` | 与 `--ledger` 至少一项 | 设备类型、位号或主题，逗号分隔。与 `--ledger` 同时给时按 scope 过滤清单（类型命中或位号 / 名称 / 区域包含），warning 写明保留与剔除台数；「全部 / 所有」不过滤 |
+| `--ledger` | 与 `--scope` 至少一项 | 设备清单 xlsx / CSV 目录，自动按类型归组；支持 SAP PM IH08 技术对象导出列名（功能位置 / 设备描述 / 对象类型 / 工厂区段），8 位「设备」流水号不作位号 |
 | `--docs` | 否 | 技术资料路径，逗号分隔多个，也可给目录。支持 `.md` `.txt` `.csv` `.docx`；PDF 先用平台 pdf 技能转 txt/docx，脚本不读。**不给则只出原理题，不出任何数值题** |
 | `--out` | 否 | 输出目录，默认系统临时目录 `<os.tmpdir()>/tmg-out`，建议始终传 |
 | `--duration` | 否 | 总学时（正数）。不给时各模块学时为 `null`，显示「—」 |
@@ -44,7 +44,7 @@ node "<技能目录>/scripts/training.js" \
 
 1. **数值题必须有出处**。答案含技术数值而 `source` 为空的题目**直接剔除**（不是 warning 后照样输出），并在 warnings 中说明。无资料时 `questionsNumeric` 恒为 0。
 2. **题量不足不凑数**。`--questions` 超过素材上限时，warning 写清「只能出 N 道（数值类 a、定性规定类 b、原理概念类 c）」，按 N 道出，md 中同步提示缺口。
-3. **数值题干遮蔽规定值**。条款中的数值替换为 `＿＿`，答案在答案表里带出处。
+3. **数值题干遮蔽规定值**。条款中的数值替换为 `＿＿`（带单位的数、区间两端（含「0.05-0.10mm」连字符区间）、比较词后不带单位的数与分数都遮；负数连同负号遮；字母后的「-」按位号不遮，「数字-数字」编号尾段（「E-1201-3 次」「M20-8.8级」）也不遮，真区间「3-5 天」两端照常遮），答案在答案表里带出处。
 4. **干扰项不含数值**。单选 / 多选的干扰项一律是定性表述，不把数值改错当干扰项。
 5. **判断题否定式不改数值**。肯定式答案「正确」；否定式由 `NEGATE_RULES` 只改情态/比较词（不得→可以、应→无需…），答案「错误」并给出正确表述与出处，改写前后数字序列必须一致，否则退回肯定式。绝不通过改数值构造错误项。
 6. **规程类内容一律不生成**。`--scope` 主题与资料条款两处都过 F1~F5 规则，命中即剔除并单列。
@@ -85,7 +85,7 @@ D.citeOf({file:'a.md', loc:'第5行', clause:'4.1'}); // 'a.md 第4.1条（第5�
 
 每条 clause 形如 `{id, text, topicHint, numeric, source:{file, loc, clause}}`。markdown 标题作为 `topicHint`，引用块与表格分隔行跳过。
 
-`.docx` 经 `docx-lite.js` 的 `docxToText` 先解压取 `word/document.xml` 再解析，只取正文段落与表格（页眉页脚不入条款）；段落位置写「第N段」，表格行写「表N第M行」。文件损坏或不是 zip 包时 warning「资料「X.docx」无法解析（…），已跳过」，不中断。
+`.docx` 经 `docx-lite.js` 的 `docxToText` 先解压取 `word/document.xml` 再解析，只取正文段落与表格（页眉页脚不入条款）；段落位置写「第N段」，表格行写「表N第M行」。文件损坏或不是 zip 包时 warning「资料「X.docx」无法解析（…），已跳过」，不中断。资料目录中的 PDF、pptx 等不读的文件逐个 warning（PDF 提示先用平台 pdf 技能转 txt/docx），不静默丢弃。
 
 ## lib/docx-lite.js
 
@@ -97,7 +97,7 @@ D.citeOf({file:'a.md', loc:'第5行', clause:'4.1'}); // 'a.md 第4.1条（第5�
 node scripts/make-sample.js --out examples [--seed <n>]
 ```
 
-生成：设备清单 xlsx（6 类设备）、SAP PM IH08 技术对象导出样式 `sample-sap-export.xlsx`（功能位置 / 设备 8 位流水号 / 设备描述 / 对象类型 / 工厂区段 / ABC标识，首行标题，5 台）、缺类型列变体、厂内规程样例 `sample-spec.md`（含 8 条带数值的条款）、无数值资料 `sample-spec-no-number.md`、含操作步骤的资料 `sample-spec-with-procedure.md`。
+生成：设备清单 xlsx（6 种类型写法，塔器与容器同归塔器容器，共 5 类）、SAP PM IH08 技术对象导出样式 `sample-sap-export.xlsx`（功能位置 / 设备 8 位流水号 / 设备描述 / 对象类型 / 工厂区段 / ABC标识，首行标题，5 台）、缺类型列变体、厂内规程样例 `sample-spec.md`（含 8 条带数值的条款）、无数值资料 `sample-spec-no-number.md`、含操作步骤的资料 `sample-spec-with-procedure.md`。
 
 `--seed` 改变位号区域与规程中的具体数值，但**含数值条款数、可出数值题数、设备类型数不变**。
 
@@ -107,4 +107,4 @@ node scripts/make-sample.js --out examples [--seed <n>]
 node scripts/selftest.js
 ```
 
-225 条断言，覆盖：数值识别（含条款号 / 年份不误判）、六类培训对象深度（含复岗 / 四新 / 三级安全教育的厂级归口声明）、通用原理库无数值全扫与 builtin 标记、规程类拦截（含「用火作业许可证办理流程」）、**无资料时正则扫描产出不得出现带数值的答案**、数值题出处完整性、题量不足不凑数、干扰项无数值、判断题否定式（数字序列一致、复合词不误改、`--no-negative-judge`）、题型限定、设备清单别名与合计行、SAP IH08 列名（功能位置作位号、8 位设备号不作位号）、学时 null、16 项参数校验、资料格式与出处写法（含 docx 段落 / 表格行出处、损坏 docx warning 跳过）、培训类声明行与建议稿抬头、无 emoji、TYPE_PATTERNS 与 operator-anomaly-guide 同源、SKILL/training-rules 文档同步、make-sample SAP 样例可再生。
+254 条断言，覆盖：数值识别（含条款号 / 年份不误判）、六类培训对象深度（含复岗 / 四新 / 三级安全教育的厂级归口声明）、通用原理库无数值全扫与 builtin 标记、规程类拦截（含「用火作业许可证办理流程」）、**无资料时正则扫描产出不得出现带数值的答案**、数值题出处完整性、题量不足不凑数、干扰项无数值、判断题否定式（数字序列一致、复合词不误改、`--no-negative-judge`）、题型限定、设备清单别名与合计行、SAP IH08 列名（功能位置作位号、8 位设备号不作位号）、学时 null、16 项参数校验、资料格式与出处写法（含 docx 段落 / 表格行出处、损坏 docx warning 跳过）、培训类声明行与建议稿抬头、无 emoji、TYPE_PATTERNS 与 operator-anomaly-guide 同源、SKILL/training-rules 文档同步、make-sample SAP 样例可再生、数值题干遮蔽区间两端与比较词后的数（P 组，2026-11-04）、连字符区间两端与负数连同负号遮蔽、位号不遮、「反应器」归塔器容器、资料目录中的 PDF 与不支持格式逐个 warning 不静默丢弃、「数字-数字」编号尾段不遮（P12~P15）、`--ledger` 与 `--scope` 同时给时按 scope 过滤清单（I10~I18）。

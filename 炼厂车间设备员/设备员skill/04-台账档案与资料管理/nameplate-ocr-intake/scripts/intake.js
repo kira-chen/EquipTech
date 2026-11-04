@@ -31,7 +31,7 @@ const EQUIP_TYPES = {
   '泵': ['泵', 'pump', '离心泵', '往复泵', '屏蔽泵'],
   '电机': ['电机', '马达', 'motor', '电动机'],
   '压缩机': ['压缩机', 'compressor', '风机', '鼓风机'],
-  '换热器': ['换热器', '热交换器', '冷却器', '再沸器', '冷凝器', 'exchanger'],
+  '换热器': ['换热器', '热交换器', '冷却器', '再沸器', '冷凝器', '空冷器', 'exchanger'],
   '容器': ['容器', '塔器', '塔', '储罐', '罐', '反应器', '分离器', 'vessel'],
   '阀门': ['阀门', '安全阀', '调节阀', '阀', 'valve'],
   '仪表': ['仪表', '变送器', '流量计', '压力表', '表', 'instrument'],
@@ -209,6 +209,53 @@ function onlyConfusableDiff(a, b) {
     if (!hit) return false;
   }
   return true;
+}
+
+/** 日期拆成 [年, 月, 日]（缺的位不补）：2015.02 / 2015年2月 / 2015-02-01 / 2015/2/1；台账导出带的时分秒（2015-02-01 00:00:00、2015-02-01T08:30）先去掉；不是日期返回 null */
+function dateParts(v) {
+  const s = normVal(C.str(v).replace(/(?:[\sT]+\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?)\s*$/, '')).replace(/[年月.\/]/g, '-').replace(/日$/, '').replace(/-+$/, '');
+  const m = s.match(/^(\d{4})(?:-(\d{1,2}))?(?:-(\d{1,2}))?$/);
+  if (!m) return null;
+  return [m[1], m[2], m[3]].filter((x) => x !== undefined).map(Number);
+}
+/** 纯数值（允许千分位逗号），否则 null */
+function pureNum(v) {
+  const s = normVal(v).replace(/,/g, '');
+  return /^-?\d+(?:\.\d+)?$/.test(s) ? Number(s) : null;
+}
+// 材质列按部位合写时（「泵体 ZG230-450 / 叶轮 ZG1Cr13」），铭牌材质字段只与对应部位的一段比对
+const MATERIAL_PARTS = {
+  '泵壳材质': ['泵体', '泵壳', '壳体'],
+  '阀体材质': ['阀体', '壳体'],
+  '主体材质': ['壳体', '筒体', '主体', '本体'],
+};
+/**
+ * 识别值与台账现值是否一致：先归一化全等；制造日期按两者中较粗的精度比（铭牌多只印年月，台账导出为完整日期）；
+ * 带单位的参数列纯数值按数值相等（2.50 = 2.5）；材质按部位分段比对，不跨部位配对。
+ */
+function sameValue(name, col, value, ledger) {
+  if (normVal(value) === normVal(ledger)) return true;
+  if (col === '制造日期') {
+    const a = dateParts(value), b = dateParts(ledger);
+    if (a && b) { const k = Math.min(a.length, b.length); return a.slice(0, k).every((x, i) => x === b[i]); }
+    return false;
+  }
+  // 只对带单位的参数列按数值比；出厂编号、设备代码等编号列「0876」与「876」不是同一个号
+  if (LEDGER_UNIT[col]) {
+    const x = pureNum(value), y = pureNum(ledger);
+    if (x !== null && y !== null) return Math.abs(x - y) < 1e-9;
+  }
+  if (col === '材质' && MATERIAL_PARTS[name]) {
+    // 部位名按 MATERIAL_PARTS 词表做前缀匹配（「泵体铸铁」「泵体 ZG230-450」「泵壳：HT250」都认），不用贪婪的汉字串当部位名
+    for (const seg of C.str(ledger).split(/[\/／;；,，、]/)) {
+      const t = seg.trim();
+      const part = MATERIAL_PARTS[name].find((p) => t.startsWith(p));
+      if (!part) continue;
+      const rest = t.slice(part.length).replace(/^\s*(?:材质|材料)?\s*[:：]?\s*/, '');
+      if (rest && normVal(rest) === normVal(value)) return true;
+    }
+  }
+  return false;
 }
 
 function loadBook(p) {
@@ -431,7 +478,12 @@ function main() {
       if (tagIdx >= 0) {
         conflicts = [];
         if (!hit) {
-          // 情况 A：新增建档
+          // 情况 A：新增建档。仍列出台账无对应列的字段，提示建档前先加列或人工判断放哪
+          for (const f of fields) {
+            if (f.confidence === 'unreadable') continue;
+            if (!f.ledgerColumn) unmapped.push({ name: f.name, reason: '铭牌字段在台账中无对应列' });
+            else if (idxOf(f.ledgerColumn) < 0) unmapped.push({ name: f.name, ledgerColumn: f.ledgerColumn, reason: `台账中无「${f.ledgerColumn}」列` });
+          }
         } else {
           ledgerRow = {};
           header.forEach((c, j) => { if (c) ledgerRow[c] = C.str(hit[j]); });
@@ -443,7 +495,7 @@ function main() {
             f.ledgerValue = lv;
             if (f.confidence === 'unreadable') { f.match = 'unreadable'; continue; }
             if (lv === null) { f.match = 'ledgerEmpty'; continue; }
-            if (normVal(f.value) === normVal(lv)) { f.match = 'same'; continue; }
+            if (sameValue(f.name, f.ledgerColumn, f.value, lv)) { f.match = 'same'; continue; }
             f.match = 'diff';
           }
           const diffs = fields.filter((f) => f.match === 'diff');

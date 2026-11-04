@@ -365,6 +365,48 @@ ok(!/[\u2600-\u27BF\u{1F300}-\u{1FAFF}]/u.test(r.md), 'P36 md 不含 emoji');
 const xb2 = readXlsx(path.join(rs.out, '备件需求表.xlsx'));
 ok(xb2['备件需求表'][4].includes('计划毛需求') && xb2['备件需求表'][4].includes('物料编码'), 'P37 xlsx 申报表按物料编码/计划毛需求分列');
 
+// ============ Q. MB51 物料凭证：导出窗口内无领用的月份按 0 期计（凭证表只记发生的业务，没凭证就是当月没领） ============
+// 窗口 2025-10~2026-09 共 12 个月（由全表过账日期确定，含 101 收货行）；Q-01 只在 3 个月有领用、Q-02 只在 8 个月有领用
+const SPARSE = mk('sparse-mb51.xlsx', {
+  '物料凭证': [['物料', '物料描述', '基本计量单位', '过账日期', '数量', '移动类型'],
+    ['Q-00', '收货占位', 'ST', '2025-10-03', 5, '101'],
+    ...['2025-12', '2026-04', '2026-08'].map((m) => ['Q-01', '机械密封 Q', 'ST', `${m}-10`, -1, '261']),
+    ...mon('2025-11', 8).map((m) => ['Q-02', '深沟球轴承 Q', 'ST', `${m}-12`, -2, '261']),
+    ['Q-00', '收货占位', 'ST', '2026-09-28', 5, '101']],
+});
+const rqs = run(['--input', SPARSE, ...BASE], 'sparse');
+const q1 = [...rqs.j.items, ...rqs.j.lowConfidence].find((x) => x.code === 'Q-01') || {};
+const q2 = [...rqs.j.items, ...rqs.j.lowConfidence].find((x) => x.code === 'Q-02') || {};
+eq(q1.periodsUsed, 12, 'Q1 MB51 窗口内无领用的月份计入期数（3 个月有领用 → 12 期）');
+eq(q1.monthlyAvg, C.round(3 / 12, 2), 'Q2 MB51 月均按窗口月数摊（3/12），不按有领用的 3 个月摊');
+ok(rqs.j.items.some((x) => x.code === 'Q-01'), 'Q3 窗口满 6 期的 MB51 物料不因领用稀疏判低置信度');
+eq(q2.monthlyAvg, C.round(16 / 12, 2), 'Q4 8 个月有领用的物料月均 16/12，不是 16/8');
+ok(/无领用月按 0 计/.test(q1.basis || ''), 'Q5 依据写明无领用月按 0 计');
+ok(rqs.j.warnings.some((w) => /物料凭证/.test(w) && /按 0 计/.test(w)), 'Q6 warning 说明 MB51 无领用月按 0 计');
+// 汇总式历史消耗表（一行一个月）不补 0：没列的月份可能是没统计，口径不变
+const rsum = run(['--input', mk('sum-gap.xlsx', { '历史消耗': [['备件编码', '备件名称', '单位', '消耗月份', '消耗数量'],
+  ['S-01', '轴承', '套', '2026-01', 2], ['S-01', '轴承', '套', '2026-05', 2], ['S-02', '垫片', '片', '2026-01', 1], ['S-02', '垫片', '片', '2026-09', 1]] }), ...BASE], 'sum-gap');
+eq(([...rsum.j.items, ...rsum.j.lowConfidence].find((x) => x.code === 'S-01') || {}).periodsUsed, 2, 'Q7 汇总式消耗表不补 0 期（口径不变）');
+// 当月未满月：MB51 最后一个月是运行当月时不计入期数和月均
+const curMon = C.localDate().slice(0, 7);
+const prev = (k) => { const [y, m] = curMon.split('-').map(Number); const t = y * 12 + (m - 1) - k; return `${Math.floor(t / 12)}-${String(t % 12 + 1).padStart(2, '0')}`; };
+const rcur = run(['--input', mk('cur-mb51.xlsx', { '物料凭证': [['物料', '物料描述', '基本计量单位', '过账日期', '数量', '移动类型'],
+  ...[6, 5, 4, 3, 2, 1].map((k) => ['R-01', '机械密封 R', 'ST', `${prev(k)}-10`, -2, '261']),
+  ['R-01', '机械密封 R', 'ST', `${curMon}-01`, -6, '261']] }), ...BASE], 'cur-mon');
+const rc = [...rcur.j.items, ...rcur.j.lowConfidence].find((x) => x.code === 'R-01') || {};
+eq(rc.periodsUsed, 6, 'Q8 MB51 当月未满月不计入期数');
+eq(rc.monthlyAvg, 2, 'Q9 当月未满月的领用不计入月均（不按整月摊）');
+ok(rcur.j.warnings.some((w) => /未满月/.test(w)), 'Q10 当月未满月 warning');
+// 数量无法解析的月份：不按 0 计入分母，补 0 时跳过（2026-11-04 复核补充）
+const rbad = run(['--input', mk('bad-mb51.xlsx', { '物料凭证': [['物料', '物料描述', '基本计量单位', '过账日期', '数量', '移动类型'],
+  ...mon('2025-01', 8).map((m) => ['W-01', '机械密封 W', 'ST', `${m}-10`, m === '2025-04' ? '两件' : -2, '261'])] }), ...BASE], 'bad-mb51');
+const rw = [...rbad.j.items, ...rbad.j.lowConfidence].find((x) => x.code === 'W-01') || {};
+eq(rw.periodsUsed, 7, 'Q11 数量无法解析的月份不补 0、不计入期数（8 个月剔除 1 期 → 7 期）');
+eq(rw.monthlyAvg, 2, 'Q12 月均按 7 期摊（14/7 = 2），不是 14/8');
+ok(/数量无法解析剔除 1 期/.test(rw.basis || ''), `Q13 依据写明剔除了几期（实际 ${rw.basis}）`);
+ok(!/无领用月按 0 计/.test(rw.basis || ''), 'Q14 剔除的月份不写成无领用按 0 计');
+ok(rbad.j.warnings.some((w) => /消耗数量无法解析/.test(w) && /未按 0 计/.test(w)), 'Q15 数量无法解析的行 warning 仍保留');
+
 // ============ O. 产出完整性 ============
 ok(fs.existsSync(path.join(r.out, 'demand.json')), 'O1 demand.json 生成');
 ok(fs.existsSync(path.join(r.out, 'demand.md')), 'O2 demand.md 生成');
@@ -381,6 +423,40 @@ ok(/## 一、需求概况与口径说明/.test(r.md) && /## 二、需求明细/.
   && /## 四、低置信度项/.test(r.md) && /## 五、编码待确认项/.test(r.md) && /## 六、无依据项/.test(r.md)
   && /## 七、申报说明/.test(r.md), 'O10 md 七节结构齐全');
 ok(/## 附：数据提示/.test(r.md), 'O11 md 附数据提示节');
+
+// ============ R. 计划需求按 --period 过滤（第三轮 v1-10）；建议到货日已过提示（疑点） ============
+const PER = mk('period.xlsx', {
+  '检修计划': [['订单号', '订单描述', '基本开始日期', '物料', '物料描述', '基本计量单位', '预留数量', '位号'],
+    ['PM-01', 'P-01 换油', '2099-11-17', 'R-01', '汽轮机油', 'L', 20, 'P-01'],     // 周期内
+    ['PM-02', 'P-02 换油', '2099-12-07', 'R-02', '汽轮机油', 'L', 20, 'P-02'],     // 晚于周期 → 单列不计入
+    ['PM-03', 'P-03 换机封', '2099-10-20', 'R-03', '机械密封', 'ST', 1, 'P-03'],    // 早于周期、预留未领 → 仍计入并提示
+    ['PM-04', 'P-04 换轴承', '', 'R-04', '轴承', 'ST', 2, 'P-04']],                 // 无基本开始日期 → 计入并提示
+});
+const rper = run(['--input', PER, '--workshop', 'X', '--period', '2099-11'], 'period');
+const perCodes = ((rper.j && rper.j.items) || []).map((x) => x.code).sort().join(',');
+eq(perCodes, 'R-01,R-03,R-04', 'R1 计划需求只计基本开始日期不晚于周期末的项（R-02 在 2099-12，不计入）');
+eq((rper.s.counts || {}).itemsFromPlan, 3, 'R2 itemsFromPlan 不含周期外项');
+ok(((rper.j && rper.j.planOutOfPeriod) || []).some((x) => x.code === 'R-02' && x.planStart === '2099-12-07'), 'R3 周期外项单列 planOutOfPeriod');
+eq((rper.s.counts || {}).planOutOfPeriod, 1, 'R4 counts.planOutOfPeriod');
+ok(!((rper.j && rper.j.netDemand) || []).some((x) => x.code === 'R-02'), 'R5 周期外项不进净需求汇总');
+ok(((rper.j && rper.j.warnings) || []).some((w) => w.includes('R-02') && w.includes('需求周期')), 'R6 warning 点名周期外的计划需求');
+ok(/周期外/.test(rper.md || '') && /PM-02/.test(rper.md || ''), 'R7 md 单列周期外的计划需求');
+ok(((rper.j && rper.j.items) || []).some((x) => x.code === 'R-03' && x.startBeforePeriod === true), 'R8 基本开始日期早于周期、预留仍在的项计入并标记');
+ok(((rper.j && rper.j.warnings) || []).some((w) => w.includes('R-03') && w.includes('早于需求周期')), 'R9 早于周期的预留 warning 提示核实');
+ok(((rper.j && rper.j.warnings) || []).some((w) => w.includes('R-04') && w.includes('基本开始日期')), 'R10 无基本开始日期的计划需求 warning');
+const rpq = run(['--input', PER, '--workshop', 'X', '--period', '2099-Q4'], 'period-q');
+eq((rpq.s.counts || {}).itemsFromPlan, 4, 'R11 季度周期 2099-Q4 覆盖 10~12 月，四项都计入');
+const rpx = run(['--input', PER, '--workshop', 'X', '--period', '下个月', '--months', '1'], 'period-x');
+eq((rpx.s.counts || {}).itemsFromPlan, 4, 'R12 周期无法识别起止日期时不过滤');
+ok(((rpx.j && rpx.j.warnings) || []).some((w) => w.includes('未按周期过滤')), 'R13 周期无法识别起止日期时 warning 写明未按周期过滤');
+const OLD = mk('old-plan.xlsx', { '检修计划': [['项目编号', '计划开工', '备件编码', '备件名称', '单位', '需求数量'], ['JX-901', '2020-03-20', 'T-01', '轴承', '套', 2], ['JX-902', '2099-03-20', 'T-02', '轴承', '套', 2]] });
+const rold = run(['--input', OLD, '--workshop', 'X', '--period', '2020-03~2099-03'], 'old-plan');
+const t01 = ((rold.j && rold.j.items) || []).find((x) => x.code === 'T-01') || {};
+const t02 = ((rold.j && rold.j.items) || []).find((x) => x.code === 'T-02') || {};
+eq(t01.arrivalPassed, true, 'R14 建议到货日早于今天 → arrivalPassed');
+eq(t02.arrivalPassed, false, 'R15 建议到货日未到 → arrivalPassed false');
+ok(((rold.j && rold.j.warnings) || []).some((w) => w.includes('T-01') && w.includes('已过')), 'R16 warning 提示建议到货日已过');
+ok(/已过/.test(((rold.md || '').split('## 二、需求明细')[1] || '').split('## 三')[0]), 'R17 md 需求明细标注建议到货日已过');
 
 console.log(`\n${'='.repeat(56)}`);
 console.log(`spare-parts-demand 自测：${pass} 通过，${fail} 失败`);

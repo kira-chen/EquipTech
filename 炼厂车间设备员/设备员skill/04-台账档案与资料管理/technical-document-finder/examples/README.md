@@ -35,7 +35,7 @@ examples/
 | 5 | 这台泵的汽蚀余量是多少 | `--docs examples/sample-docs --tag P-1101A --query "汽蚀余量 NPSH"` | 命中 0 段，md 写「所提供资料中未找到」+「未用通用知识补充」 |
 | 6 | P-9999 的说明书在哪 | `--docs examples/sample-docs --tag P-9999 --query "说明书"` | 关联文件 0 份；E-1201 的说明书进「无法关联」单列，**不被拿来代答** |
 | 7 | 只看这台泵的规程 | `--docs examples/sample-docs --tag P-1101A --doc-type 规程` | 只返回检修规程；说明书等注明「被 --doc-type 过滤」 |
-| 8 | 用 SAP 台账帮忙关联 | `--docs examples/sample-docs --tag P-1101A --ledger examples/sample-equipment-ledger.xlsx --query "对中"` | `meta.ledgerInfo` 从「设备描述」「型号编号」带出设备名称与型号，`matchedBy` 为位号；名称、型号与 P-1101B 相同，记入 `droppedClues` 并出 warning，不作关联线索；用 `--tag <P-1101A 的 SAP 设备编号>` 也能命中并标「设备编号」，关联依据仍是「文件名含位号：P-1101A」，8 份相关文件不变，md 抬头写「编号（台账位号 P-1101A）」 |
+| 8 | 用 SAP 台账帮忙关联 | `--docs examples/sample-docs --tag P-1101A --ledger examples/sample-equipment-ledger.xlsx --query "对中"` | `meta.ledgerInfo` 从「设备描述」「型号编号」带出设备名称与型号，`matchedBy` 为位号；名称、型号与 P-1101B 相同，记入 `droppedClues` 并出 warning，不作关联线索；用 `--tag <P-1101A 的 SAP 设备编号>` 也能命中并标「设备编号」，关联依据仍是「文件名含位号：P-1101A」，8 份相关文件不变，md 抬头写「编号（台账位号 P-1101A）」；对中命中 4 段，说明书与检修规程径向偏差都是 0.05mm、轴向 0.08mm 只有说明书写，**不判取值冲突** |
 | 9 | P-1101B 有哪些资料（A/B 泵同名） | `--docs examples/sample-docs --tag P-1101B --ledger examples/sample-equipment-ledger.xlsx` | 相关文件 0 份，**P-1101A 的说明书、技术协议、检修规程、试验报告一份都不带出**（修复前按同名「常压塔顶回流泵」带出 4 份）；`资料目录补充.csv` 登记的 P-1101B 说明书进 catalogOnly |
 
 ## 关键验证点
@@ -58,3 +58,13 @@ examples/
 node scripts/make-sample.js --out examples            # seed=1
 node scripts/make-sample.js --out examples --seed 7   # 厂家、型号与 SAP 设备编号变化，文件构成与上述预期结论不变
 ```
+
+## MCP 取数对照
+
+平台接入业务系统 MCP 时不用附件：资料（说明书、规程、技术协议、试验报告及其 `.pdf.txt` 转换文本、图纸、资料目录清单）来自平台知识库，下载后放进一个目录作 `--docs`；设备台账按 SKILL.md「数据获取（MCP）」调 `get_equipment_ledger`，csv 放进单独的空目录作 `--ledger`。下表用 `MCPServer/test/kb/technical-document-finder/kb` 作知识库样例实跑；演示数据每天按剧本刷新，预期结果只列每天稳定的结论。
+
+| # | 示例问题 | MCP 调用 | 运行参数 | 预期结果 |
+|---|---|---|---|---|
+| M1 | P-2101A 轴承振动上涨准备检修，轴承润滑油和联轴器对中要求怎么写 | 平台知识库 P-2101A 资料 → `--docs`；设备资产管理 `get_equipment_ledger`（workshop=常减压车间）→ `--ledger` | `--docs <知识库目录> --tag P-2101A --query "轴承 润滑 对中" --ledger <台账目录>` | 台账按位号命中 P-2101A；设备名称「进料泵」、型号「OH2 150-400」与 P-2101B 等相同，记入 `droppedClues` 不作线索；润滑油 L-TSA46（检修规程第 8 段）、冷态对中径向 ≤0.05mm / 轴向 ≤0.08mm（检修规程第 6 段）、试车轴承温度 ≤75℃（说明书第 12 段）；无取值冲突；装配图 PDF、试验报告 PDF 原件、旧版 .doc、铭牌照片只定位不读内容；性能曲线、出厂合格证进 catalogOnly |
+| M2 | E-1201 抽芯检修，管束水压试验压力和管箱法兰螺栓力矩 | 平台知识库 E-1201 检修规程 → `--docs`；设备资产管理 `get_equipment_ledger`（workshop=常减压车间）→ `--ledger` | `--docs <知识库目录> --tag E-1201 --query "水压试验 力矩" --ledger <台账目录>` | 只关联 `E-1201换热器检修规程.md`（版本 A/0，受控文件夹/静设备）；命中 2 段：管箱法兰螺栓紧固力矩 220N·m、管束水压试验压力 3.1MPa；P-2101A 的资料一份不关联；无取值冲突 |
+| M3 | P-2101A 切到 P-2101B，B 泵有哪些资料、机械密封力矩多大 | 平台知识库机泵资料 → `--docs`；设备资产管理 `get_equipment_ledger`（workshop=常减压车间）→ `--ledger` | `--docs <知识库目录> --tag P-2101B --query "机械密封 力矩" --ledger <台账目录>` | 只关联 2 份：`P-2101A_P-2101B原油进料泵使用说明书.docx`（文件名含位号）与 `常减压车间机泵通用检修规程.md`（内容中出现位号）；力矩取说明书 45N·m，通用规程写「按说明书执行」；P-2101A 检修规程的 40N·m 不带出（不串台），无取值冲突 |

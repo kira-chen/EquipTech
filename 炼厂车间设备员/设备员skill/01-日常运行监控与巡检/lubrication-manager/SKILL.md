@@ -25,17 +25,36 @@ metadata:
 - 必填信息：车间名称、统计基准日期（YYYY-MM-DD）。可选：提前提醒天数（默认 7 天）、运行小时周期的提前提醒小时数（默认 = 提醒天数 × 24）、指定设备范围、油品单价表、累计运行小时来源（`runtime-hours-tracker` 的 `runtime.json` 或含「累计运行小时」的表）、参考限值表。
 - 环境：可执行 Node.js ≥ 18，脚本仅用内置模块，无需 npm 安装。**若环境无法执行 node（无 Bash 工具或 `node --version` 失败），明确告知用户并终止，不得手工推算到期日或统计消耗。**
 
+## 数据获取（MCP）
+
+平台接入了业务系统 MCP 服务时，按下表调用工具取数，不再请用户上传导出文件；未接入时按操作步骤请用户提供系统导出文件。工具全部只读，不在业务系统里创建或修改任何单据。
+
+| 服务 | 工具 | 参数 | 交给脚本 |
+|---|---|---|---|
+| 点检巡检App | `get_lubrication_ledger` | `workshop`：车间名 | `--input`（目录 A） |
+| 点检巡检App | `get_lubrication_records` | `workshop`：车间名 | `--input`（目录 A） |
+| 点检巡检App | `get_oil_analysis` | `tag`：本车间润滑台账里的位号，逗号分隔（先取台账再取油样） | `--input`（目录 A） |
+| 点检巡检App | `get_oil_prices` | — | `--price`（目录 B） |
+| DCS位号数据 | `get_run_events` | `workshop`：车间名；`for_skill=lubrication-manager` | `--run-hours`（目录 C） |
+
+取数后：
+
+1. 工具返回下载链接（60 分钟内有效，过期重新调用）。csv 按原文件名放进新建的空目录，不改文件名，不与其他技能的文件混放；表中目录字母相同的放同一个目录，不同字母分开放，把目录作为“交给脚本”一列的参数值。
+2. `get_oil_prices`：油品单价必须单独放一个目录，不能和润滑台账放在一起。
+3. `get_run_events`：可选，输出按 DCS 启停记录算的「累计运行小时」表。台账「自上次加换油运行小时」「累计运行小时」为空的运行小时周期项用它补齐后判定；台账已有值时仍以台账为准，两处累计小时不一致时脚本 warning 提示核对。`--run-hours` 给的是 runtime-hours-tracker 的 runtime.json 时，若某台本期运行小时为空（累计只剩期初/上期值）或累计口径为仅本期增量，用到该台累计时脚本 warning 提示累计可能偏小。
+4. 台账、加换油记录、启停记录都按 `workshop`（与 `--workshop` 一致）取，不传会把全厂各车间混在一份报告里；`get_oil_analysis` 没有车间参数，不传 `tag` 会返回全厂油样，所以先取润滑台账，再把台账里的位号（去重、逗号分隔）作 `tag` 取油样。万一仍混入台账外位号，脚本把它们单列为「台账外油样」，不计入本车间异常/正常计数，并 warning 点名；成文时只写本车间位号。
+
 ## 操作步骤
 1. **确认车间与基准日期** —— 从用户消息或文件名中提取；不明确时向用户确认一次。检查润滑台账是否含周期字段、上次加换油日期与责任人列，缺失时按 `references/input-spec.md` 提示补齐。周期写法含"运行 2000 小时 / 2000h"的，提醒用户同时提供累计运行小时（台账列或 `--run-hours`）。
 2. **运行脚本** —— 技能目录以平台实际加载路径为准（Windows 路径加双引号）：
    ```bash
    node "<技能目录绝对路径>/scripts/lube.js" --input "<xlsx路径>" --workshop "<车间名>" --date <YYYY-MM-DD> --out "<输入同目录>/润滑管理"
    ```
-   可选：`--lead-days <提前提醒天数>`、`--lead-hours <运行小时周期提前提醒小时数>`、`--equipment "<位号,位号>"`、`--price "<油品单价表xlsx>"`、`--run-hours "<runtime.json 或 累计运行小时xlsx>"`、`--ref-standard "<参考限值表xlsx>"`、`--oil-analysis`（启用油液分析章节）。
+   可选：`--lead-days <提前提醒天数>`、`--lead-hours <运行小时周期提前提醒小时数>`、`--equipment "<位号,位号>"`、`--price "<油品单价表xlsx>"`、`--run-hours "<runtime.json 或 累计运行小时xlsx>"`、`--ref-standard "<参考限值表xlsx>"`、`--oil-analysis`（不是开关：输入里有「油液分析」工作表就照常出油液分析章节，不加也一样；加了而缺表时多一条 warning 提醒）。
    读取末行 JSON 摘要（同时写入 `<out>/summary.json`）：`ok` 必须为 `true`，`ok:false` 时把 `error` 告知用户并终止；`warnings` 非空时逐条告知用户（缺表/缺列/周期无法解析/上次加换油日期缺失/缺责任人列/油品牌号写法不一致等）。脚本用法详见 `scripts/README.md`。
    - 周期或上次加换油日期缺失、运行小时周期缺累计小时的设备：归入 `undetermined`（无法判定到期）单列一节并 warning，**不得默认按最常见周期处理，也不得把运行小时折算成日历天**。
    - 油液分析指标无厂内限值时：只列示数值不判异常，warning 说明缺少判定限值，**不得引用通用限值替代厂内标准**；仅当用户明确给出参考限值表并用 `--ref-standard` 显式启用时，才按参考限值做"参考比对"，结果单列并标注"非厂内标准，仅供参考"，不计入异常项。
-3. **读取 lube.json** —— 从 `<输出目录>/lube.json` 获取：`counts`、`wuding`（五定齐备率）、`overdue`（已逾期，含逾期天数或逾期小时）、`dueSoon`（临期）、`normal`（周期内）、`undetermined`（无法判定）、`consumption`（按油品/按设备的消耗统计）、`oilAnalysis`（`abnormal` 超厂内限值、`refChecked` 参考比对、`noLimit` 无限值、`normal`）、`oilNameConflicts`。
+3. **读取 lube.json** —— 从 `<输出目录>/lube.json` 获取：`counts`、`wuding`（五定齐备率）、`overdue`（已逾期，含逾期天数或逾期小时）、`dueSoon`（临期）、`normal`（周期内）、`undetermined`（无法判定）、`consumption`（按油品/按设备的消耗统计）、`oilAnalysis`（`abnormal` 超厂内限值、`refChecked` 参考比对、`noLimit` 无限值、`normal`、`outOfLedger` 台账外油样，不计入统计）、`oilNameConflicts`。
 4. **撰写"润滑管理情况说明"** —— 读 `references/lube-rules.md` 的表述口径，撰写 200~350 字，按"到期情况 → 五定落实与逾期项 → 油品消耗情况 → 油液分析异常 → 下一步安排"结构，替换 `lube-report.md` 中 `<!-- ANALYSIS_START -->` 与 `<!-- ANALYSIS_END -->` 之间的占位文字。**数量、逾期天数/小时、齐备率、消耗量一律引用 lube.json；油液分析结论以化验报告为准，不得改写。**
 5. **交付前自检** —— 对照 `references/checklist.md` 逐项检查；通过后交付 `lube-report.md` 与 `lube.json`。逾期项需提报维修通知单时，提示用户可接 `work-order-generator` 技能（输出通知单草稿）。
 6. **必须保留声明行** —— 报告开头的声明行由脚本写入：「本材料由脚本汇总、模型成文，仅供设备员复核参考，不替代审批、定性、验收与签字；厂内制度与系统数据为准。」成文时不得删除。

@@ -293,6 +293,12 @@ ok(!/[\u2600-\u27BF\u{1F300}-\u{1FAFF}]/u.test(r.md), 'L44 md 不含 emoji');
 ok(/【注意】/.test(r.md), 'L45 醒目提示用「【注意】」');
 ok(/contractor-performance-log/.test(r.md), 'L46 异常处置提示指向承包商表现记录技能');
 eq(raw(base('动火作业', ['--level'])).s.ok, false, 'L47 --level 缺值报错');
+// 不分级的作业类别（盲板抽堵、受限空间、临时用电等，票面作业级别为空）：不提示「请按票面级别传入」
+r = run(base('盲板抽堵作业,临时用电作业', ['--medium', '柴油']), 'lvl-ungraded');
+ok(r.j.risk.reasons.some((x) => /不分级/.test(x)) && !r.j.risk.reasons.some((x) => /请按票面级别传入/.test(x)), 'L48 不分级作业类别判定依据写明不分级，不要求传 --level');
+ok(/作业票级别（填报） \| —（[^|]*盲板抽堵作业[^|]*不分级/.test(r.md) && /作业票级别（填报） \| —（[^|]*临时用电作业[^|]*不分级/.test(r.md),'L49 md 作业票级别栏写明该类作业不分级');
+r = run(base('盲板抽堵作业,高处作业', ['--medium', '柴油']), 'lvl-mixed');
+ok(r.j.risk.reasons.some((x) => /未提供作业票级别/.test(x) && /高处作业/.test(x)), 'L50 含分级作业类别时仍提示按票面级别传入（点明是哪类）');
 
 console.log(`\n${'='.repeat(56)}`);
 console.log(`site-supervision-points 自测：${pass} 通过，${fail} 失败`);

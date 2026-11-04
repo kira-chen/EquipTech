@@ -30,3 +30,12 @@
 node scripts/make-sample.js --out examples            # 默认 seed=1
 node scripts/make-sample.js --out examples --seed 7   # 方案编号/工期/人名变化，计数不变
 ```
+
+## MCP 取数对照
+
+本技能不调用业务系统 MCP，下表的方案取自平台知识库（`MCPServer/knowledge/平台知识库/01-设备资料/`），按 SKILL.md 先跑外部技能 overhaul-safety-check（docx2text 抽文本 → 抽取 plan.json 并向用户复述 → check.js 出 result.json），再跑 `merge-report.js`。方案内容固定，计数每天稳定。
+
+| # | 示例问题 | MCP 调用 | 运行参数 | 预期结果 |
+|---|---|---|---|---|
+| M1 | 知识库 P-2101A 机械密封更换方案，日常维修，核安全措施；交出、备件已核实，交叉作业、承包商未核 | 不调用（平台知识库 + 外部技能 overhaul-safety-check） | `merge-report.js --result <check.js 输出>/result.json --plan <plan.json> --notes <notes.json> --repair-type 日常维修` | 外部核查与合并计数一致：缺失 0 / 建议完善 0 / 未判定 0 / 已有 38；方案编号 JX-P2101A-2026-11，作业类型「盲板抽堵、临时用电」并加注八大类名称；车间侧四项为 已核实 / 未核实 / 未核实 / 已核实；无 warning |
+| M2 | 知识库 T-1201 塔盘检修方案，老叫法「大修」，缺哪些、怎么补；车间几项未核 | 不调用（同上） | `merge-report.js --result <result.json> --plan <plan.json> --repair-type 大修` | 「大修」映射为「大检修」并 warning；缺失 6（CS-004 受限空间气体检测安排、G-013 承包商资质审查、G-014 安全管理协议、G-017 交叉作业协调安排、HP-004 高处作业票办理安排、HW-005 动火分析安排）/ 建议完善 20 / 未判定 0 / 已有 28，逐条带「方案里怎么补」；作业类型含受限空间、动火（加注用火作业）、高处、吊装；车间侧四项全部「未核实」 |

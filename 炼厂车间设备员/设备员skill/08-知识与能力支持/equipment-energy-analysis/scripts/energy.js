@@ -440,10 +440,18 @@ function main() {
 
   if (!byEquipment.length) throw new Error('「运行数据」中没有可用记录');
 
+  // ---- 统计期内运行时间 ≤ 0 h：参数均值不代表运行工况，效率照列供核对，但不判正常或偏低、不参与同类对比
+  for (const it of byEquipment) {
+    if (it.category !== 'calculated' || it.efficiency === null || it.runHours === null || it.runHours > 0) continue;
+    it.lowJudgement = 'notRunning';
+    it.note = `统计期内运行时间为 ${it.runHours} h，参数均值不代表运行工况；效率仅列出供核对，未判正常或偏低，也未参与同类对比`;
+    warnings.push(`工作表「运行数据」第${it.row}行 设备「${it.tag}」统计期内运行时间为 ${it.runHours} h，参数均值不代表运行工况，**不判正常或偏低**，也不参与同类对比；请核实该台是否为备用或停运设备`);
+  }
+
   // ---- 同类设备横向对比（只在组内 ≥2 台可算设备时成立）
   const groups = new Map();
   for (const it of byEquipment) {
-    if (it.category !== 'calculated' || it.efficiency === null) continue;
+    if (it.category !== 'calculated' || it.efficiency === null || it.lowJudgement === 'notRunning') continue;
     if (!groups.has(it.group)) groups.set(it.group, []);
     groups.get(it.group).push(it);
   }
@@ -466,7 +474,7 @@ function main() {
       spreadPct: C.round((Math.max(...effs) - Math.min(...effs)) * 100, 2),
       best: list[0].tag, worst: list[list.length - 1].tag,
       members: list.map((x) => ({ tag: x.tag, name: x.name, efficiencyPct: x.efficiencyPct, rank: x.groupRank })),
-      note: list.length >= 2 ? null : '组内仅 1 台可算设备，不构成横向对比（不与通用典型效率值比较）',
+      note: list.length >= 2 ? null : '组内仅 1 台可算设备（统计期内运行 0 h 的不计），不构成横向对比（不与通用典型效率值比较）',
     });
   }
   groupComparison.sort((x, y) => y.size - x.size || String(x.group).localeCompare(String(y.group), 'zh'));
@@ -474,7 +482,7 @@ function main() {
   // ---- 能效偏低判定：有设计效率的按设计值，否则按组内中位数（组内 ≥2 台才成立）
   const lowEfficiency = [];
   for (const it of byEquipment) {
-    if (it.category !== 'calculated' || it.efficiency === null) continue;
+    if (it.category !== 'calculated' || it.efficiency === null || it.lowJudgement === 'notRunning') continue;
     let baseline = null, baselineKind = null;
     if (it.designEfficiency !== null) { baseline = it.designEfficiency; baselineKind = 'design'; }
     else if (it.groupSize >= 2) { baseline = it.groupMedianPct / 100; baselineKind = 'groupMedian'; }
@@ -496,7 +504,7 @@ function main() {
   lowEfficiency.sort((x, y) => (x.efficiencyPct ?? 0) - (y.efficiencyPct ?? 0));
 
   // ---- 费用差额测算（仅在有单价时；不等于节能收益）
-  const savingStatement = '费用差额为按当前运行条件、以组内最优或设计效率为参照的静态测算，未考虑工况变化、负荷率、检修投入与工艺约束，不等于可实现的节能收益。';
+  const savingStatement = '费用差额为按当前运行条件、以设计效率或组内中位数为参照的静态测算，未考虑工况变化、负荷率、检修投入与工艺约束，不等于可实现的节能收益。';
   const savingPotential = [];
   let savingTotal = null;
   if (unitPrice !== null) {
@@ -531,6 +539,7 @@ function main() {
     groups: groupComparison.length,
     comparableGroups: groupComparison.filter((x) => x.comparable).length,
     notComparable: byEquipment.filter((x) => x.lowJudgement === 'notComparable').length,
+    notRunning: byEquipment.filter((x) => x.lowJudgement === 'notRunning').length,
     designProvided,
     priceProvided: unitPrice !== null,
     polytropic,
@@ -564,7 +573,7 @@ function main() {
     ...byEquipment.map((x) => [x.tag, x.name || '—', x.typeLabel, x.group, x.efficiencyPct, x.usefulPower, x.shaftPower,
       x.specificEnergy, x.specificEnergyUnit || '—', x.designEfficiencyPct, x.designDeviationPct,
       x.groupRank, x.groupMedianPct, x.groupDeviationPct, x.runHours,
-      x.category === 'insufficientData' ? '数据不足' : x.category === 'implausible' ? '超出合理范围' : x.lowJudgement === 'low' ? '能效偏低' : x.lowJudgement === 'notComparable' ? '无可比基准' : '正常'])],
+      x.category === 'insufficientData' ? '数据不足' : x.category === 'implausible' ? '超出合理范围' : x.lowJudgement === 'low' ? '能效偏低' : x.lowJudgement === 'notComparable' ? '无可比基准' : x.lowJudgement === 'notRunning' ? '统计期内未运行（不判定）' : '正常'])],
     '能效偏低': [['位号', '设备名称', '效率(%)', '基准(%)', '基准来源', '差距(百分点)', '需核实方向'],
       ...lowEfficiency.map((x) => [x.tag, x.name || '—', x.efficiencyPct, x.baselinePct,
         x.baselineKind === 'design' ? '设计效率' : '组内中位数', C.round(x.efficiencyPct - x.baselinePct, 2),
@@ -599,6 +608,7 @@ function main() {
     ['超出物理合理范围', counts.implausible],
     ['同类对比组', `${counts.groups}（其中可横向对比 ${counts.comparableGroups} 组）`],
     ['无可比基准', counts.notComparable],
+    ['统计期内未运行（运行时间 0 h，不判定）', counts.notRunning],
     ['与设计值偏差分析', designProvided ? '已开展' : '—（未提供设计参数，仅做同类横向对比）'],
     ['费用差额测算', counts.priceProvided ? `已测算（单价 ${unitPrice} 元/${priceUnit}，${priceKind}）` : '—（未提供能源单价或未提供分时电价的加权平均值）'],
   ]));
@@ -616,7 +626,7 @@ function main() {
       x.designEfficiencyPct === null ? '—' : `${x.designEfficiencyPct}%`,
       x.designDeviationPct === null ? '—' : `${x.designDeviationPct > 0 ? '+' : ''}${x.designDeviationPct} 百分点`,
       x.groupRank === null ? '—' : `${x.groupRank}/${x.groupSize}`,
-      x.category === 'insufficientData' ? '数据不足' : x.category === 'implausible' ? '超出合理范围' : x.lowJudgement === 'low' ? '能效偏低' : x.lowJudgement === 'notComparable' ? '无可比基准' : '正常'])));
+      x.category === 'insufficientData' ? '数据不足' : x.category === 'implausible' ? '超出合理范围' : x.lowJudgement === 'low' ? '能效偏低' : x.lowJudgement === 'notComparable' ? '无可比基准' : x.lowJudgement === 'notRunning' ? '统计期内未运行（不判定）' : '正常'])));
   if (!designProvided) {
     L.push('> 【注意】未提供设计参数表，「设计效率」「与设计值偏差」两列为 —，本报告只做同类设备横向对比，未引用通用典型效率值作为基准。');
     L.push('');

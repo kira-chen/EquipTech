@@ -24,6 +24,22 @@ metadata:
 - 必填信息：位号（功能位置）或设备名称、缺陷现象、发现时间、发现人。缺项时按 `references/intake-questions.md` 一次性向用户列出需补充项。
 - 环境：可执行 Node.js ≥ 18，脚本仅用内置模块，无需 npm 安装。**若环境无法执行 node（无 Bash 工具或 `node --version` 失败），明确告知用户并终止，不得手工定级。**
 
+## 数据获取（MCP）
+
+平台接入了业务系统 MCP 服务时，按下表调用工具取数，不再请用户上传导出文件；未接入时按操作步骤请用户提供系统导出文件。工具全部只读，不在业务系统里创建或修改任何单据。
+
+| 服务 | 工具 | 参数 | 交给脚本 |
+|---|---|---|---|
+| 设备资产管理 | `get_notifications` | `open_only=true`，`workshop`：车间 | `--input`（目录 A） |
+| 设备资产管理 | `get_notifications` | `open_only=true`，`tag`：位号 | `--ledger`（目录 C） |
+| 设备资产管理 | `get_equipment_ledger` | 单条时 `tag`：位号；批量时 `workshop`：车间 | `--equip-ledger`（目录 B） |
+
+取数后：
+
+1. 工具返回下载链接（60 分钟内有效，过期重新调用）。csv 按原文件名放进新建的空目录，不改文件名，不与其他技能的文件混放；表中目录字母相同的放同一个目录，不同字母分开放，把目录作为“交给脚本”一列的参数值。
+2. 批量为车间未关闭的通知单重新定级时用目录 A 作 `--input`，务必带 `workshop`，否则会把其他车间的通知单一起定级。这些通知单在系统里已经存在，`notification.csv` 草稿不要再拿去创建通知单，只用 `defects.md` 核对等级；脚本等级与系统「缺陷等级」不一致的，列给用户由设备员按厂内制度确认。
+3. 用户口述单条缺陷时不取目录 A；按位号取该设备未关闭的通知单放目录 C 作 `--ledger` 查重，疑似重复的由用户确认是否新建。
+
 ## 操作步骤
 1. **抽取结构化字段** —— 从用户描述中抽取：位号（功能位置）、设备名称、缺陷部位、现象类型（泄漏/异响/振动/温升/腐蚀/变形/失效/其他）、影响范围、是否影响运行、介质、发现时间、发现人。**抽取结果须回读给用户确认，不确定的字段标"待确认"，不得猜测填充。**
 2. **运行脚本** —— 技能目录以平台实际加载路径为准（Windows 路径加双引号）：
@@ -34,7 +50,7 @@ metadata:
    读取末行 JSON 摘要（同时写入 `<out>/summary.json`）：`ok` 必须为 `true`，`ok:false` 时把 `error` 告知用户并终止；`warnings` 非空时逐条告知用户（位号不在台账/疑似重复缺陷/时间格式异常等）。脚本用法详见 `scripts/README.md`。
    - 定级所依赖字段（是否影响运行、介质危险性）为空时：等级输出 `undetermined`（未判定）并单列一节，说明还需补充哪个字段，**不得按最低等级或最高等级默认处理**；未判定项不进入通知单草稿。
    - 疑似与台账中未闭环缺陷/通知单重复：标记 `possibleDuplicate` 并列出相似记录，由用户确认是否新建，**不得自动合并或自动丢弃**。台账状态按 SAP 系统状态归一（OSNO/NOPR 未闭环，NOCO/CLSD 已闭环）。
-3. **读取 defects.json** —— 从 `<输出目录>/defects.json` 获取：`defects`（逐条缺陷：登记号、结构化字段、等级、定级依据、建议处理时限、专业归口建议、`notification` 通知单建议）、`undetermined`、`possibleDuplicate`、`counts`、`meta.gradingScheme`。
+3. **读取 defects.json** —— 从 `<输出目录>/defects.json` 获取：`defects`（逐条缺陷：登记号、结构化字段、等级、定级依据、建议处理时限、专业归口建议、`notification` 通知单建议；批量时还有原记录编号 `sourceNo`/`sourceNoKind` 与系统等级 `sourceLevel`/`sourceLevelDiffers`）、`undetermined`、`possibleDuplicate`、`counts`、`meta.gradingScheme`。原记录是 SAP 通知单（`sourceNoKind=notification`）的，系统已存在，交付时提醒勿重复创建；系统等级与脚本定级不一致的逐条告知用户，以厂内定级为准。
 4. **撰写缺陷单** —— 按 `assets/templates/defect-template.md` 成文，每条缺陷含：登记号、设备信息（功能位置、SAP 设备编号）、现象描述（规范化后）、影响判断、等级与定级依据、建议处理时限、建议责任专业、通知单建议（M1 维修申请/M2 故障报告，SAP 优先级 1~4）。**等级、时限与优先级一律引用 defects.json，定级依据须指明命中了规则表中的哪一条。**
 5. **交付前自检** —— 对照 `references/checklist.md` 逐项检查；通过后交付 `defects.md`、`defects.json`、`ledger.csv`（台账追加行）与 `notification.csv`（维修通知单草稿，设备员核对后在 SAP 创建通知单，通知单号由系统生成）。需要跟踪后续工单时提示用户可接 `work-order-tracker` 技能。
 

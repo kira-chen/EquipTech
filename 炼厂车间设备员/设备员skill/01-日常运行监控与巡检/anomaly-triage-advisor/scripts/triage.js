@@ -122,7 +122,7 @@ function main() {
   const symptoms = R.classifySymptoms(a.symptom);
   const typeKey = R.classifyEquipType(a['equip-type']);
   if (!a['equip-type']) warnings.push('未提供 --equip-type（设备类型），无法套用分类型故障口径，仅给出通用排查框架');
-  else if (typeKey === 'generic') warnings.push(`设备类型「${a['equip-type']}」不在知识库覆盖范围（泵类/机组类/静设备类/电仪类），仅给出通用排查框架，未凭通用知识编造具体原因`);
+  else if (typeKey === 'generic') warnings.push(`设备类型「${a['equip-type']}」不在知识库覆盖范围（泵类/机组类/静设备类/电仪类/安全阀），仅给出通用排查框架，未凭通用知识编造具体原因`);
   if (symptoms.length === 1 && symptoms[0] === 'other') {
     warnings.push(`现象描述「${a.symptom}」未匹配到已知现象类型（振动/异响/温度/泄漏/性能/电流/仪表/润滑），请补充更具体的描述`);
   }
@@ -233,7 +233,7 @@ function main() {
   }
 
   // ---- 规则引擎
-  const t = R.triage({ equipType: a['equip-type'], symptoms, evidence });
+  const t = R.triage({ equipType: a['equip-type'], symptoms, evidence, symptomText: a.symptom });
   for (const n of t.notes) warnings.push(n);
 
   // 历史同类故障提示（只提示，不改排序，避免用历史"锁死"结论）

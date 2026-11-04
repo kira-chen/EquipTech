@@ -374,6 +374,42 @@ ok(!/[✅⚠️❌]/.test(r.md), '23.1 md 不含 emoji');
 ok(/【注意】/.test(r.md), '23.2 醒目提示用【注意】');
 ok(/车间设备主任 \/ 公司设备管理部门/.test(r.md), '23.3 md 写明提交对象');
 
+// ---- 24. 整改记录与本次不合格配对：整改完成日期早于本次（不合格）校验日期的是旧记录，不得据此闭环
+const ufStale = mk('uf-stale.xlsx', {
+  '校验台账': [HEAD,
+    ['安全阀', 'PSV-50', '安全阀50', 'A46Y', '0~1.6MPa', '—', '1年', ago(30), '不合格', 'AQ-050', ''],
+    ['安全阀', 'PSV-51', '安全阀51', 'A46Y', '0~1.6MPa', '—', '1年', ago(30), '不合格', 'AQ-051', ''],
+    ['安全阀', 'PSV-52', '安全阀52', 'A46Y', '0~1.6MPa', '—', '1年', ago(30), '不合格', 'AQ-052', ''],
+  ],
+});
+const issStale = mk('iss-stale.xlsx', {
+  '整改清单': [
+    ['位号', '整改状态', '整改完成日期', '证书编号'],
+    ['PSV-50', '已整改', ago(200), 'AQ-040'],
+    ['PSV-51', '已整改', ago(10), 'AQ-061'],
+    ['PSV-52', '已整改', '', ''],
+  ],
+});
+r = run(ufStale, ['--issues', issStale], 'uf-stale');
+ok(r.data.unresolvedFail.some((x) => x.tag === 'PSV-50'), '24.1 整改完成日期早于本次不合格校验日期 → 仍为不合格未整改');
+ok(r.data.warnings.some((w) => w.includes('PSV-50') && w.includes('早于')), '24.2 旧整改记录不采信并 warning');
+ok(r.data.normal.some((x) => x.tag === 'PSV-51' && x.remediation), '24.3 整改完成日期晚于本次校验日期 → 闭环恢复到期计算');
+ok(r.data.normal.some((x) => x.tag === 'PSV-52'), '24.4 整改状态明确闭环、未填完成日期 → 按闭环处理（保持原口径）');
+eq(r.summary.counts.unresolvedFail, 1, '24.5 不合格未整改仅 PSV-50 一项');
+
+// ---- 25. 默认范围（安全阀）外的记录不出「下次校验日期不一致」warning，与报告附一、counts.nextMismatch 一致
+const scopeMism = mk('scope-mismatch.xlsx', {
+  '校验台账': [HEAD,
+    ['安全阀', 'PSV-60', '安全阀60', 'A46Y', '0~1.6MPa', '—', '1年', ago(30), '合格', 'AQ-060', ''],
+    ['计量器具', 'PI-60', '压力表60', 'Y-100', '0~1.6MPa', '1.6级', '6个月', ago(30), '合格', 'JL-060', after(300)],
+  ],
+});
+r = run(scopeMism, ['--category', '安全阀'], 'scope-mismatch-default');
+eq(r.summary.counts.nextMismatch, 0, '25.1 默认范围 counts.nextMismatch 为 0');
+ok(!r.data.warnings.some((w) => w.includes('PI-60') && w.includes('不一致')), '25.2 范围外 PI-60 不出下次日期不一致 warning');
+r = run(scopeMism, [], 'scope-mismatch-all');
+ok(r.data.warnings.some((w) => w.includes('PI-60') && w.includes('不一致')), '25.3 --category 全部 时 PI-60 出不一致 warning');
+
 // ---- 18. 产出结构完整性
 r = run(base, [], 'struct');
 ok(fs.existsSync(path.join(r.out, 'summary.json')), '18.1 summary.json 已写入');
@@ -384,6 +420,56 @@ ok(/## 一、到期概览/.test(r.md) && /## 二、超期清单/.test(r.md) && /
   && /## 七、送检批次建议/.test(r.md) && /## 八、校验管理说明/.test(r.md), '18.4 八节结构齐全');
 ok(/<!-- ANALYSIS_START -->/.test(r.md) && /<!-- ANALYSIS_END -->/.test(r.md), '18.5 分析段占位符存在');
 ok(r.data.meta.statement.includes('不得作为有效安全保护措施'), '18.6 JSON 中保留说明行');
+
+// ---- 26. 整改清单同一位号多行：在全部闭环记录里找配对本次不合格的那条，不因行序被旧记录覆盖（2026-11-04 复核补充）
+const ufMulti = mk('uf-multi.xlsx', {
+  '校验台账': [HEAD,
+    ['安全阀', 'PSV-60', '安全阀60', 'A46Y', '0~1.6MPa', '—', '1年', ago(30), '不合格', 'AQ-060', ''],
+    ['安全阀', 'PSV-61', '安全阀61', 'A46Y', '0~1.6MPa', '—', '1年', ago(30), '不合格', 'AQ-061', ''],
+    ['安全阀', 'PSV-62', '安全阀62', 'A46Y', '0~1.6MPa', '—', '1年', ago(30), '不合格', 'AQ-062', ''],
+  ],
+});
+const issMulti = mk('iss-multi.xlsx', {
+  '整改清单': [
+    ['位号', '整改状态', '整改完成日期', '证书编号'],
+    ['PSV-60', '已整改', ago(20), 'AQ-070'],    // 新记录在前
+    ['PSV-60', '已整改', ago(500), 'AQ-040'],   // 旧记录在后
+    ['PSV-61', '已整改', ago(400), 'AQ-041'],
+    ['PSV-61', '已整改', ago(300), 'AQ-051'],   // 两条都是旧记录
+    ['PSV-62', '已整改', ago(10), 'AQ-072'],
+    ['PSV-62', '已整改', ago(5), 'AQ-073'],     // 两条都晚于本次校验，取最晚的
+  ],
+});
+r = run(ufMulti, ['--issues', issMulti], 'uf-multi');
+ok(r.data.normal.some((x) => x.tag === 'PSV-60' && x.remediation && x.remediation.doneAt === ago(20)), '26.1 同一位号新记录在前、旧记录在后 → 仍按新记录判已整改');
+ok(!r.data.warnings.some((w) => w.includes('PSV-60') && w.includes('早于')), '26.2 有可配对的新记录时不报旧整改记录 warning');
+ok(r.data.unresolvedFail.some((x) => x.tag === 'PSV-61'), '26.3 同一位号全部记录都早于本次不合格校验 → 仍为不合格未整改');
+ok(r.data.warnings.some((w) => w.includes('PSV-61') && w.includes('早于')), '26.4 全部为旧记录时 warning');
+eq((r.data.normal.find((x) => x.tag === 'PSV-62') || { remediation: {} }).remediation.doneAt, ago(5), '26.5 多条可配对记录取整改完成日期最晚的一条');
+eq(r.summary.counts.unresolvedFail, 1, '26.6 不合格未整改仅 PSV-61 一项');
+
+// ---- 27. 「旧整改记录」warning 只对统计范围内的设备发出（默认只统计安全阀时，范围外的 PI-9 不报）
+const ufScope = mk('uf-scope.xlsx', {
+  '校验台账': [HEAD,
+    ['安全阀', 'PSV-9', '安全阀9', 'A46Y', '0~1.6MPa', '—', '1年', ago(30), '合格', 'AQ-009', ''],
+    ['计量器具', 'PI-9', '压力表9', 'Y-100', '0~1.6MPa', '1.6级', '6个月', ago(30), '不合格', 'JL-009', ''],
+  ],
+});
+const issScope = mk('iss-scope.xlsx', { '整改清单': [['位号', '整改状态', '整改完成日期', '证书编号'], ['PI-9', '已整改', ago(500), 'JL-000']] });
+r = run(ufScope, ['--issues', issScope, '--category', '安全阀'], 'uf-scope');
+ok(!r.data.warnings.some((w) => w.includes('PI-9') && w.includes('旧整改记录')), '27.1 范围外的 PI-9 不出旧整改记录 warning');
+r = run(ufScope, ['--issues', issScope], 'uf-scope-all');
+ok(r.data.warnings.some((w) => w.includes('PI-9') && w.includes('旧整改记录')), '27.2 --category 全部时 PI-9 在范围内，仍出 warning');
+
+// ---- 28. 类别无法识别的记录在默认范围外时，warning 不写「已归入待确认」
+r = run(badcat, ['--category', '安全阀'], 'badcat-scope');
+const bw = r.data.warnings.filter((w) => w.includes('XX-30') && w.includes('无法识别'));
+eq(bw.length, 1, '28.1 默认范围外的 XX-30 类别无法识别仍有一条 warning');
+ok(bw.every((w) => !w.includes('已归入待确认')), '28.2 默认范围外的 XX-30 warning 不写「已归入待确认」');
+ok(bw.every((w) => w.includes('未纳入')), '28.3 默认范围外的 XX-30 warning 说明未纳入报表');
+eq(r.summary.counts.undetermined, 0, '28.4 默认范围外的 XX-30 不计入待确认');
+r = run(badcat, [], 'badcat-all');
+ok(r.data.warnings.some((w) => w.includes('XX-30') && w.includes('已归入待确认')), '28.5 --category 全部时 XX-30 仍写「已归入待确认」');
 
 // ---- 输出
 console.log(`\n${'='.repeat(56)}`);

@@ -115,6 +115,11 @@ eq(itemOf(r.j, 'P1').status, 'undetermined', 'E3 未说明是否带压→泄压�
 ok(String(itemOf(r.j, 'P1').missing).includes('带压'), 'E4 未判定注明缺失的依据字段');
 eq(itemOf(r.j, 'P1').required, null, 'E5 未判定项 required 为 null，不是 false');
 eq(itemOf(r.j, 'P2').status, 'undetermined', 'E6 未说明是否高温→降温条目未判定');
+// 热油泵（柴油/渣油等中危介质）未说明是否高温：与泄压同口径判未判定，不得静默按「不需要降温」
+r2 = run(['--tag', 'P-9205', '--equip-type', '离心泵', '--medium', '渣油', '--scope', '机械密封解体更换', '--pressured', '是', '--no-entry', '--no-hotwork'], 'e-pump-hot');
+eq((itemOf(r2.j, 'P2') || {}).status, 'undetermined', 'E6b 中危介质泵未说明是否高温→降温条目未判定');
+r2 = run(['--tag', 'K-9206', '--equip-type', '离心压缩机', '--medium', '润滑油', '--scope', '解体检修', '--pressured', '是', '--no-entry', '--no-hotwork'], 'e-comp-hot');
+eq((itemOf(r2.j, 'P2') || {}).status, 'undetermined', 'E6c 中危介质压缩机未说明是否高温→降温条目未判定');
 eq(itemOf(r.j, 'Q4').ruleId, undefined, 'E7 换热器非进人类，不强行生成受限空间条目');
 ok(r.j.undetermined.length === r.j.items.filter((x) => x.status === 'undetermined').length, 'E8 未判定项已全部单列');
 ok(/## 四、未判定项/.test(r.md) && /不得按「不需要」处理/.test(r.md), 'E9 md 未判定节写明不得按不需要处理');

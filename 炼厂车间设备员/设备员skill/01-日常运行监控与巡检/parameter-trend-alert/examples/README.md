@@ -33,3 +33,14 @@
 node scripts/make-sample.js --out examples            # seed=1
 node scripts/make-sample.js --out examples --seed 7   # 数值抖动变，越限/恶化/数据不足条数不变
 ```
+
+## MCP 取数对照
+
+平台接入业务系统 MCP 时不用附件：按 SKILL.md「数据获取（MCP）」调用 `get_tag_history`（每天 08:00 一个点，近 8 天）和 `get_tag_limits`，两份 csv 放进同一个空目录作 `--input`，`--date` 用当天。演示数据每天按剧本刷新，预期结果只列每天稳定的结论。
+
+| # | 示例问题 | MCP 调用 | 运行参数 | 预期结果 |
+|---|---|---|---|---|
+| M1 | P-2101A 这一周振动、轴承温度是不是在涨，哪些越高报 | DCS位号数据 `get_tag_history`（tag=P-2101A，for_skill=parameter-trend-alert）+ `get_tag_limits`（tag=P-2101A）→ 同一目录 | `--input <目录> --workshop 常减压车间 --date <今天>` | 5 条序列各 8 期；驱动端振动、轴承温度越高报（H），不再预测到限；非驱动端振动趋势恶化，给出预计到高报日期；出口压力、电机电流多数日子归稳定、不预测（理由为 R² 低，或变化方向与限值不符）；偶有 R²≥0.5 且朝限值方向的日子归趋势并给出较远的预计到限日期，如有则照列；无数据不足 |
+| M2 | E-1201 出口温度有没有越限或明显趋势 | DCS位号数据 `get_tag_history`（tag=E-1201，for_skill=parameter-trend-alert）+ `get_tag_limits`（tag=E-1201）→ 同一目录 | `--input <目录> --workshop 常减压车间 --date <今天>` | 壳程、管程出口温度 2 条序列均未越限；多数日子归稳定（R² 低或方向与限值不符），不预测到限日期；偶有 R²≥0.5 且朝限值方向的日子给出较远的预计到限日期，如有则照列 |
+
+M1、M2 只取单台运行设备，不受停运判定影响（加不加 `--status` 结论相同，6 个日期复核一致）。按车间取全部机泵、压缩机时（`get_tag_history` 的 `tag` 填该车间全部位号、`get_tag_limits` 按 `workshop`），备用/停运设备的出口压力低、振动和电流为 0：常减压车间 6 个日期均有 9 台设备归「停运中（不判定）」，不再出现越低报/低低报；不加 `--status` 时这 9 台都判「疑似停运」并 warning；加 `--status`（`get_run_events` + `get_equipment_ledger`，按 `workshop` 取，放同一目录）后多数按启停记录判停运，近 30 天未开过的备机仍为疑似停运。刚由备机切为主机的泵（如 P-2105B、P-2104B，随剧本日轮换），窗口前几期的停机读数被剔出回归（加不加 `--status` 结果相同），不再因 0→运行值的跳变判趋势恶化；切换后运行少于 4 期的参数归「数据不足（切泵后运行期数偏少）」，不判劣化。

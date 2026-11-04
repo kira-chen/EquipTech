@@ -13,7 +13,7 @@
 | 4 | 只看消防设施 | 主样例 | 加 `--category 消防` | 7 台：1 失效停用、1 超期、4 完好、1 待确认；完好率 57.1% |
 | 5 | 这是系统导出的设施台账，第一行是标题，列名跟标准格式不一样，底下还有合计行，能读吗 | `sample-export-style.xlsx` | `--workshop 加氢车间 --date 2026-09-21` | 可读；2 台；合计行与空编号行跳过并 warning；完好率 50.0% |
 | 6 | 这是从 EM/SAP 导出的台账，列名是功能位置、设备描述、检验类型、检验日期这些，能直接用吗 | `sample-em-export.xlsx` | `--workshop 加氢车间 --date 2026-09-21` | 可读，无缺列 warning；4 台：1 停用（E201-XF-001，状态与结果矛盾 warning）、1 超期（报警器）、2 在周期内（安全阀、SIS 联锁）；完好率 50.0% |
-| 7 | 安全阀和联锁这些也在台账里，帮我看到期情况，校验周期合不合规你不用管 | 主样例 | 加 `--category 安全附件` | 2 台均在周期内；报告头部写明校验周期归 special-equipment-inspection-due、SIS 功能测试归仪表 |
+| 7 | 安全阀和联锁这些也在台账里，帮我看到期情况，校验周期合不合规你不用管 | 主样例 | 加 `--category 安全附件` | 2 台均在周期内；报告头部写明安全阀校验用 valve-instrument-calibration-ledger、特种设备本体定检用 special-equipment-inspection-due、SIS 功能测试归仪表 |
 
 ## 关键验证点
 
@@ -29,7 +29,7 @@
 10. **七类设施识别**：报警器、安全附件、联锁与防爆、消防、接地、应急器材、环保设施均在分类完好率表中出现，各自计算完好率。AQ-2601（安全阀）、AQ-2602（呼吸阀/阻火器）归「安全附件」，LS-2701（熄火联锁）归「联锁与防爆」，XF-2206（消防水泵组）归「消防」。
 11. **自然月折算**：YJ-2302 月检（上次 22 天前）剩余 9 天、HB-2501 季度比对（上次 80 天前）剩余 12 天，均按「上次日期 + N 个自然月」计算，JSON `calcMode` 为 `months`；周/天周期 `calcMode` 为 `days`。
 12. **SAP/EM 列名**：`sample-em-export.xlsx` 用「功能位置 / 设备描述 / 装置 / 设备类型 / 检验类型 / 检验周期 / 检验日期 / 检验结论 / 用户状态 / 属地专责」列头，经 `C.mergeAliases` 合并后无缺列 warning。
-13. **声明行与归口说明**：md 头部写明安全附件校验周期归 special-equipment-inspection-due、SIS 功能测试归仪表；末尾固定声明行「本材料由脚本汇总、模型成文……」。
+13. **声明行与归口说明**：md 头部写明安全阀校验用 valve-instrument-calibration-ledger、特种设备本体定检用 special-equipment-inspection-due、压力表温度计检定归计量（仪表）专业、SIS 功能测试归仪表；末尾固定声明行「本材料由脚本汇总、模型成文……」。
 
 ## 再生样例
 
@@ -37,3 +37,13 @@
 node scripts/make-sample.js --out examples            # 默认 seed=1
 node scripts/make-sample.js --out examples --seed 7   # 责任人与日期偏移变化，结论不变
 ```
+
+## MCP 取数对照
+
+平台接入业务系统 MCP 时不用附件：按 SKILL.md「数据获取（MCP）」调用工具，`get_safety_facilities` 的 csv 放目录 A 作 `--input`，`get_rectification_records` 的 csv 放目录 B 作 `--issues`；`--date` 用今天。演示数据每天按剧本刷新，超期、临期台数随日期变化，预期结果只列每天稳定的结论。
+
+| # | 示例问题 | MCP 调用 | 运行参数 | 预期结果 |
+|---|---|---|---|---|
+| M1 | 常减压车间安全环保设施哪些该检测、完好率多少，对一下整改记录 | HSE管理平台 `get_safety_facilities`（workshop=常减压车间）→ A；`get_rectification_records` → B | `--input A --issues B --workshop 常减压车间 --date <今天>` | 15 台，七类齐全（报警器 4、安全附件 1、联锁与防爆 2、消防 3、接地 2、应急器材 1、环保设施 2），不混入加氢车间设施（不传 workshop 为 20 台）；待确认 0；完好率为数值（不为 null）；GDS-2103 检测不合格：如整改记录已闭环且晚于检测日期，则不进不合格未整改，并 warning「在用但检测结果为不合格」；如整改未闭环，则按台账状态进失效停用或不合格未整改（整改记录每天按概率闭环，不写死）；其余设施的超期、临期与不合格随剧本变化 |
+| M2 | 只看常减压车间可燃气体报警器，GDS-2103 整改了没有 | HSE管理平台 `get_safety_facilities`（workshop=常减压车间，category=报警器）→ A；`get_rectification_records` → B | `--input A --issues B --workshop 常减压车间 --date <今天>` | 4 台报警器（GDS-2101/2102/2103/3101）；分类完好率只有报警器一类；GDS-2103 如整改记录已闭环（`remediation` 非空），则不计不合格未整改；如整改未闭环，则进失效停用或不合格未整改，回答时按当天结果说明 |
+| M3 | 加氢车间 H2S 报警器、熄火联锁有没有到期 | HSE管理平台 `get_safety_facilities`（workshop=加氢车间）→ A；`get_rectification_records` → B | `--input A --issues B --workshop 加氢车间 --date <今天>` | 5 台（报警器 2、联锁与防爆 1、消防 1、应急器材 1）；无待确认；TDS-5102 检测不合格：如整改记录已闭环且晚于检测日期，则不进不合格未整改，并 warning 状态与结果矛盾；如整改未闭环，则进失效停用或不合格未整改；超期、临期台数随剧本变化 |

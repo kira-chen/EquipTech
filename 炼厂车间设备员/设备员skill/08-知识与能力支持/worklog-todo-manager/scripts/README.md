@@ -29,7 +29,7 @@ node "<技能目录>/scripts/todo.js" \
 |---|---|---|
 | work-order-tracker | `orders.json` | `overdue[]`、`stalled[]`、`dueSoon[]` |
 | hazard-closure-tracker | `hazard.json` | `overdue[]`、`dueSoon[]`、`unverified[]` |
-| special-equipment-inspection-due | `inspection.json` | `overdue[]`、`dueSoon[]` |
+| special-equipment-inspection-due | `inspection.json` | `overdue[]`、`dueSoon[]`、`openIssues[]`（检验问题整改：整改超期 P1、未到期 P2，未填要求完成日期进无到期日；`openIssues` 为 null 即上游未传 `--issues` 时 warning 说明本清单不含检验问题整改） |
 | valve-instrument-calibration-ledger | `calibration.json` | `overdue[]`、`dueSoon[]`、`unresolvedFail[]` |
 | lubrication-manager | `lube.json` | `overdue[]`、`dueSoon[]`（责任人取 `owner`） |
 | defect-intake-grading | `defects.json` | `defects[]`（按 `dueDate`；等级 A/B/C，旧 I~IV 映射并 warning；`notification` 通知单草稿对象写入说明，兼容旧 `notificationNo`） |
@@ -60,7 +60,7 @@ node "<技能目录>/scripts/todo.js" \
 状态归一复用 `normSapStatus`：CLSD / NOCO / 已关闭 / 已完成 不进待办；**TECO / CNF / 技术完成（待验收）仍是待办**——技术完成不是关闭，还要设备员组织验收；DLFL / LKD / 已删除（已取消）不进待办并 warning；「未完成」等否定前缀写法一律进待办。
 
 ### 三条硬规矩（脚本层面保证）
-1. `--prev` 的未完成项**全部结转**，保留原始到期日与来源，**绝不自动延期**。
+1. `--prev` 的未完成项**全部结转**，保留原始到期日与来源，**绝不自动延期**。本日上游重跑出现的同一事项若到期日与原到期日不同（上游系统改了期限），不静默改写：条目带 `dueDateChanged: {from, to}`，warning「上游到期日由 X 变为 Y，请在系统核实」，清单到期日一列写「Y（原 X，上游已变更）」，按上游本日到期日排序。
 2. 无到期日的事项进 `noDueDate` 单列，**绝不自行设定到期日**。
 3. 疑似重复列入 `possibleDuplicate` 供确认，**两条原始待办都保留，绝不自动合并**。
 
@@ -83,4 +83,4 @@ seed 改变逾期天数等数值，但不改变结论：全量输入（6 JSON + 
 node scripts/selftest.js
 ```
 
-220 条断言，覆盖：结转 key 稳定（次日重跑 7 个上游：停滞天数变、临期转超期、缺陷登记号重编不出重复；同次运行 key 唯一；旧版 key 的 todo.json 升级兼容）、上游真实字段（缺陷 `notification` 对象、润滑 `owner`、交接占位「待明确」）、待办表 SAP 状态（CLSD/NOCO/DLFL 不进，TECO/技术完成/未完成/REL 仍进）、多源 JSON 合并、逾期天数计算、`--horizon`、无到期日不自设、疑似重复不自动合并、结转不丢不延期（含二次结转与同事项去重）、无法识别的 JSON、xlsx 待办表、纯文字待办、`--done` 提供与不提供、参数校验与空输入、优先级排序口径、产出结构与两行声明、交接记录 handover.json（meta.skill 约定、旧版结构推断 warning、pending 非数组不识别、与工单同位号疑似重复不合并）、SAP 工单 1~4 与缺陷 A/B/C 映射、旧 I~IV 口径 warning、SAP/EM 待办表列名（功能位置 / 工单号）、EAM 旧称不出现、无 emoji、默认输出目录为临时目录、make-sample 交接与 SAP 风格样例可再生。全绿退出 0。
+243 条断言，覆盖：结转 key 稳定（次日重跑 7 个上游：停滞天数变、临期转超期、缺陷登记号重编不出重复；同次运行 key 唯一；旧版 key 的 todo.json 升级兼容）、上游真实字段（缺陷 `notification` 对象、润滑 `owner`、交接占位「待明确」）、待办表 SAP 状态（CLSD/NOCO/DLFL 不进，TECO/技术完成/未完成/REL 仍进）、多源 JSON 合并、逾期天数计算、`--horizon`、无到期日不自设、疑似重复不自动合并、结转不丢不延期（含二次结转与同事项去重）、无法识别的 JSON、xlsx 待办表、纯文字待办、`--done` 提供与不提供、参数校验与空输入、优先级排序口径、产出结构与两行声明、交接记录 handover.json（meta.skill 约定、旧版结构推断 warning、pending 非数组不识别、与工单同位号疑似重复不合并）、SAP 工单 1~4 与缺陷 A/B/C 映射、旧 I~IV 口径 warning、SAP/EM 待办表列名（功能位置 / 工单号）、EAM 旧称不出现、无 emoji、默认输出目录为临时目录、make-sample 交接与 SAP 风格样例可再生、润滑按运行小时判定的项标题写小时数不写 null 并进无到期日（20 组，2026-11-04）、结转时上游到期日变化不静默改写（21 组）、特种设备检验问题整改 `openIssues` 纳入待办与未带整改项时的覆盖范围 warning（22 组）。全绿退出 0。

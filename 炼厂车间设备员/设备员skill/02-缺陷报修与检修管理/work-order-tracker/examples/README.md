@@ -38,3 +38,13 @@
 node scripts/make-sample.js --out examples            # 默认 seed=1，date=2026-09-21
 node scripts/make-sample.js --out examples --seed 7   # 故障描述与人名变化，上述结论不变
 ```
+
+## MCP 取数对照
+
+> 平台接入设备资产管理 MCP 时不上传附件：`get_work_orders`（不填 for_skill，表名「工单」，默认近 12 个月及全部未关闭工单）的 csv 放新建目录作 `--input`。必须带 `workshop`，脚本 `--workshop` 只写标题不筛选。日常工单每天随演示数据变化，下表只列剧本固定的结论。
+
+| # | 示例问题 | MCP 调用 | 运行参数 | 预期结果 |
+|---|---|---|---|---|
+| M1 | 常减压车间截至今天哪些工单超期、停滞，出催办清单 | 设备资产管理 `get_work_orders`（workshop=常减压车间） | `--input <目录> --workshop 常减压车间 --date <今天>` | 只统计常减压车间工单（不含加氢车间位号）；SAP 系统状态按 CRTD/REL/PCNF/TECO/CLSD/DLFL 映射；E-1201 管束内漏抽芯工单（PM01、PCNF）计入施工中，不在超期、停滞、临期清单；报告头部有默认时限口径【注意】行 |
+| M2 | 只看检维修中心静设备班的工单 | 同 M1 | M1 参数加 `--vendor 静设备班` | 只统计工作中心含「静设备班」的工单，E-1201 抽芯工单在内（施工中）；催办清单只有检维修中心静设备班的分组，无超期、停滞时写「无需催办」 |
+| M3 | 加氢车间工单超期和完成率 | 设备资产管理 `get_work_orders`（workshop=加氢车间） | `--input <目录> --workshop 加氢车间 --date <今天>` | 只统计加氢车间工单（位号均为 5 字头加氢装置设备）；完成率 = 已闭环 ÷（已知状态 − 已取消），TECO 归待验收不进分子 |

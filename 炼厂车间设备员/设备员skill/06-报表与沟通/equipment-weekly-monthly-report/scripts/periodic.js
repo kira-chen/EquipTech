@@ -143,6 +143,17 @@ function loadAny(p) {
 function isDaily(j) {
   return !!(j && j.meta && j.meta.date && j.counts && Object.prototype.hasOwnProperty.call(j.counts, 'equipment'));
 }
+/** 不是全车间设备台账的表名（工单、缺陷、特种设备、润滑、巡检等专项台账） */
+const NOT_LEDGER = /工单|订单|缺陷|通知单|故障|检修|备件|特护|备机|密封|停工|隐患|作业|特种|安全阀|校验|压力容器|润滑|巡检|点检/;
+/** 表名含「设备台账」「技术对象」先放行（如「二作业部设备台账」），但「特种设备台账」「特护设备台账」「压力容器设备台账」「安全阀设备台账」等专项写法仍排除 */
+const LEDGER_NAME = /设备台账|技术对象/;
+const SPECIAL_KIND = '特种|特护|备机|备用|压力容器|容器|安全阀|安全附件|检修|维修|密封|润滑|巡检|点检|校验|停工|缺陷|故障|备件|隐患';
+const SPECIAL_LEDGER = new RegExp(`^(特种|特护|备机|备用)设备|(${SPECIAL_KIND})设备(使用)?(台账|技术对象)|(${SPECIAL_KIND})技术对象`);
+function isNotLedger(name) {
+  const s = String(name).replace(/\s/g, '');
+  if (LEDGER_NAME.test(s) && !SPECIAL_LEDGER.test(s)) return false;
+  return NOT_LEDGER.test(s);
+}
 /** 是否为 standby-rotation-reminder 的 rotation.json（备机完好来源） */
 function isRotation(j) {
   return !!(j && j.standbyAvailability && typeof j.standbyAvailability === 'object');
@@ -301,7 +312,9 @@ function main() {
       faultRows = C.toRecords(sFlt, ['位号'], `${got.name}/故障记录`, ['设备名称', '设备类型', '专业', '故障描述', '故障时间', '停机时长', '修复时长', '是否停机'], warnings, ALIASES);
       sources.push(`${got.name}→故障记录`);
     }
-    const sLdg = C.pickSheet(book, '设备台账', '台账', '技术对象');
+    // 「台账」是宽匹配：先排除工单台账、缺陷台账、特种设备台账、润滑/巡检台账等其它台账，避免没给设备台账时把它们当成设备台账；表名含「设备台账」「技术对象」的先放行
+    const ledgerBook = Object.fromEntries(Object.entries(book).filter(([k]) => !isNotLedger(k)));
+    const sLdg = C.pickSheet(ledgerBook, '设备台账', '台账', '技术对象');
     if (sLdg && !ledgerRows) {
       ledgerRows = C.toRecords(sLdg, ['位号'], `${got.name}/设备台账`, ['设备名称', '设备类型', '专业', '在用', '完好', '重要度'], warnings, ALIASES);
       sources.push(`${got.name}→设备台账`);
@@ -390,6 +403,8 @@ function main() {
   const intactMode = ruleMode('设备完好率', intactStructured);
   const intactDenom = denomParam || '在用';
   const intactSealedOut = sealedParam === null ? true : sealedParam;
+  const today = C.localDate();
+  const pastTo = to < today;
   let intactRate = null, intactGood = null, intactTotal = null, intactNote = '';
   let majorRate = null, majorGood = null, majorTotal = null, majorNote = '';
   const majorMode = ruleMode('主要设备完好率', false);
@@ -448,6 +463,7 @@ function main() {
       }
     } else if (!majorNote) majorNote = intactNote;
   } else { intactNote = '未提供设备台账，在用设备台数（分母）缺失'; majorNote = '未提供设备台账'; }
+  const intactSnapshotNote = pastTo && ledgerRows && ledgerRows.length ? `完好率、主要设备完好率按设备台账当前状态计算（本报告 ${today} 生成），不是 ${to} 时点的状态` : null;
   if (!intactMode.ok) { intactRate = null; intactNote = '需按厂内口径复算'; }
   else if (intactTotal && intactGood !== null) intactRate = C.round((intactGood / intactTotal) * 100, 1);
   else {
@@ -579,7 +595,7 @@ function main() {
     const rows = orderRows.map((r) => ({
       no: C.str(r['工单号']), tag: C.str(r['位号']), status: C.str(r['状态']),
       due: C.normDate(r['要求完成时间']), closedAt: C.normDate(r['闭环时间']),
-      owner: C.str(r['责任人']) || C.str(r['工作中心']), desc: C.str(r['缺陷描述']), row: r._row,
+      owner: C.str(r['责任人']) || C.str(r['工作中心']), workCenter: C.str(r['工作中心']) || null, desc: C.str(r['缺陷描述']), row: r._row,
     })).filter((x) => C.normSapStatus(x.status) !== '已取消');
     const shouldClose = rows.filter((x) => inRange(x.due));
     const noDue = rows.filter((x) => !x.due);
@@ -593,7 +609,7 @@ function main() {
       orderRate = orderMode.ok ? C.round((orderOnTime / orderDue) * 100, 1) : null;
       orderOverdueList = shouldClose
         .filter((x) => !isClosed(x.status) || (x.closedAt && C.diffDays(x.closedAt, x.due) > 0))
-        .map((x) => ({ no: x.no, tag: x.tag, desc: x.desc, due: x.due, closedAt: isClosed(x.status) ? x.closedAt : null, status: C.normSapStatus(x.status) || x.status, owner: x.owner, overdueDays: isClosed(x.status) && x.closedAt ? C.diffDays(x.closedAt, x.due) : C.diffDays(to, x.due) }));
+        .map((x) => ({ no: x.no, tag: x.tag, desc: x.desc, due: x.due, closedAt: isClosed(x.status) ? x.closedAt : null, status: C.normSapStatus(x.status) || x.status, owner: x.owner, workCenter: x.workCenter, overdueDays: isClosed(x.status) && x.closedAt ? C.diffDays(x.closedAt, x.due) : C.diffDays(to, x.due) }));
     } else dataGaps.noDenominator.push({ metric: '工单及时率', reason: '统计区间内无要求完成时间的工单，分母为空' });
   } else if (dailies.length) dataGaps.noDenominator.push({ metric: '工单及时率', reason: '仅提供日报 JSON，缺工单逐张的要求完成与闭环时间，分母无法确定' });
   else dataGaps.noDenominator.push({ metric: '工单及时率', reason: '未提供工单台账，分母缺失' });
@@ -709,11 +725,21 @@ function main() {
     const newOnes = rows.filter((x) => inRange(x.foundAt));
     const byLevel = {};
     for (const x of newOnes) byLevel[x.level] = (byLevel[x.level] || 0) + 1;
+    // 期末存量按 --to 回推：发现日期晚于 --to 的不计；已闭环但闭环日期晚于 --to 的仍算期末未闭环
+    const asOf = rows.filter((x) => !x.foundAt || x.foundAt <= to);
+    const foundAfter = rows.length - asOf.length;
+    const openAt = (x) => !isClosed(x.status) || (x.closedAt && x.closedAt > to);
+    const noFound = asOf.filter((x) => !x.foundAt);
+    const closedNoDate = asOf.filter((x) => isClosed(x.status) && !x.closedAt);
+    if (pastTo && noFound.length) warnings.push(`缺陷台账有 ${noFound.length} 条缺「发现时间」（行号：${noFound.map((x) => x.row).join('、')}），无法判断是否在 ${to} 前发现，按当前状态计入期末存量`);
+    if (pastTo && closedNoDate.length) warnings.push(`缺陷台账有 ${closedNoDate.length} 条已闭环但缺「闭环时间」（行号：${closedNoDate.map((x) => x.row).join('、')}），无法判断是否在 ${to} 前闭环，按已闭环计`);
     defects = {
       source: '缺陷台账', newTotal: newOnes.length, newDays: null,
-      openAtEnd: rows.filter((x) => !isClosed(x.status)).length, openAtEndDate: to,
-      pendingAcceptAtEnd: rows.filter((x) => C.normSapStatus(x.status) === '待验收').length,
+      openAtEnd: asOf.filter(openAt).length, openAtEndDate: to,
+      pendingAcceptAtEnd: asOf.filter((x) => C.normSapStatus(x.status) === '待验收' && openAt(x)).length,
       closedInRange: rows.filter((x) => isClosed(x.status) && inRange(x.closedAt)).length, byLevel,
+      foundAfterTo: foundAfter,
+      asOfNote: pastTo ? `期末未闭环按发现时间、闭环时间回推到 ${to}；待验收没有状态变更日期，按 ${today} 的当前状态计` : null,
     };
   }
 
@@ -766,11 +792,12 @@ function main() {
     highlights.push({ type: '故障频发设备', text: `${f.tag}${f.name ? '（' + f.name + '）' : ''} 区间内故障 ${f.count} 次${f.downtime !== null ? `，累计停机 ${f.downtime} 小时` : '，停机时长未记录'}` });
   }
   for (const o of orderOverdueList.slice(0, topN)) {
-    highlights.push({ type: '超期工单', text: `${o.no || '（未填工单号）'} ${o.tag || ''} ${o.desc || ''}，要求完成 ${o.due}，${o.closedAt ? `实际 ${o.closedAt} 闭环，超期 ${o.overdueDays} 天` : `截至 ${to} 未闭环（${o.status}），超期 ${o.overdueDays} 天`}，责任方 ${o.owner || '未记录'}` });
+    // 责任方写单位（工作中心），没有工作中心列时才退回责任人；unit 供 meeting-material-builder 判断责任方是不是单位
+    highlights.push({ type: '超期工单', no: o.no || null, tag: o.tag || null, unit: o.workCenter || null, text: `${o.no || '（未填工单号）'} ${o.tag || ''} ${o.desc || ''}，要求完成 ${o.due}，${o.closedAt ? `实际 ${o.closedAt} 闭环，超期 ${o.overdueDays} 天` : `截至 ${to} 未闭环（${o.status}），超期 ${o.overdueDays} 天`}，责任方 ${o.workCenter || o.owner || '未记录'}` });
   }
   if (maintenance) {
     for (const m of maintenance.list.filter((x) => !x.actEnd && x.planEnd && C.diffDays(to, x.planEnd) > 0 && !planDoneBy(null, x.status))) {
-      highlights.push({ type: '检修计划未完成', text: `${m.project}${m.tag ? '（' + m.tag + '）' : ''}${m.category && m.category !== '未提供类别' ? `［${m.category}］` : ''} 计划完成 ${m.planEnd}，截至 ${to} 未完工，责任人 ${m.owner || '未记录'}` });
+      highlights.push({ type: '检修计划未完成', tag: m.tag || null, text: `${m.project}${m.tag ? '（' + m.tag + '）' : ''}${m.category && m.category !== '未提供类别' ? `［${m.category}］` : ''} 计划完成 ${m.planEnd}，截至 ${to} 未完工，责任人 ${m.owner || '未记录'}` });
     }
   }
   if (special) for (const s of special.list.filter((x) => x.abnormalDays)) highlights.push({ type: '特护设备异常', text: `${s.tag}${s.name ? '（' + s.name + '）' : ''} 区间内 ${s.abnormalDays} 天日报记为异常（共 ${s.days} 天有记录）` });
@@ -811,7 +838,11 @@ function main() {
       const delta = (cur === null || cur === undefined || pre === null || pre === undefined) ? null : C.round(cur - pre, 2);
       return { key: k, name: cn, unit, current: cur === undefined ? null : cur, base: pre === undefined ? null : pre, delta };
     });
-    return { label, baseFrom: j.meta.from || null, baseTo: j.meta.to || null, basePeriod: j.meta.period || null, rows };
+    const genDate = C.normDate(C.str(j.meta.generatedAt).slice(0, 10));
+    const snapshotNote = j.meta.to && genDate && genDate > j.meta.to
+      ? `基准期报告生成于 ${genDate}，晚于其期末 ${j.meta.to}；基准期的设备完好率、主要设备完好率、备机完好率是生成时的台账快照，不是基准期期末状态`
+      : null;
+    return { label, baseFrom: j.meta.from || null, baseTo: j.meta.to || null, basePeriod: j.meta.period || null, snapshotNote, rows };
   }
   let compare = null;
   if (a.prev || a.yoy) {
@@ -851,7 +882,7 @@ function main() {
   };
   const metrics = {
     ...curMetrics,
-    intactNote: intactRate === null ? intactNote : '', intactDenominator: intactDenom, intactSealedOut,
+    intactNote: intactRate === null ? intactNote : '', intactSnapshotNote, intactDenominator: intactDenom, intactSealedOut,
     planByCategory: planByCat, pendingAcceptOrders: orderPending,
     seal, leakPoints, basedOn, rulesSource, usingDefaultRules: usingDefault, modes,
   };
@@ -974,6 +1005,7 @@ function main() {
     ['非计划停工次数', C.fmt(unplannedShutdowns, 0), '—', modes['非计划停工次数'], ruleOf('非计划停工次数')],
   ]));
   L.push(`指标口径说明：${basedOn}。泄漏率考核线以厂内指标为准，本技能不比对；未提供的指标写「未提供」，不估算。`);
+  if (intactSnapshotNote) L.push(`完好率时点：${intactSnapshotNote}；设备台账只记当前状态，不能回推历史。`);
   L.push('');
   if (recompute.length) {
     L.push('【注意】以下指标厂内口径表命中、但算法与脚本默认算法不一致且未提供结构化口径参数，**未出数（显示 —），需按厂内口径复算**，不得只换文字沿用默认算法结果：');
@@ -1062,12 +1094,12 @@ function main() {
       L.push('**超期或未按期闭环工单**');
       L.push('');
       L.push(C.mdTable(['工单号', '位号', '内容', '要求完成', '实际闭环', '状态', '超期天数', '责任方'],
-        ordersSec.overdueList.map((x) => [x.no || '—', x.tag || '—', x.desc || '—', x.due, x.closedAt || '未闭环', x.status || '—', C.fmt(x.overdueDays, 0), x.owner || '未记录'])));
+        ordersSec.overdueList.map((x) => [x.no || '—', x.tag || '—', x.desc || '—', x.due, x.closedAt || '未闭环', x.status || '—', C.fmt(x.overdueDays, 0), x.workCenter || x.owner || '未记录'])));
     }
   }
   if (!defects) L.push(NA('缺陷'));
   else {
-    L.push(`**缺陷（维修通知单）**（来源：${defects.source}）新增 ${C.fmt(defects.newTotal, 0)} 条，截至 ${defects.openAtEndDate || to} 未闭环 ${C.fmt(defects.openAtEnd, 0)} 条（其中待验收 ${C.fmt(defects.pendingAcceptAtEnd, 0)} 条）${defects.closedInRange !== null ? `，区间内闭环 ${defects.closedInRange} 条` : ''}。`);
+    L.push(`**缺陷（维修通知单）**（来源：${defects.source}）新增 ${C.fmt(defects.newTotal, 0)} 条，截至 ${defects.openAtEndDate || to} 未闭环 ${C.fmt(defects.openAtEnd, 0)} 条（其中待验收 ${C.fmt(defects.pendingAcceptAtEnd, 0)} 条${defects.asOfNote ? `，待验收按 ${today} 当前状态计` : ''}）${defects.closedInRange !== null ? `，区间内闭环 ${defects.closedInRange} 条` : ''}${defects.foundAfterTo ? `；另有 ${defects.foundAfterTo} 条在 ${to} 之后发现，不计入本期` : ''}。`);
     L.push('');
     if (defects.byLevel && Object.keys(defects.byLevel).length) L.push(C.mdTable(['等级', '新增条数'], Object.entries(defects.byLevel).map(([k, v]) => [k, v])));
   }
@@ -1094,6 +1126,7 @@ function main() {
       L.push('');
       L.push(C.mdTable(['指标', '本期', '基准期', '变化'],
         c.rows.map((r) => [`${r.name}${r.unit === '%' || r.unit === '‰' ? `(${r.unit})` : `(${r.unit})`}`, r.current === null ? '—' : r.current, r.base === null ? '—' : r.base, sign(r.delta)])));
+      if (c.snapshotNote) { L.push(`注：${c.snapshotNote}。`); L.push(''); }
     }
     L.push('任一侧数值缺失时变化列显示「—」，不按 0 参与计算。');
     L.push('');

@@ -57,3 +57,13 @@ node scripts/make-sample.js --out examples --seed 7   # 参数数值、记录人
 ```
 
 seed 变化时轴承温度、流量等数值会抖动，但**结论不变**：例 2 恒为 10 项候选、1 项未判定、关注度黄；例 3 恒为 8 项全未判定。
+
+## MCP 取数对照
+
+平台接入业务系统 MCP 时不用附件：按 SKILL.md「数据获取（MCP）」调用工具，每个工具的 csv 放进各自的空目录（下表 A/B/C）。演示数据每天按剧本刷新，预期结果只列每天稳定的结论。
+
+| # | 示例问题 | MCP 调用 | 运行参数 | 预期结果 |
+|---|---|---|---|---|
+| M1 | P-2101A 振动比平时大、轴承箱有异响，要不要报工程师 | DCS位号数据 `get_tag_history`（tag=P-2101A，for_skill=anomaly-triage-advisor）→ A；`get_tag_limits`（tag=P-2101A）→ B；设备资产管理 `get_failure_history`（tag=P-2101A，for_skill=anomaly-triage-advisor）→ C | `--symptom "振动比平时大，轴承箱有异响" --equip-type 离心泵 --tag P-2101A --params A --limits B --history C --sudden 否 --affects-run 否` | 泵类口径；首位候选「滚动轴承损伤」可能性 high（频谱备注含高频冲击 + 轴承温升）；驱动端振动、轴承温度按 DCS 高报判「升高」，其余参数正常；带出历史故障记录；关注度黄（RK5），无 warning |
+| M2 | E-1201 怀疑管束内漏，渐变，影响运行 | DCS位号数据 `get_tag_history`（tag=E-1201，for_skill=anomaly-triage-advisor）→ A；`get_tag_limits`（tag=E-1201）→ B；设备资产管理 `get_failure_history`（tag=E-1201，for_skill=anomaly-triage-advisor）→ C | `--symptom "怀疑管束内漏" --equip-type 换热器 --tag E-1201 --params A --limits B --history C --sudden 否 --affects-run 是` | 静设备口径；「内漏」同时命中泄漏与性能两类，性能类只因内漏触发，换热器只补 SF2，候选 5 项：SF2「内漏（管束穿孔或内件损坏）」与泄漏类 SL1~SL4；壳程/管程出口温度按高报判正常；关注度橙（RK3） |
+| M3 | M-2105A 特护电机温度偏高，DCS 无测点，用巡检记录 | 点检巡检App `get_inspection_records`（tag=M-2105A，for_skill=anomaly-triage-advisor）→ A；设备资产管理 `get_failure_history`（tag=M-2105A，for_skill=anomaly-triage-advisor）→ C | `--symptom "电机温度偏高" --equip-type 电机 --tag M-2105A --params A --history C --special 是 --sudden 否 --affects-run 否` | 电仪类口径，候选 ET1~ET4；巡检记录无测值与基准，4 项全部未判定但一条不少；关注度强制红（RK0），warning 含「【注意】已标记为特护设备」，上报建议含公司设备管理部门 |
