@@ -4,9 +4,9 @@
       "Agent",
       "Task",
       "TodoWrite",
-      "Edit(//Users/calvin/Documents/Coding/RuntimeConfig/**)",
-      "Write(//Users/calvin/Documents/Coding/RuntimeConfig/**)",
-      "Read(//Users/calvin/Documents/Coding/RuntimeConfig/**)",
+      "Edit(//Users/calvin/Documents/Coding/EquipTech/**)",
+      "Write(//Users/calvin/Documents/Coding/EquipTech/**)",
+      "Read(//Users/calvin/Documents/Coding/EquipTech/**)",
       "Read(//tmp/**)",
       "Read(//private/tmp/**)",
       "Bash(*)"
