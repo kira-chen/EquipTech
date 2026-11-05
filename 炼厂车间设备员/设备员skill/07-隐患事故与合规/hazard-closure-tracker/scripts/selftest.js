@@ -555,6 +555,27 @@ eq(r.hz.overdue.map((x) => x.no).sort().join(','), 'YH-M04,YH-M05', '21.5 「整
 }
 
 // ================= 输出 =================
+// ================= Y. 上期 hazard.json 的车间核对（D007 遗留 1）：不一致不对比、开头【注意】；未注明照常对比并说明 =================
+{
+  const src = JSON.parse(fs.readFileSync(prevPath, 'utf8'));
+  const variant = (name, ws) => { const j = JSON.parse(JSON.stringify(src)); if (ws === undefined) delete j.meta.workshop; else j.meta.workshop = ws; const p = path.join(work, name); fs.writeFileSync(p, JSON.stringify(j)); return p; };
+  const pw = (x) => ((x.hz && x.hz.meta && x.hz.meta.prevWorkshop) || {}).status;
+  let y = run(unv, ['--prev', prevPath], 'y-same');
+  eq(pw(y), 'matched', 'Y1 上期车间一致：status matched');
+  ok(y.hz.trend && typeof y.hz.trend.totalDelta === 'number', 'Y2 上期车间一致：照常输出上期对比');
+  const sameDelta = y.hz.trend && y.hz.trend.totalDelta;
+  y = run(unv, ['--prev', variant('y-other.json', '加氢车间')], 'y-other');
+  eq(pw(y), 'excluded', 'Y3 上期车间不一致：status excluded');
+  eq(y.hz.trend, null, 'Y4 上期车间不一致：不做上期对比（trend 为 null）');
+  ok(y.summary.warnings.some((w) => /^【注意】上期 hazard\.json 的车间为「加氢车间」/.test(w)), 'Y5 上期车间不一致：warning 带【注意】');
+  ok(/^> \*\*【注意】上期 hazard\.json/m.test(y.md.split('## ')[0]), 'Y6 上期车间不一致：报告开头【注意】');
+  ok(/【注意】上期 hazard\.json/.test(y.push || ''), 'Y7 上期车间不一致：督办清单开头同样提示');
+  y = run(unv, ['--prev', variant('y-nows.json')], 'y-nows');
+  eq(pw(y), 'unknown', 'Y8 上期未注明车间：status unknown');
+  eq(y.hz.trend && y.hz.trend.totalDelta, sameDelta, 'Y9 上期未注明车间：照常对比，结果与一致时相同');
+  ok(/上期 hazard\.json 未注明车间，无法核对/.test(y.md), 'Y10 上期未注明车间：口径处说明无法核对');
+}
+
 console.log(`\n${'='.repeat(56)}`);
 console.log(`hazard-closure-tracker 自测：${pass} 通过，${fail} 失败`);
 if (failures.length) { console.log('\n失败项：'); failures.forEach((f) => console.log('  ✗ ' + f)); }

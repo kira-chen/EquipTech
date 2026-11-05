@@ -135,7 +135,7 @@ eq(r.s.counts.anomalies, null, 'F13 未提供上期时异常为 null 不是 0');
 eq(r.s.counts.newInPeriod, null, 'F13b 未提供上期时 newInPeriod 为 null 不是 0');
 ok(/不做异常增长识别/.test(r.md), 'F14 md 说明未做异常识别');
 // 阈值可调
-r = run(['--input', OUT, ...BASE, '--prev', path.join(run(['--input', PREV_SRC, '--workshop', 'X', '--from', '2026-04-01', '--to', '2026-06-30'], 'prevb').out, 'consumption.json'), '--anomaly-ratio', '10'], 'highratio');
+r = run(['--input', OUT, ...BASE, '--prev', path.join(run(['--input', PREV_SRC, '--workshop', '测试车间', '--from', '2026-04-01', '--to', '2026-06-30'], 'prevb').out, 'consumption.json'), '--anomaly-ratio', '10'], 'highratio');
 eq(r.s.counts.anomalies, 0, 'F15 提高阈值后无异常');
 
 // ============ G. 设备台账归类 ============
@@ -344,6 +344,28 @@ eq(r.s.counts.unitMismatch, null, 'U8 未提供基期时 unitMismatch 为 null �
   eq(sc(1).droppedRows, 1, 'W20 基期出库表剔除其他车间 1 行');
   const ca = ((r.j && r.j.anomalies) || []).find((x) => x.code === 'A-01');
   eq(ca && ca.previous, 1, 'W21 基期 A-01 只计本车间 1 套（不含加氢车间 9 套），本期 3 套计为异常增长');
+}
+
+// ============ X. 上期 consumption.json 的车间核对（D007 遗留 1）：不一致不比对、开头【注意】；未注明照常比对并说明 ============
+{
+  const prevOk = run(['--input', PREV_SRC, '--workshop', '测试车间', '--from', '2026-04-01', '--to', '2026-06-30'], 'xprev-ok');
+  const prevOther = run(['--input', PREV_SRC, '--workshop', '加氢车间', '--from', '2026-04-01', '--to', '2026-06-30'], 'xprev-other');
+  const noWsPath = path.join(work, 'xprev-nows.json');
+  const nows = JSON.parse(fs.readFileSync(path.join(prevOk.out, 'consumption.json'), 'utf8'));
+  delete nows.meta.workshop;
+  fs.writeFileSync(noWsPath, JSON.stringify(nows));
+  const same = run(['--input', OUT, ...BASE, '--prev', path.join(prevOk.out, 'consumption.json')], 'xsame');
+  eq(((same.j.meta.prevWorkshop || {}).status), 'matched', 'X1 上期车间一致：status matched');
+  ok(same.s.counts.anomalies >= 1, 'X2 上期车间一致：照常比对出异常增长');
+  const diff = run(['--input', OUT, ...BASE, '--prev', path.join(prevOther.out, 'consumption.json')], 'xdiff');
+  eq(((diff.j.meta.prevWorkshop || {}).status), 'excluded', 'X3 上期车间不一致：status excluded');
+  eq(diff.s.counts.anomalies, null, 'X4 上期车间不一致：不做异常增长比对（异常为 null）');
+  ok(diff.s.warnings.some((w) => /^【注意】上期 consumption\.json 的车间为「加氢车间」/.test(w)), 'X5 上期车间不一致：warning 带【注意】');
+  ok(/^> \*\*【注意】上期 consumption\.json/m.test(diff.md.split('## ')[0]), 'X6 上期车间不一致：报告开头【注意】');
+  const unk = run(['--input', OUT, ...BASE, '--prev', noWsPath], 'xunk');
+  eq(((unk.j.meta.prevWorkshop || {}).status), 'unknown', 'X7 上期未注明车间：status unknown');
+  eq(unk.s.counts.anomalies, same.s.counts.anomalies, 'X8 上期未注明车间：照常比对，结果与一致时相同');
+  ok(/上期 consumption\.json 未注明车间，无法核对/.test(unk.md), 'X9 上期未注明车间：口径处说明无法核对');
 }
 
 console.log(`\n${'='.repeat(56)}`);

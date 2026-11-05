@@ -21,6 +21,17 @@ const path = require('path');
 const { readXlsx, readCsvDir } = require('./lib/xlsx-lite');
 const C = require('./lib/common');
 
+/** 上期产出的车间核对（D007 遗留 1）：与 --workshop 不一致时不用上期产出、报告开头【注意】；未注明车间时照常使用，口径处说明无法核对 */
+function prevWorkshopCheck(prev, workshop, file, what, warnings) {
+  const w = C.str(prev && prev.meta && prev.meta.workshop) || C.str(prev && prev.workshop);
+  if (!C.str(workshop)) return { status: 'noWorkshop', workshop: w || null, note: null, alert: null };
+  if (!w) return { status: 'unknown', workshop: null, note: `上期 ${file} 未注明车间，无法核对，已照常使用。`, alert: null };
+  if (C.sameWorkshop(w, workshop)) return { status: 'matched', workshop: w, note: null, alert: null };
+  const alert = `【注意】上期 ${file} 的车间为「${w}」，与 --workshop「${workshop}」不一致，${what}，请核对输入。`;
+  warnings.push(alert);
+  return { status: 'excluded', workshop: w, note: `上期 ${file} 的车间（${w}）与本期不一致，${what}。`, alert };
+}
+
 const warnings = [];
 const VALUE_OPTS = ['input', 'workshop', 'date', 'out', 'from', 'rules', 'level', 'owner', 'prev'];
 const FLAG_OPTS = ['help'];
@@ -357,10 +368,15 @@ function main() {
 
   // ---- 上期对比
   let trend = null;
+  let prevWs = { status: 'none', note: null, alert: null };
   if (a.prev) {
     if (!fs.existsSync(a.prev)) throw new Error(`上期 hazard.json 不存在: ${a.prev}`);
     let prev;
     try { prev = JSON.parse(fs.readFileSync(a.prev, 'utf8')); } catch (e) { throw new Error(`上期 hazard.json 解析失败: ${e.message}`); }
+    prevWs = prevWorkshopCheck(prev, a.workshop, 'hazard.json', '未做上期对比', warnings);
+  }
+  if (a.prev && prevWs.status !== 'excluded') {
+    const prev = JSON.parse(fs.readFileSync(a.prev, 'utf8'));
     const pc = (prev.counts || {});
     const pr = prev.metrics ? prev.metrics.closureRate : null;
     trend = {
@@ -388,7 +404,7 @@ function main() {
     meta: {
       workshop: a.workshop, date, from: from || null, generatedAt: C.localDateTime(),
       input: path.basename(a.input), rulesSource, levelFilter: a.level || null, ownerFilter: a.owner || null,
-      workshopScope: scopes,
+      workshopScope: scopes, prevWorkshop: prevWs,
     },
     counts, metrics,
     overdue: overdue.map(slim), dueSoon: dueSoon.map(slim), inProgress: inProgress.map(slim),
@@ -404,6 +420,7 @@ function main() {
   L.push(`# ${a.workshop} 隐患整改闭环跟踪（截至 ${date}）`);
   L.push('');
   if (wsNote.alert) { L.push(`> **${wsNote.alert}**`); L.push(''); }
+  if (prevWs.alert) { L.push(`> **${prevWs.alert}**`); L.push(''); }
   // 开头醒目提示：脚本直接写入，非占位符
   const alerts = [];
   if (majorHazards.length) {
@@ -426,6 +443,7 @@ function main() {
   L.push(`时限口径：${rulesSource}（重大隐患：${rules.major === null ? '按整改方案期限' : rules.major + ' 天'}；一般隐患：${rules.general === null ? '无统一天数，以整改方案/台账期限为准' : rules.general + ' 天'}）`);
   L.push(`数据来源：${path.basename(a.input)} ｜ 生成时间：${C.localDateTime()}（北京时间）`);
   if (wsNote.note) L.push(wsNote.note);
+  if (prevWs.note) L.push(prevWs.note);
   L.push('');
   L.push('**隐患认定、等级与整改验收以安全部门意见为准。** 本材料由脚本汇总、模型成文，仅供设备员复核参考，不替代审批、定性、验收与签字；厂内制度与系统数据为准。');
   L.push('');
@@ -549,6 +567,7 @@ function main() {
   S.push(`# ${a.workshop} 隐患整改督办清单（截至 ${date}）`);
   S.push('');
   if (wsNote.alert) { S.push(`> **${wsNote.alert}**`); S.push(''); }
+  if (prevWs.alert) { S.push(`> **${prevWs.alert}**`); S.push(''); }
   S.push('**隐患认定、等级与整改验收以安全部门意见为准。** 本材料由脚本汇总、模型成文，仅供设备员复核参考，不替代审批、定性、验收与签字；厂内制度与系统数据为准。');
   S.push('');
   if (alerts.length) {

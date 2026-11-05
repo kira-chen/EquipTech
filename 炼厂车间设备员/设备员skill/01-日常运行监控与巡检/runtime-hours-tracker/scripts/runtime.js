@@ -22,6 +22,17 @@ const path = require('path');
 const { readXlsx, readCsvDir } = require('./lib/xlsx-lite');
 const C = require('./lib/common');
 
+/** 上期产出的车间核对（D007 遗留 1）：与 --workshop 不一致时不用上期产出、报告开头【注意】；未注明车间时照常使用，口径处说明无法核对 */
+function prevWorkshopCheck(prev, workshop, file, what, warnings) {
+  const w = C.str(prev && prev.meta && prev.meta.workshop) || C.str(prev && prev.workshop);
+  if (!C.str(workshop)) return { status: 'noWorkshop', workshop: w || null, note: null, alert: null };
+  if (!w) return { status: 'unknown', workshop: null, note: `上期 ${file} 未注明车间，无法核对，已照常使用。`, alert: null };
+  if (C.sameWorkshop(w, workshop)) return { status: 'matched', workshop: w, note: null, alert: null };
+  const alert = `【注意】上期 ${file} 的车间为「${w}」，与 --workshop「${workshop}」不一致，${what}，请核对输入。`;
+  warnings.push(alert);
+  return { status: 'excluded', workshop: w, note: `上期 ${file} 的车间（${w}）与本期不一致，${what}。`, alert };
+}
+
 const warnings = [];
 const num = C.makeNum(warnings);
 const VALUE_OPTS = ['input', 'workshop', 'date', 'out', 'from', 'prev', 'equipment', 'warn-ratio', 'running-until'];
@@ -374,9 +385,14 @@ function main() {
 
   // ---- 上期累计续算
   let prevMap = null;
+  let prevWs = { status: 'none', note: null, alert: null };
   if (a.prev) {
     if (!fs.existsSync(a.prev)) throw new Error(`上期 runtime.json 不存在: ${a.prev}`);
     let prev; try { prev = JSON.parse(fs.readFileSync(a.prev, 'utf8')); } catch (e) { throw new Error(`上期 runtime.json 解析失败: ${e.message}`); }
+    prevWs = prevWorkshopCheck(prev, a.workshop, 'runtime.json', '未用上期累计续算（累计按期初值计）', warnings);
+  }
+  if (a.prev && prevWs.status !== 'excluded') {
+    const prev = JSON.parse(fs.readFileSync(a.prev, 'utf8'));
     prevMap = new Map((prev.byEquipment || []).map((x) => [x.tag, x]));
     // 上期截止日不早于本期最早运行段：续算会把重叠时段重复计入（脚本不自动裁剪，提示用户只导出上期之后的记录）
     const prevDate = prev.meta && C.normDate(prev.meta.date);
@@ -496,7 +512,7 @@ function main() {
   const disclaimer = '本材料由脚本汇总、模型成文，仅供设备员复核参考，不替代审批、定性、验收与签字；厂内制度与系统数据为准。';
   const result = {
     meta: { workshop: a.workshop, date, from, warnRatio, runningUntil, generatedAt: C.localDateTime(),
-      prevProvided: !!prevMap, thresholdsProvided: !!thRows, statement, disclaimer, workshopScope: scopes },
+      prevProvided: !!prevMap, thresholdsProvided: !!thRows, statement, disclaimer, workshopScope: scopes, prevWorkshop: prevWs },
     counts, items, byEquipment, exceeded, dueSoon, undetermined, incomplete, warnings,
   };
   fs.writeFileSync(path.join(outDir, 'runtime.json'), JSON.stringify(result, null, 2), 'utf8');
@@ -508,8 +524,10 @@ function main() {
   L.push('');
   const wsNote = C.workshopScopeNote(scopes, a.workshop);
   if (wsNote.alert) { L.push(wsNote.alert); L.push(''); }
+  if (prevWs.alert) { L.push(prevWs.alert); L.push(''); }
   L.push(`统计区间：${from ? `${from} ~ ${date}` : `截至 ${date}`}　｜　预警比例：${(warnRatio * 100).toFixed(0)}%${runningUntil ? `　｜　停机时间为空的运行段按截至 ${runningUntil} 仍在运行计入` : ''}`);
   if (wsNote.note) L.push(wsNote.note);
+  if (prevWs.note) L.push(prevWs.note);
   L.push(`生成时间：${C.localDateTime()}（北京时间）`);
   L.push('');
   L.push('## 一、统计概览');

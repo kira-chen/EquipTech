@@ -19,6 +19,17 @@ const path = require('path');
 const { readXlsx, readCsvDir, writeXlsx } = require('./lib/xlsx-lite');
 const C = require('./lib/common');
 
+/** 上期产出的车间核对（D007 遗留 1）：与 --workshop 不一致时不用上期产出、报告开头【注意】；未注明车间时照常使用，口径处说明无法核对 */
+function prevWorkshopCheck(prev, workshop, file, what, warnings) {
+  const w = C.str(prev && prev.meta && prev.meta.workshop) || C.str(prev && prev.workshop);
+  if (!C.str(workshop)) return { status: 'noWorkshop', workshop: w || null, note: null, alert: null };
+  if (!w) return { status: 'unknown', workshop: null, note: `上期 ${file} 未注明车间，无法核对，已照常使用。`, alert: null };
+  if (C.sameWorkshop(w, workshop)) return { status: 'matched', workshop: w, note: null, alert: null };
+  const alert = `【注意】上期 ${file} 的车间为「${w}」，与 --workshop「${workshop}」不一致，${what}，请核对输入。`;
+  warnings.push(alert);
+  return { status: 'excluded', workshop: w, note: `上期 ${file} 的车间（${w}）与本期不一致，${what}。`, alert };
+}
+
 const warnings = [];
 const num = C.makeNum(warnings);
 const VALUE_OPTS = ['input', 'workshop', 'from', 'to', 'out', 'price', 'prev', 'prev-from', 'prev-to', 'ledger', 'by', 'top', 'anomaly-ratio'];
@@ -239,10 +250,13 @@ function main() {
   const prevIsJson = a.prev && /\.json$/i.test(a.prev);
   if (a.prev && !prevIsJson && !pf) throw new Error('--prev 为出库表（非 consumption.json）时须同时给 --prev-from/--prev-to 指定基期');
   let prev = null;
+  let prevWs = { status: 'none', note: null, alert: null };
   if (prevIsJson) {
     if (!fs.existsSync(a.prev)) throw new Error(`上期 consumption.json 不存在: ${a.prev}`);
     try { prev = JSON.parse(fs.readFileSync(a.prev, 'utf8')); } catch (e) { throw new Error(`上期 consumption.json 解析失败: ${e.message}`); }
     prevSource = `上期 consumption.json（${path.basename(a.prev)}）`;
+    prevWs = prevWorkshopCheck(prev, a.workshop, 'consumption.json', '异常增长未与上期比对', warnings);
+    if (prevWs.status === 'excluded') { prev = null; prevSource += '（车间不一致，未比对）'; }
     if (pf) warnings.push('同时给了 --prev（consumption.json）与 --prev-from/--prev-to，基期以 consumption.json 的区间为准，--prev-from/--prev-to 未使用');
   } else if (pf) {
     const src = a.prev || a.input;
@@ -333,7 +347,7 @@ function main() {
   const result = {
     meta: { workshop: a.workshop, from, to, by, topN, anomalyRatio: ratio,
       generatedAt: C.localDateTime(), priceProvided: !!priceMap, amountFromColumn, amountSource, mvtColumn: cur.hasMvt,
-      ledgerProvided: !!equipMap, prevProvided: !!prev, prevSource, workshopScope: scopes },
+      ledgerProvided: !!equipMap, prevProvided: !!prev, prevSource, workshopScope: scopes, prevWorkshop: prevWs },
     counts, byEquipment, byPart, byMonth, byType, topConsumers, anomalies, newInPeriod, unitMismatch, compare,
     unattributed: unattributed.map((x) => ({ code: x.code, name: x.name, qty: x.qty, unit: x.unit,
       date: x.date, dept: x.dept, purpose: x.purpose, row: x._row })),
@@ -346,8 +360,10 @@ function main() {
   L.push(`# ${a.workshop} 备件消耗分析（${from} ~ ${to}）`);
   L.push('');
   if (wsNote.alert) { L.push(`> **${wsNote.alert}**`); L.push(''); }
+  if (prevWs.alert) { L.push(`> **${prevWs.alert}**`); L.push(''); }
   L.push(`数据来源：${path.basename(a.input)}　生成时间：${C.localDateTime()}（北京时间）`);
   if (wsNote.note) L.push(wsNote.note);
+  if (prevWs.note) L.push(prevWs.note);
   L.push('');
   L.push('## 一、统计概览');
   L.push('');

@@ -67,6 +67,8 @@ sheet 名匹配「设备台账」「台账」「设备清单」。用于设备�
 
 基期不得与本期重叠；`--prev` 为 xlsx 时必须给基期起止。两期区间长度不同时自动按日均归一。基期内无记录只 warning，不中断。
 
+`--prev` 为上期 consumption.json 时的车间与 `--workshop` 核对（D007）：上期产出的 `meta.workshop` 与 `--workshop` 不一致时不做异常增长比对，warning 与报告开头【注意】提示；一致时照常使用；上期产出没有 `meta.workshop` 时照常使用，口径处写「上期 consumption.json 未注明车间，无法核对，已照常使用」。核对结果写进 `meta.prevWorkshop`（status：matched / excluded / unknown / noWorkshop）。`--prev` 为出库表时按下面「车间范围核对」逐行核对。
+
 ## 车间范围核对
 
 本期出库记录与基期出库表（`--prev` 为 xlsx 或同一导出切基期）带车间列时（表头为「车间」「所属车间」「属地车间」「运行部」或其后加「名称」，如「车间名称」；「车间负责人」等人员列不算），脚本按 `--workshop` 逐表核对，结果写进 `consumption.json` 的 `meta.workshopScope`（每张表一项），口径写进报告：

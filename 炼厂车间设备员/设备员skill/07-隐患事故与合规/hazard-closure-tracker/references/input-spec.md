@@ -127,6 +127,8 @@ sheet 名匹配规则：去空白与「表」字后做包含匹配，因此「�
 
 传入上期本脚本产出的 `hazard.json`，输出隐患总数、超期数、闭环率的环比。缺失时对比章节输出「未提供上期 hazard.json」。
 
+上期 hazard.json 的车间与 `--workshop` 核对（D007）：上期产出的 `meta.workshop` 与 `--workshop` 不一致时不做上期对比（同未提供上期），warning 与报告开头【注意】提示；一致时照常使用；上期产出没有 `meta.workshop` 时照常使用，口径处写「上期 hazard.json 未注明车间，无法核对，已照常使用」。核对结果写进 `meta.prevWorkshop`（status：matched / excluded / unknown / noWorkshop）。
+
 ## 车间范围核对
 
 隐患台账带车间列时（表头为「车间」「所属车间」「属地车间」「运行部」或其后加「名称」，如「车间名称」；「车间负责人」等人员列不算），脚本按 `--workshop` 逐表核对，结果写进 `hazard.json` 的 `meta.workshopScope`（每张表一项），口径写进报告：

@@ -630,6 +630,26 @@ eq((r.s.counts || {}).listed, 1, 'X16 --equipment 限定范围时不补范围外
   ok(ws(r).some((x) => x.sheet === '运行状态记录' && x.status === 'checked' && x.droppedRows === 2) && (r.s.counts || {}).equipment === 1, 'WS27 运行状态记录剔除其他车间行');
 }
 
+// ============ Z. 上期 runtime.json 的车间核对（D007 遗留 1）：不一致不续算、开头【注意】；未注明照常续算并说明 ============
+{
+  const src = JSON.parse(fs.readFileSync(prevPath, 'utf8'));
+  const variant = (name, ws) => { const j = JSON.parse(JSON.stringify(src)); if (ws === undefined) delete j.meta.workshop; else j.meta.workshop = ws; const p = path.join(work, name); fs.writeFileSync(p, JSON.stringify(j)); return p; };
+  const pw = (x) => ((x.j && x.j.meta && x.j.meta.prevWorkshop) || {}).status;
+  const p01 = (x) => (x.j.byEquipment.find((e) => e.tag === 'P-01') || {}).cumHours;
+  let z = run(BASE, ['--prev', prevPath], 'z-same');
+  eq(pw(z), 'matched', 'Z1 上期车间一致：status matched');
+  eq(p01(z), 144, 'Z2 上期车间一致：照常续算（72+72）');
+  z = run(BASE, ['--prev', variant('z-other.json', '加氢车间')], 'z-other');
+  eq(pw(z), 'excluded', 'Z3 上期车间不一致：status excluded');
+  eq(p01(z), 72, 'Z4 上期车间不一致：不用上期累计续算（累计等于本期）');
+  ok(z.j.warnings.some((w) => /^【注意】上期 runtime\.json 的车间为「加氢车间」/.test(w)), 'Z5 上期车间不一致：warning 带【注意】');
+  ok(/^【注意】上期 runtime\.json/m.test(z.md.split('## ')[0]), 'Z6 上期车间不一致：报告开头【注意】');
+  z = run(BASE, ['--prev', variant('z-nows.json')], 'z-nows');
+  eq(pw(z), 'unknown', 'Z7 上期未注明车间：status unknown');
+  eq(p01(z), 144, 'Z8 上期未注明车间：照常续算');
+  ok(/上期 runtime\.json 未注明车间，无法核对/.test(z.md), 'Z9 上期未注明车间：口径处说明无法核对');
+}
+
 console.log(`\n${'='.repeat(56)}`);
 console.log(`runtime-hours-tracker 自测：${pass} 通过，${fail} 失败`);
 if (failures.length) { console.log('\n失败项：'); failures.forEach((f) => console.log('  ✗ ' + f)); }
