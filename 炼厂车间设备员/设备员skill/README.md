@@ -4,7 +4,7 @@
 
 **口径与改造文件**：`../文档/规范/中石化口径对照.md`（术语、系统列名、分级、层级、指标、制度引用的唯一依据）、`../文档/过程记录/核验报告-2026-10-26.md`（问题清单）、`../文档/过程记录/改造任务书-2026-10-26.md`（改造执行说明与断点续做规则）。目录结构为「设备员skill / 二级分类 / 技能英文名 / SKILL.md」。
 
-> **当前状态（2026-11-05）：50 / 50 个技能全部完成中石化口径改造（第二轮）、MCP 核验缺陷修复及 MCP 取数接入，合计 10670 条 selftest 断言全绿，每个技能目录含上架信息.md 与样例问题.md。**
+> **当前状态（2026-11-05）：50 / 50 个技能全部完成中石化口径改造（第二轮）、MCP 核验缺陷修复及 MCP 取数接入，合计 11366 条 selftest 断言全绿，每个技能目录含上架信息.md 与样例问题.md。**
 >
 > 每个技能含：SKILL.md + Node 主脚本 + make-sample + selftest + references + 模板；演示与回归样例（含对照表）在 `../演示case/<分类>/<技能>/`。
 > 全部遵守 `../文档/规范/技能实现规范.md` 的九条硬约束，仅用 Node.js 内置模块，无 npm 依赖。
@@ -38,59 +38,59 @@
 
 ## 实现进度
 
-全部 50 个技能按 `../文档/规范/技能实现规范.md` 建设，逐一通过三步验证（样例再生 / 自测全绿 / 真实参数跑通），合计 **10670 条断言**。
+全部 50 个技能按 `../文档/规范/技能实现规范.md` 建设，逐一通过三步验证（样例再生 / 自测全绿 / 真实参数跑通），合计 **11366 条断言**。
 
 | 技能 | 分类 | 断言 |
 |---|---|---|
 | `anomaly-triage-advisor` | 01 | ✅ 293 条 |
-| `inspection-data-digest` | 01 | ✅ 135 条 |
-| `inspection-task-dispatch` | 01 | ✅ 212 条 |
-| `leak-point-tracker` | 01 | ✅ 265 条 |
-| `lubrication-manager` | 01 | ✅ 215 条 |
-| `parameter-trend-alert` | 01 | ✅ 328 条 |
-| `runtime-hours-tracker` | 01 | ✅ 206 条 |
-| `standby-rotation-reminder` | 01 | ✅ 230 条 |
+| `inspection-data-digest` | 01 | ✅ 165 条 |
+| `inspection-task-dispatch` | 01 | ✅ 239 条 |
+| `leak-point-tracker` | 01 | ✅ 294 条 |
+| `lubrication-manager` | 01 | ✅ 244 条 |
+| `parameter-trend-alert` | 01 | ✅ 355 条 |
+| `runtime-hours-tracker` | 01 | ✅ 234 条 |
+| `standby-rotation-reminder` | 01 | ✅ 256 条 |
 | `completion-acceptance` | 02 | ✅ 210 条 |
-| `defect-intake-grading` | 02 | ✅ 185 条 |
+| `defect-intake-grading` | 02 | ✅ 202 条 |
 | `equipment-handover-check` | 02 | ✅ 201 条 |
-| `maintenance-demand-rollup` | 02 | ✅ 255 条 |
+| `maintenance-demand-rollup` | 02 | ✅ 271 条 |
 | `maintenance-record-archive` | 02 | ✅ 146 条 |
 | `overhaul-process-check-bridge` | 02 | ✅ 163 条 |
 | `permit-precheck-bridge` | 02 | ✅ 133 条 |
 | `repair-plan-assistant` | 02 | ✅ 334 条 |
-| `repeat-failure-detector` | 02 | ✅ 218 条 |
-| `turnaround-workshop-tracker` | 02 | ✅ 323 条 |
-| `work-order-generator` | 02 | ✅ 225 条 |
-| `work-order-tracker` | 02 | ✅ 184 条 |
-| `contractor-performance-log` | 03 | ✅ 198 条 |
+| `repeat-failure-detector` | 02 | ✅ 232 条 |
+| `turnaround-workshop-tracker` | 02 | ✅ 340 条 |
+| `work-order-generator` | 02 | ✅ 238 条 |
+| `work-order-tracker` | 02 | ✅ 198 条 |
+| `contractor-performance-log` | 03 | ✅ 212 条 |
 | `contractor-qualification-check` | 03 | ✅ 206 条 |
-| `cross-operation-conflict` | 03 | ✅ 224 条 |
+| `cross-operation-conflict` | 03 | ✅ 239 条 |
 | `site-supervision-points` | 03 | ✅ 206 条 |
 | `equipment-ledger-query` | 04 | ✅ 151 条 |
 | `moc-change-assistant` | 04 | ✅ 373 条 |
 | `nameplate-ocr-intake` | 04 | ✅ 219 条 |
-| `special-equipment-inspection-due` | 04 | ✅ 165 条 |
+| `special-equipment-inspection-due` | 04 | ✅ 189 条 |
 | `technical-document-finder` | 04 | ✅ 190 条 |
-| `valve-instrument-calibration-ledger` | 04 | ✅ 159 条 |
-| `spare-parts-consumption-analysis` | 05 | ✅ 127 条 |
-| `spare-parts-demand` | 05 | ✅ 213 条 |
+| `valve-instrument-calibration-ledger` | 04 | ✅ 177 条 |
+| `spare-parts-consumption-analysis` | 05 | ✅ 148 条 |
+| `spare-parts-demand` | 05 | ✅ 240 条 |
 | `spare-parts-inventory-query` | 05 | ✅ 138 条 |
-| `equipment-daily-report` | 06 | ✅ 186 条 |
+| `equipment-daily-report` | 06 | ✅ 235 条 |
 | `equipment-event-notice` | 06 | ✅ 172 条 |
-| `equipment-weekly-monthly-report` | 06 | ✅ 300 条 |
+| `equipment-weekly-monthly-report` | 06 | ✅ 342 条 |
 | `inspection-evidence-package` | 06 | ✅ 215 条 |
-| `meeting-material-builder` | 06 | ✅ 145 条 |
-| `self-audit-form-filler` | 06 | ✅ 273 条 |
-| `shift-handover-record` | 06 | ✅ 165 条 |
+| `meeting-material-builder` | 06 | ✅ 166 条 |
+| `self-audit-form-filler` | 06 | ✅ 298 条 |
+| `shift-handover-record` | 06 | ✅ 194 条 |
 | `failure-case-retrieval` | 07 | ✅ 166 条 |
 | `failure-investigation-assistant` | 07 | ✅ 313 条 |
-| `hazard-closure-tracker` | 07 | ✅ 164 条 |
+| `hazard-closure-tracker` | 07 | ✅ 193 条 |
 | `regulation-compliance-check` | 07 | ✅ 209 条 |
-| `safety-environmental-device-check` | 07 | ✅ 199 条 |
-| `equipment-energy-analysis` | 08 | ✅ 230 条 |
+| `safety-environmental-device-check` | 07 | ✅ 217 条 |
+| `equipment-energy-analysis` | 08 | ✅ 269 条 |
 | `equipment-knowledge-qa` | 08 | ✅ 249 条 |
-| `operator-anomaly-guide` | 08 | ✅ 157 条 |
-| `training-material-generator` | 08 | ✅ 254 条 |
+| `operator-anomaly-guide` | 08 | ✅ 176 条 |
+| `training-material-generator` | 08 | ✅ 273 条 |
 | `worklog-todo-manager` | 08 | ✅ 243 条 |
 
 ### 验证方式

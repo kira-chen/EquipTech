@@ -4,18 +4,18 @@
 
 | # | 技能目录 | 中文名 | 一句话 | 难度 | 批次 | 状态 |
 |---|---|---|---|---|---|---|
-| 1 | `defect-intake-grading` | 缺陷登记与分级 | 口语化描述转结构化缺陷记录并定级 | 低 | 一 | ✅ 185 条断言 |
-| 2 | `work-order-generator` | 维修通知单草稿 | 缺陷转 SAP 维修通知单草稿，带台账与历史背景；工单由计划员创建 | 低 | 一 | ✅ 225 条断言 |
-| 3 | `work-order-tracker` | 工单跟踪催办 | 状态分布、超期与停滞识别、催办清单、完成率 | 低 | 一 | ✅ 184 条断言 |
-| 4 | `repeat-failure-detector` | 重复故障识别 | 识别同设备与同型号重复故障，提示做根因分析 | 中 | 三 | ✅ 218 条断言 |
-| 5 | `maintenance-demand-rollup` | 检修需求汇总 | 汇总本车间检修需求，生成可上报设备部的清单 | 低 | 一 | ✅ 255 条断言 |
+| 1 | `defect-intake-grading` | 缺陷登记与分级 | 口语化描述转结构化缺陷记录并定级 | 低 | 一 | ✅ 202 条断言 |
+| 2 | `work-order-generator` | 维修通知单草稿 | 缺陷转 SAP 维修通知单草稿，带台账与历史背景；工单由计划员创建 | 低 | 一 | ✅ 238 条断言 |
+| 3 | `work-order-tracker` | 工单跟踪催办 | 状态分布、超期与停滞识别、催办清单、完成率 | 低 | 一 | ✅ 198 条断言 |
+| 4 | `repeat-failure-detector` | 重复故障识别 | 识别同设备与同型号重复故障，提示做根因分析 | 中 | 三 | ✅ 232 条断言 |
+| 5 | `maintenance-demand-rollup` | 检修需求汇总 | 汇总本车间检修需求，生成可上报设备部的清单 | 低 | 一 | ✅ 271 条断言 |
 | 6 | `repair-plan-assistant` | 检修方案辅助 | 按设备类型匹配作业步骤、工机具、质量控制点 | 中 | 二 | ✅ 334 条断言 |
 | 7 | `equipment-handover-check` | 设备交出确认 | 按介质与作业类型生成交出条件清单与交出单 | 中 | 二 | ✅ 201 条断言 |
 | 8 | `permit-precheck-bridge` | 作业票预检入口 | 车间侧入口，调用已有 `work-permit-precheck` | 低 | 一 | ✅ 133 条断言 |
 | 9 | `overhaul-process-check-bridge` | 方案核查入口 | 车间侧入口，调用已有 `overhaul-safety-check` | 低 | 一 | ✅ 163 条断言 |
 | 10 | `completion-acceptance` | 完工验收 | 生成验收项清单、记录结果、输出验收报告 | 中 | 二 | ✅ 210 条断言 |
 | 11 | `maintenance-record-archive` | 检修记录归档 | 核对应归档资料完整性，更新台账检修履历 | 低 | 一 | ✅ 146 条断言 |
-| 12 | `turnaround-workshop-tracker` | 大修车间跟踪 | 大修期间项目进度、资源到位、开工条件一张表 | 中 | 二 | ✅ 323 条断言 |
+| 12 | `turnaround-workshop-tracker` | 大修车间跟踪 | 大修期间项目进度、资源到位、开工条件一张表 | 中 | 二 | ✅ 340 条断言 |
 
 ## 关于两个 bridge 技能
 `permit-precheck-bridge` 与 `overhaul-process-check-bridge` **不重复实现规则引擎**，它们负责车间场景的前置信息补全与结果转达，实际判定调用已建成的 `work-permit-precheck`（特殊作业票预检，GB 30871 规则引擎 130 条）与 `overhaul-safety-check`（检修方案安全措施核查，70 条规则）。这两个被依赖技能不在本仓库内，部署时须一并安装；与 bridge 并排装在同一个技能目录下时，`check-dependency.js` 会自动找到依赖，找不到时 bridge 终止并告知用户，不自行判定。
@@ -25,4 +25,4 @@
 
 ## 实现状态
 
-本类 **12 / 12** 个技能已完整实现（Node 脚本 + selftest + references + 演示case 样例），合计 **2577** 条断言全绿。
+本类 **12 / 12** 个技能已完整实现（Node 脚本 + selftest + references + 演示case 样例），合计 **2668** 条断言全绿。
