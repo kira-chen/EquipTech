@@ -186,8 +186,9 @@ const noHours = mk('nohours.xlsx', {
   '单价': [['能源介质', '单价', '计价单位'], ['电', 0.62, 'kWh']],
 });
 r = run(noHours, [], 'nohours');
-eq(r.data.savingPotential[0].annualCostGap, null, '9.6 缺运行时间不测算费用差额');
-ok(/未用典型运行小时代替/.test(r.data.savingPotential[0].note), '9.7 说明未用典型运行小时代替');
+// D006 改口径：运行时间为空的设备列为「运行状态未知」，不判偏低，因而不进费用差额测算（原 9.6/9.7 断言缺运行时间的偏低设备不测算，现在该设备不再判偏低）
+ok(!r.data.savingPotential.some((x) => x.tag === 'P-63' && x.annualCostGap !== null), '9.6 缺运行时间不测算费用差额（D006：P-63 不进测算）');
+eq((r.data.byEquipment.find((x) => x.tag === 'P-63') || {}).lowJudgement, 'runUnknown', '9.7 缺运行时间的设备判运行状态未知，未用典型运行小时代替（D006）');
 // 无单价 → 不测算，不按典型电价
 r = run(base, [], 'noprice');
 eq(r.data.meta.priceProvided, false, '9.8 未提供单价');
@@ -543,6 +544,52 @@ eq(rp7.summary.counts.insufficientData, 2, '28.17 seed 变多变样例结论不�
   ok(/P-21B[^\n]*统计期内未运行/.test(r.md), '29.12 md 判定列标「统计期内未运行」');
   const wb = readXlsx(path.join(r.out, '能效对标表.xlsx'));
   ok(wb['逐台能效'].some((row) => row[0] === 'P-21B' && /统计期内未运行/.test(String(row[row.length - 1]))), '29.13 xlsx 判定列标「统计期内未运行」');
+}
+
+// ---- 30. 运行时间为空：运行状态未知，不判正常或偏低、不参与同类对比（D006）
+{
+  const DH = ['位号', '设备名称', '设计效率'];
+  const blank = mk('blank-hours.xlsx', {
+    '运行数据': [PUMP_HDR,
+      pumpRow('P-31A', 0.60, { group: 'P-31', hours: 720 }),
+      pumpRow('P-31B', 0.50, { group: 'P-31', hours: '' }),
+      pumpRow('P-31C', 0.55, { group: 'P-31', hours: 0 }),
+      pumpRow('P-32A', 0.80, { group: 'P-32', hours: '' }),
+      pumpRow('P-32B', 0.76, { group: 'P-32', hours: 500 }),
+      pumpRow('P-32C', 0.74, { group: 'P-32', hours: 400 }),
+      pumpRow('P-33A', 0.70, { group: 'P-33', hours: '不详' })],
+    '设计参数': [DH, ['P-31A', 'P-31A泵', 78], ['P-31B', 'P-31B泵', 78], ['P-31C', 'P-31C泵', 78]],
+    '单价': [['能源介质', '单价', '计价单位'], ['电', 0.62, 'kWh']],
+  });
+  r = run(blank, [], 'blankhours');
+  const by = (t) => r.data.byEquipment.find((x) => x.tag === t) || {};
+  eq(r.summary.ok, true, '30.1 含运行时间为空的设备可正常运行');
+  eq(by('P-31A').lowJudgement, 'low', '30.2 运行时间为正值：照常按设计值判偏低（行为不变）');
+  eq(by('P-31C').lowJudgement, 'notRunning', '30.3 运行时间为 0：仍判统计期内未运行');
+  eq(by('P-31B').lowJudgement, 'runUnknown', '30.4 运行时间为空：判运行状态未知，不判正常或偏低');
+  eq(by('P-31B').efficiencyPct, 50, '30.5 运行时间为空：效率照列供核对');
+  ok(!r.data.lowEfficiency.some((x) => x.tag === 'P-31B'), '30.6 运行时间为空：不进能效偏低清单（即使低于设计值）');
+  eq(by('P-31B').groupRank, null, '30.7 运行时间为空：无组内排名');
+  eq(by('P-32A').lowJudgement, 'runUnknown', '30.8 效率高的运行时间为空的泵同样不判正常');
+  eq(r.data.groupComparison.find((g) => g.group === 'P-32').size, 2, '30.9 组内中位数只用运行时间已知且大于 0 的泵');
+  eq(by('P-32B').groupMedianPct, 75, '30.10 组内中位数不含运行时间为空的泵（76、74 → 75）');
+  eq(by('P-33A').lowJudgement, 'runUnknown', '30.11 运行时间无法解析的按为空处理');
+  eq(r.summary.counts.runUnknown, 3, '30.12 counts.runUnknown 计 3 台');
+  eq(r.summary.counts.calculated, 7, '30.13 运行状态未知的仍计入完成计算（效率列出供核对）');
+  ok(r.summary.warnings.some((w) => /运行状态未知/.test(w) && /P-31B/.test(w) && /补充/.test(w)), '30.14 warning 提示补充运行时间');
+  ok(!r.data.savingPotential.some((x) => ['P-31B', 'P-32A', 'P-33A'].includes(x.tag) && x.annualCostGap !== null), '30.15 运行状态未知的设备不测算费用差额');
+  ok(/P-31B[^\n]*运行状态未知/.test(r.md), '30.16 md 判定列标「运行状态未知」');
+  const wb = readXlsx(path.join(r.out, '能效对标表.xlsx'));
+  ok(wb['逐台能效'].some((row) => row[0] === 'P-31B' && /运行状态未知/.test(String(row[row.length - 1]))), '30.17 xlsx 判定列标「运行状态未知」');
+  ok(/运行状态未知（运行时间为空，不判定）/.test(r.md), '30.18 md 概览有运行状态未知计数行');
+  // 整张表没有运行时间列：可算设备全部列为运行状态未知，warning 写明缺列
+  const noCol = mk('no-hours-col.xlsx', {
+    '运行数据': [PUMP_HDR.slice(0, -1), pumpRow('P-41', 0.80).slice(0, -1), pumpRow('P-42', 0.60).slice(0, -1)],
+  });
+  r = run(noCol, [], 'nohourscol');
+  ok(r.data.byEquipment.every((x) => x.lowJudgement === 'runUnknown'), '30.19 无运行时间列时可算设备都判运行状态未知');
+  eq(r.data.lowEfficiency.length, 0, '30.20 无运行时间列时不出能效偏低清单');
+  ok(r.summary.warnings.some((w) => /没有运行时间列/.test(w)), '30.21 无运行时间列时 warning 写明缺列');
 }
 
 // ---- 输出
