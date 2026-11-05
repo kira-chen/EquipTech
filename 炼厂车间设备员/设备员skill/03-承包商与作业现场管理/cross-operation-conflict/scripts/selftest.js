@@ -560,6 +560,46 @@ ok(['spatialConflicts', 'riskConflicts', 'resourceConflicts', 'undetermined', 't
 ok(r.json.riskConflicts.every((c) => c.ruleId && c.severity && c.advice), 'J2.8 每条冲突带规则号、严重度与建议');
 ok(typeof r.json.counts.high === 'number' && typeof r.json.counts.undetermined === 'number', 'J2.9 counts 含严重度与未判定计数');
 
+// ================================================================ W. 车间范围核对（D007）
+{
+  // 列序含「属地监护人 / 作业单位名称」，同时核对加「车间」后各列归属不乱
+  const WH = ['许可证编号', '作业类别', '功能位置', '作业地点', '标高', '有效期自', '有效期至', '作业单位名称', '属地监护人', '作业单位监护人', '介质'];
+  const job = (id, type, unit, guard, ws) => [id, type, 'E-1', '二区', '0', `${DATE} 09:00`, `${DATE} 12:00`, unit, guard, `${guard}乙`, '', ...(ws === undefined ? [] : [ws])];
+  const wsOf = (x) => ((x.json && x.json.meta && x.json.meta.workshopScope) || [])[0] || {};
+  const ids = (x) => ((x.json && x.json.works) || []).map((w) => w.id);
+  const allPairs = (x) => x.json ? [...x.json.spatialConflicts, ...x.json.riskConflicts, ...x.json.resourceConflicts].map((c) => (c.pair || (c.works || []).map((w) => w.id)).join('+')) : [];
+  let w = run(mk('ws-mix.xlsx', [[...WH, '车间'],
+    job('YH-W1', '用火作业', '甲队', '刘国强', '测试车间'),
+    job('SX-W2', '受限空间作业', '乙队', '刘国强', '加氢车间'),
+    job('GC-W3', '高处作业', '丙队', '赵德海', ''),
+    job('DZ-W4', '吊装作业', '丁队', '孙立新', '测试')]), [], 'ws-mix');
+  eq(w.json && w.json.counts.works, 3, 'W1 两车间混合：只检测本车间与车间为空的作业（3 项）');
+  ok(w.json && !ids(w).includes('SX-W2') && !allPairs(w).some((p) => /SX-W2/.test(p)), 'W2 加氢车间的 SX-W2 不参与任何冲突判定');
+  ok(w.json && w.json.warnings.some((x) => /剔除其他车间 1 行/.test(x) && /加氢车间 1 行/.test(x)), 'W3 warning 写明剔除行数与车间名');
+  ok(wsOf(w).status === 'checked' && wsOf(w).column === '车间' && wsOf(w).droppedRows === 1 && (wsOf(w).dropped || {})['加氢车间'] === 1, 'W4 meta.workshopScope 记录剔除情况');
+  ok(wsOf(w).blank === 1 && ids(w).includes('GC-W3'), 'W5 车间列为空的行按本车间保留');
+  const y1 = (w.json && w.json.works.find((x) => x.id === 'YH-W1')) || {};
+  ok(y1.unit === '甲队' && y1.guardSite === '刘国强' && y1.area === '二区', 'W6 加「车间」后作业单位、属地监护人、区域列归属不变');
+  ok(w.md && /车间范围：已按车间列核对「测试车间」，剔除其他车间的行：「作业清单」1 行（加氢车间 1 行）/.test(w.md), 'W7 md 口径写明按车间核对');
+  w = run(mk('ws-mis.xlsx', [[...WH, '车间'], job('YH-W1', '用火作业', '甲队', '刘国强', '加氢车间'), job('SX-W2', '受限空间作业', '乙队', '王五', '焦化车间')]), [], 'ws-mis');
+  ok(w.json && w.json.counts.works === 2 && wsOf(w).status === 'mismatch', 'W8 车间列全不一致：不筛，status=mismatch');
+  ok(w.json && w.json.warnings.some((x) => /^【注意】/.test(x)), 'W9 车间列全不一致 warning 以【注意】开头');
+  const at = w.md ? w.md.indexOf('的车间列取值与 --workshop「测试车间」不一致') : -1;
+  ok(at > 0 && at < w.md.indexOf('## 一'), 'W10 md 开头（第一节之前）有【注意】提示');
+  w = run(mk('ws-nocol.xlsx', [WH, job('YH-W1', '用火作业', '甲队', '刘国强'), job('SX-W2', '受限空间作业', '乙队', '王五')]), [], 'ws-nocol');
+  ok(wsOf(w).status === 'noColumn' && w.json.counts.works === 2 && /输入未含车间列，车间范围以取数条件为准/.test(w.md), 'W11 无车间列：不筛，md 口径说明以取数条件为准');
+  w = run(mk('ws-plant.xlsx', [[...WH, '维护工厂'], job('YH-W1', '用火作业', '甲队', '刘国强', '1100'), job('SX-W2', '受限空间作业', '乙队', '王五', '1200')]), [], 'ws-plant');
+  ok(wsOf(w).status === 'noColumn' && w.json.counts.works === 2, 'W12 「维护工厂」列不当车间列（noColumn，不筛）');
+  // 只有「车间监护人」（属地监护人别名）时，它归属地监护人，不当车间列
+  const gh = WH.map((h) => (h === '属地监护人' ? '车间监护人' : h));
+  w = run(mk('ws-guard.xlsx', [gh, job('YH-W1', '用火作业', '甲队', '刘国强'), job('SX-W2', '受限空间作业', '乙队', '王五')]), [], 'ws-guard');
+  ok(wsOf(w).status === 'noColumn' && w.json.counts.works === 2 && (w.json.works.find((x) => x.id === 'YH-W1') || {}).guardSite === '刘国强', 'W13 「车间监护人」归属地监护人，不当车间列');
+  w = run(mk('ws-ssc.xlsx', [[...WH, '所属车间'], job('YH-W1', '用火作业', '甲队', '刘国强', '测试车间'), job('SX-W2', '受限空间作业', '乙队', '王五', '加氢车间')]), [], 'ws-ssc');
+  ok(wsOf(w).status === 'checked' && wsOf(w).column === '所属车间' && w.json.counts.works === 1, 'W14 「所属车间」列同样核对');
+  w = run(mk('ws-both.xlsx', [[...WH, '车间监护人'], job('YH-W1', '用火作业', '甲队', '刘国强', '张三'), job('SX-W2', '受限空间作业', '乙队', '王五', '李四')]), [], 'ws-both');
+  ok(wsOf(w).status === 'noColumn' && w.json.counts.works === 2 && !w.json.warnings.some((x) => /^【注意】/.test(x)), 'W15 已有属地监护人列时多出的「车间监护人」人员列不当车间列，不误报【注意】');
+}
+
 // ================================================================ K. 样例可再生（seed 变数值，结论不变）
 const MS = path.join(__dirname, 'make-sample.js');
 function sampleRun(seed) {

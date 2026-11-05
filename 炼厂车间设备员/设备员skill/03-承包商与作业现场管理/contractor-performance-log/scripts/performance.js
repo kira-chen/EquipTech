@@ -47,6 +47,9 @@ const ALIASES = C.mergeAliases({
   '分档': ['分档', '分档名称', '档次', '等级名称'],
   '最低分': ['最低分', '下限', '起始分', '分数下限'],
 });
+// 车间范围核对（D007）：「车间」只认车间 / 所属车间 / 属地车间 / 运行部（或其后加「名称」），
+// 不让共享别名里的维护工厂 / 属地单位 / 使用单位占用该字段
+ALIASES['车间'] = [...C.WORKSHOP_COLS, ...C.WORKSHOP_COLS.map((c) => c + '名称')];
 
 // ---------------------------------------------------------------- 四个维度归一
 // 安全违章 / 施工质量 / 进度履约 / 现场配合与文明施工。无法归类 → null（进 undetermined，绝不猜）
@@ -267,6 +270,10 @@ function main() {
   }
 
   // ---- 工单台账（可选）：关联质量与进度数据，仅作补充展示，不改变评分
+  // 车间范围核对（D007）：检查记录与工单台账带车间列时剔除其他车间的行（HSE 平台检查记录导出带「车间」列）
+  const scopes = [];
+  const scoped = (list, sheet) => { const ws = C.workshopScope(list, a.workshop, sheet, warnings); scopes.push(ws.scope); return ws.records; };
+
   let orderStats = null;
   if (a.orders) {
     if (!fs.existsSync(a.orders)) throw new Error(`工单台账不存在: ${a.orders}`);
@@ -275,7 +282,7 @@ function main() {
     const or = C.pickSheet(ob, '工单台账', '工单', '施工台账', '作业台账');
     if (!or) warnings.push(`工单台账「${path.basename(a.orders)}」中未找到「工单台账」工作表，已忽略`);
     else {
-      const recs = C.toRecords(or, ['工单号', '承包商'], '工单台账', ['项目', '完成情况'], warnings, ALIASES);
+      const recs = scoped(C.toRecords(or, ['工单号', '承包商'], '工单台账', ['项目', '完成情况', '车间'], warnings, ALIASES), '工单台账');
       orderStats = {};
       for (const r of recs) {
         const cn = C.str(r['承包商']);
@@ -298,8 +305,9 @@ function main() {
   const rows = C.pickSheet(book, '检查记录', '违章记录', '现场检查记录', '承包商检查记录', '记录');
   if (!rows) throw new Error('未在输入中找到「检查记录」或「违章记录」工作表');
   const sheetName = '检查记录';
-  const recs = C.toRecords(rows, ['记录日期', '承包商', '类型', '事项描述'], sheetName,
-    ['项目', '严重程度', '整改情况', '检查人', '承包商编码'], warnings, ALIASES);
+  const recs = scoped(C.toRecords(rows, ['记录日期', '承包商', '类型', '事项描述'], sheetName,
+    ['项目', '严重程度', '整改情况', '检查人', '承包商编码', '车间'], warnings, ALIASES), sheetName);
+  if (scopes.length > 1) scopes.unshift(scopes.pop());   // 检查记录（主表）排第一
   const hasCodeCol = recs.hasCol('承包商编码');
 
   // ---- 逐条判定
@@ -503,7 +511,7 @@ function main() {
     meta: {
       workshop: a.workshop, from, to, generatedAt: C.localDateTime(),
       input: path.basename(a.input), rulesSource, gradesSource, isDefaultRules, rulesNotice,
-      contractorFilter, groupedByCode: hasCodeCol && codedRecords > 0, disclaimer: DISCLAIMER,
+      contractorFilter, groupedByCode: hasCodeCol && codedRecords > 0, workshopScope: scopes, disclaimer: DISCLAIMER,
       roster: a.roster ? path.basename(a.roster) : null,
       orders: a.orders ? path.basename(a.orders) : null,
     },
@@ -517,8 +525,10 @@ function main() {
 
   // ---- performance.md
   const L = [];
+  const wsNote = C.workshopScopeNote(scopes, a.workshop);
   L.push(`# ${a.workshop} 承包商表现记录（${from} 至 ${to}）`);
   L.push('');
+  if (wsNote.alert) { L.push(`**${wsNote.alert}**`); L.push(''); }
   if (isDefaultRules) {
     L.push('> 【注意】**口径提示**：本次评分**采用默认口径，非厂内正式口径，结果仅供参考**。默认口径见 `references/evaluation-rules.md`；如有厂内正式评分标准，请用 `--rules` 传入后重算（模板见 `assets/templates/rules-template.xlsx`）。');
     L.push('');
@@ -532,6 +542,7 @@ function main() {
   }
   L.push(`评价区间：${from} 至 ${to} ｜ 车间：${a.workshop}${contractorFilter ? ` ｜ 承包商筛选：${contractorFilter}` : ''}`);
   L.push(`评分口径：${rulesSource} ｜ 基准分 ${base.value} 分 ｜ 分档：${gradesSource}`);
+  if (wsNote.note) L.push(wsNote.note);
   L.push(`报送对象：承包商考核由安全环保部门归口、业务主管部门配合；本记录为车间（属地单位）侧记录${hasCodeCol && codedRecords ? ' ｜ 分组方式：有承包商编码的记录按编码分组' : ''}`);
   L.push(`数据来源：${path.basename(a.input)}${a.orders ? ` ｜ 工单台账：${path.basename(a.orders)}` : ''}${a.roster ? ` ｜ 承包商名单：${path.basename(a.roster)}` : ''} ｜ 生成时间：${C.localDateTime()}（北京时间）`);
   L.push('');

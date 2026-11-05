@@ -489,6 +489,47 @@ const sysAlias = mk('sysalias.xlsx', {
 r = run(sysAlias, [], 'sysalias');
 ok(!!g(r.pf, '丁检修公司'), '17.37 「承修单位」（共享别名）命中承包商列');
 
+// ================= W. 车间范围核对（D007）：检查记录全套（HSE 平台导出带「车间」列），工单台账一条混合剔除 =================
+{
+  // 与 HSE 管理平台 get_site_inspections 导出列序一致：车间列在记录日期与承包商之间
+  const WH = ['记录日期', '车间', '承包商', '承包商编码', '项目', '类型', '事项描述', '严重程度', '整改情况', '检查人'];
+  const row = (ws, name, code, sev, n) => [D(-n), ws, name, code, '项目一', '安全违章', '未系安全带', sev, '已整改', '周工'];
+  const wsOf = (x, i = 0) => ((x.pf && x.pf.meta && x.pf.meta.workshopScope) || [])[i] || {};
+  const byCode = (x, code) => ((x.pf && x.pf.byContractor) || []).find((c) => c.code === code) || {};
+  let w = run(mk('ws-mix.xlsx', { '检查记录': [WH,
+    row('测试车间', '甲建安工程有限公司', 'C1001', '一般违章', 10),
+    row('加氢车间', '甲建安工程有限公司', 'C1001', '重大违章', 11),
+    row('加氢车间', '乙检修公司', 'C1002', '严重违章', 12),
+    row('', '甲建安工程有限公司', 'C1001', '一般违章', 13),
+    row('测试', '丙机电公司', 'C1003', '一般违章', 14)] }), [], 'ws-mix');
+  eq(w.pf && w.pf.counts.records, 3, 'W1 两车间混合：只统计本车间与车间为空的检查记录（3 条）');
+  ok(w.pf && byCode(w, 'C1001').score === 96 && !w.pf.byContractor.some((c) => c.code === 'C1002'), 'W2 加氢车间的记录不计分：C1001 只扣本车间两条一般违章（96 分），C1002 不出现');
+  ok(w.pf && w.pf.warnings.some((x) => /剔除其他车间 2 行/.test(x) && /加氢车间 2 行/.test(x)), 'W3 warning 写明剔除行数与车间名');
+  ok(wsOf(w).status === 'checked' && wsOf(w).column === '车间' && wsOf(w).droppedRows === 2 && (wsOf(w).dropped || {})['加氢车间'] === 2, 'W4 meta.workshopScope 记录剔除情况（车间列归「车间」，不被承包商等列抢走）');
+  ok(wsOf(w).blank === 1 && w.pf.items.length === 3, 'W5 车间列为空的行按本车间保留');
+  ok(w.pf && w.pf.items.every((it) => it.contractor && it.contractor !== '测试车间' && it.contractor !== '加氢车间'), 'W6 加车间列后承包商列仍取「承包商」，不错取车间');
+  ok(w.md && /车间范围：已按车间列核对「测试车间」，剔除其他车间的行：「检查记录」2 行（加氢车间 2 行）/.test(w.md), 'W7 md 口径写明按车间核对');
+  w = run(mk('ws-mis.xlsx', { '检查记录': [WH, row('加氢车间', '甲建安工程有限公司', 'C1001', '一般违章', 10), row('焦化车间', '乙检修公司', 'C1002', '一般违章', 11)] }), [], 'ws-mis');
+  ok(w.pf && w.pf.counts.records === 2 && wsOf(w).status === 'mismatch', 'W8 车间列全不一致：不筛，status=mismatch');
+  ok(w.pf && w.pf.warnings.some((x) => /^【注意】/.test(x)), 'W9 车间列全不一致 warning 以【注意】开头');
+  const at = w.md ? w.md.indexOf('的车间列取值与 --workshop「测试车间」不一致') : -1;
+  ok(at > 0 && at < w.md.indexOf('## 一'), 'W10 md 开头（第一节之前）有【注意】提示');
+  const noWs = (r0) => r0.filter((_, i) => i !== 1);
+  w = run(mk('ws-nocol.xlsx', { '检查记录': [noWs(WH), noWs(row('', '甲建安工程有限公司', 'C1001', '一般违章', 10)), noWs(row('', '乙检修公司', 'C1002', '一般违章', 11))] }), [], 'ws-nocol');
+  ok(wsOf(w).status === 'noColumn' && w.pf.counts.records === 2 && /输入未含车间列，车间范围以取数条件为准/.test(w.md), 'W11 无车间列：不筛，md 口径说明以取数条件为准');
+  const plantH = WH.map((h) => (h === '车间' ? '维护工厂' : h));
+  w = run(mk('ws-plant.xlsx', { '检查记录': [plantH, row('1100', '甲建安工程有限公司', 'C1001', '一般违章', 10), row('1200', '乙检修公司', 'C1002', '一般违章', 11)] }), [], 'ws-plant');
+  ok(wsOf(w).status === 'noColumn' && w.pf.counts.records === 2, 'W12 「维护工厂」列不当车间列（noColumn，不筛）');
+  const wsOrders = mk('ws-orders.xlsx', { '工单台账': [['工单号', '承包商', '项目', '完成情况', '车间'],
+    ['GD-001', '甲建安工程有限公司', '项目一', '已完成', '测试车间'],
+    ['GD-002', '甲建安工程有限公司', '项目一', '未完成', '加氢车间']] });
+  w = run(mk('ws-o-in.xlsx', { '检查记录': [WH, row('测试车间', '甲建安工程有限公司', 'C1001', '一般违章', 10)] }), ['--orders', wsOrders], 'ws-orders');
+  ok(w.pf && w.pf.orderStats && w.pf.orderStats[0].orders === 1 && w.pf.orderStats[0].done === 1 && wsOf(w, 1).sheet === '工单台账' && wsOf(w, 1).droppedRows === 1, 'W13 工单台账混合：剔除其他车间工单，scopes 记两张表');
+  const sscH = WH.map((h) => (h === '车间' ? '所属车间' : h));
+  w = run(mk('ws-ssc.xlsx', { '检查记录': [sscH, row('测试车间', '甲建安工程有限公司', 'C1001', '一般违章', 10), row('加氢车间', '乙检修公司', 'C1002', '一般违章', 11)] }), [], 'ws-ssc');
+  ok(wsOf(w).status === 'checked' && wsOf(w).column === '所属车间' && w.pf.counts.records === 1, 'W14 「所属车间」列同样核对');
+}
+
 // ================= 输出 =================
 console.log(`\n${'='.repeat(56)}`);
 console.log(`contractor-performance-log 自测：${pass} 通过，${fail} 失败`);

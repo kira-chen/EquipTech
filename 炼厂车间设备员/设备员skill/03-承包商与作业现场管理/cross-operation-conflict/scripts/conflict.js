@@ -48,6 +48,9 @@ const ALIASES = C.mergeAliases({
   '消防覆盖区': ['消防覆盖区', '消防区域', '消防设施', '消防覆盖'],
   '作业内容描述': ['作业内容描述', '作业描述', '备注', '说明'],
 });
+// 车间范围核对（D007）：「车间」只认车间 / 所属车间 / 属地车间 / 运行部（或其后加「名称」），
+// 不让共享别名里的维护工厂 / 属地单位 / 使用单位占用该字段
+ALIASES['车间'] = [...C.WORKSHOP_COLS, ...C.WORKSHOP_COLS.map((c) => c + '名称')];
 /** 作业许可系统导出中通常缺省的列：缺列不算数据问题，只提示一次 */
 const USUALLY_ABSENT = ['电源回路', '消防覆盖区'];
 
@@ -146,9 +149,13 @@ function main() {
   // ---- 读取作业清单
   const rows = C.pickSheet(loadBook(a.input), '作业清单', '作业', '作业票', '作业计划');
   if (!rows) throw new Error('输入文件中未找到「作业清单」工作表');
-  const recs = C.toRecords(rows, ['作业编号', '作业类型'], '作业清单',
+  const allRecs = C.toRecords(rows, ['作业编号', '作业类型'], '作业清单',
     ['位号', '区域', '标高', '开始时间', '结束时间', '作业单位', '监护人', '属地监护人', '作业单位监护人', '涉及介质', '使用设备',
-      '所属系统', '电源回路', '消防覆盖区', '作业内容描述'], warnings, ALIASES);
+      '所属系统', '电源回路', '消防覆盖区', '作业内容描述', '车间'], warnings, ALIASES);
+  // 车间范围核对（D007）：作业清单带车间列时剔除其他车间的作业，不参与任何冲突判定
+  const ws = C.workshopScope(allRecs, a.workshop, '作业清单', warnings);
+  const scopes = [ws.scope];
+  const recs = ws.records;
   // 电源回路 / 消防覆盖区在作业许可系统导出中通常缺省：缺列不算数据问题，把 toRecords 的缺列提示改为一次性说明
   const absent = USUALLY_ABSENT.filter((c) => !recs.hasCol(c));
   if (absent.length) {
@@ -425,7 +432,7 @@ function main() {
       workshop: a.workshop, date, generatedAt: C.localDateTime(),
       windowMinutes: windowMin, radius: a.radius || null, floorHeight: FLOOR_HEIGHT,
       rulesSource, rulesApplied, rulesFile: a.rules ? path.basename(a.rules) : null, areaMapProvided: !!a['area-map'],
-      dualGuard, absentColumns: absent,
+      dualGuard, absentColumns: absent, workshopScope: scopes,
       disclaimer: DISCLAIMER,
     },
     counts, works: works.map(briefOf),
@@ -435,10 +442,13 @@ function main() {
   fs.writeFileSync(path.join(outDir, 'conflicts.json'), JSON.stringify(result, null, 2), 'utf8');
 
   const L = [];
+  const wsNote = C.workshopScopeNote(scopes, a.workshop);
   L.push(`# ${a.workshop} 交叉作业冲突检测（${date}）`);
   L.push('');
+  if (wsNote.alert) { L.push(`**${wsNote.alert}**`); L.push(''); }
   L.push(`作业清单：${path.basename(a.input)}　｜　时段重叠判定：${windowMin === 0 ? '严格重叠（--window 0）' : `间隔 ${windowMin} 分钟内视为重叠（--window ${windowMin}）`}`);
   L.push(`判定口径：${rulesSource}${a.radius ? `　｜　相邻区域口径：${a.radius}` : ''}`);
+  if (wsNote.note) L.push(wsNote.note);
   L.push(`生成时间：${C.localDateTime()}（北京时间）`);
   L.push('');
   L.push(`> ${DISCLAIMER}`);

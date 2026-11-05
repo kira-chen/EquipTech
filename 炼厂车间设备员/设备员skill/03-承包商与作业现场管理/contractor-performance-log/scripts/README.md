@@ -16,7 +16,7 @@ node "<技能目录>/scripts/performance.js" \
 | 参数 | 必需 | 说明 |
 |---|---|---|
 | `--input` | 是 | 检查记录 / 违章记录 xlsx 路径，或同结构 CSV 目录 |
-| `--workshop` | 是 | 车间名称 |
+| `--workshop` | 是 | 车间名称；检查记录、工单台账带车间列时按它核对车间范围 |
 | `--from` | 是 | 评价区间起始日期 YYYY-MM-DD |
 | `--to` | 是 | 评价区间截止日期 YYYY-MM-DD；早于 `--from` 时报错 |
 | `--out` | 否 | 输出目录，默认输入文件同目录下 `cpl-out/`；**建议始终传 `--out`** |
@@ -29,7 +29,7 @@ node "<技能目录>/scripts/performance.js" \
 
 | 文件 | 内容 |
 |---|---|
-| `performance.json` | `meta`（含 `rulesNotice`、`disclaimer`、`groupedByCode`）、`counts`、`rules`（基准分/扣分表/分档）、`byContractor`（逐家：承包商编码 `code`、同一编码下的名称列表 `names`、各维度记录数与扣分、扣分合计、得分、分档、未判定条数、未整改条数、名称待确认标记）、`violations`（按重大/严重/一般/未判定分组）、`unrectified`、`nameAmbiguity`、`undetermined`、`outOfRange`、`orderStats`、`items`、`warnings` |
+| `performance.json` | `meta`（含 `rulesNotice`、`disclaimer`、`groupedByCode`、`workshopScope`）、`counts`、`rules`（基准分/扣分表/分档）、`byContractor`（逐家：承包商编码 `code`、同一编码下的名称列表 `names`、各维度记录数与扣分、扣分合计、得分、分档、未判定条数、未整改条数、名称待确认标记）、`violations`（按重大/严重/一般/未判定分组）、`unrectified`、`nameAmbiguity`、`undetermined`、`outOfRange`、`orderStats`、`items`、`warnings` |
 | `performance.md` | 七节报告（有 `--orders` 时八节）；评价说明段留 `<!-- ANALYSIS_START/END -->` 占位；开头与末尾各一处固定声明行；不含 emoji，醒目提示用「【注意】」 |
 | `summary.json` | 末行摘要落盘（Windows 控制台乱码兜底） |
 
@@ -46,6 +46,7 @@ node "<技能目录>/scripts/performance.js" \
 - **整改情况为空** → 既不算已整改也不算未整改，不进 `unrectified`
 - **声明行**「本数据为车间（属地单位）侧记录汇总，承包商考核由安全环保部门归口、业务主管部门配合，分档定性与处罚按厂内制度决定；评分口径若非厂内正式口径，结果仅供参考」由脚本直接写入，不得删除或改写
 - 脚本产出正文不含任何定性判断用语；分档只是记录呈现，不是评级结论
+- **车间范围核对（D007）**：检查记录（HSE 平台导出带「车间」列）与 `--orders` 工单台账带车间列（表头为车间 / 所属车间 / 属地车间 / 运行部，或其后加「名称」）时，剔除其他车间的行并 warning，不计分；车间为空的行保留；没有一行是本车间时不筛，warning 与 md 开头写【注意】；无车间列或只有「维护工厂」「车间负责人」这类列时不筛，md 口径写「输入未含车间列，车间范围以取数条件为准」。`meta.workshopScope` 为数组（检查记录在前，工单台账在后；sheet、status `noColumn|checked|mismatch`、column、total、kept、dropped、droppedRows、blank）
 
 ### 默认评分口径（`references/evaluation-rules.md`，非厂内正式口径）
 
@@ -71,4 +72,4 @@ seed 改变记录日期在区间内的取值，但不改变结论：主样例恒
 node scripts/selftest.js
 ```
 
-198 条断言，覆盖：承包商编码（供应商编码）分组与同编码多名称合并、「严重违规」归严重违章、质量「不符合」进未判定、「监护人」列不作检查人、承包商管理平台与作业许可系统列名、厂内分档标准覆盖、rules-template.xlsx 可读、归口术语与无 emoji、四维度基础评分与分档边界（90/80/70）、**承包商名称不一致只提示不合并**、**严重程度为空/无法归类不按最低档计分**、**默认口径免责标注三处**、`--rules` 覆盖与回落、未整改单列、违章明细按程度分组、区间过滤与日期缺失、承包商为空、别名列头与合计行、缺列不中断、参数校验、声明行与章节完整性、**产出正文不含定性判断用语**、`--contractor`/`--roster`/`--orders`。全绿退出 0。
+212 条断言，覆盖：承包商编码（供应商编码）分组与同编码多名称合并、「严重违规」归严重违章、质量「不符合」进未判定、「监护人」列不作检查人、承包商管理平台与作业许可系统列名、厂内分档标准覆盖、rules-template.xlsx 可读、归口术语与无 emoji、四维度基础评分与分档边界（90/80/70）、**承包商名称不一致只提示不合并**、**严重程度为空/无法归类不按最低档计分**、**默认口径免责标注三处**、`--rules` 覆盖与回落、未整改单列、违章明细按程度分组、区间过滤与日期缺失、承包商为空、别名列头与合计行、缺列不中断、参数校验、声明行与章节完整性、**产出正文不含定性判断用语**、`--contractor`/`--roster`/`--orders`、车间范围核对（HSE 导出列序下车间列归属正确、混合剔除、空车间保留、全不一致【注意】、无车间列、维护工厂不认、「所属车间」同样核对、工单台账混合剔除）。全绿退出 0。
