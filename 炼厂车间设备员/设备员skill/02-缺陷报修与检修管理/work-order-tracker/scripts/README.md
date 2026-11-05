@@ -15,7 +15,7 @@ node "<技能目录>/scripts/track.js" \
 | 参数 | 必需 | 说明 |
 |---|---|---|
 | `--input` | 是 | 工单台账 xlsx 路径，或同结构 CSV 目录；支持 SAP PM 订单导出列名（订单/通知单/订单类型/功能位置/设备/系统状态/基本开始(结束)日期/实际结束日期/主工作中心） |
-| `--workshop` | 是 | 车间名称 |
+| `--workshop` | 是 | 车间名称；台账带车间列时按它核对车间范围 |
 | `--date` | 是 | 统计截止日期 YYYY-MM-DD，超期/停滞均以此日为基准 |
 | `--out` | 否 | 输出目录，默认系统临时目录 `<os.tmpdir()>/wot-out`，**建议始终传 `--out`** |
 | `--from` | 否 | 统计起始日期 YYYY-MM-DD，仅用于筛选「区间内闭环工单」；晚于 `--date` 时报错 |
@@ -29,7 +29,7 @@ node "<技能目录>/scripts/track.js" \
 
 | 文件 | 内容 |
 |---|---|
-| `orders.json` | meta（含状态映射说明与声明行）、counts、byStatus、overdue、stalled、stallUndetermined、dueSoon、closed、metrics（byCategory / byPriority / byType）、unknownStatus、groups、warnings |
+| `orders.json` | meta（含状态映射说明与声明行、`workshopScope`）、counts、byStatus、overdue、stalled、stallUndetermined、dueSoon、closed、metrics（byCategory / byPriority / byType）、unknownStatus、groups、warnings |
 | `tracking.md` | 八节报告（状态分布、超期、停滞、临期、区间内闭环、指标统计、未知状态、执行情况说明），开头带声明行，分析段留 `<!-- ANALYSIS_START/END -->` 占位 |
 | `催办清单.md` | 按「承修单位/工作中心 / 责任人」分组的超期与停滞工单，可直接转发 |
 | `summary.json` | 末行摘要落盘 |
@@ -47,6 +47,8 @@ node "<技能目录>/scripts/track.js" \
 - **完成率**：已闭环 ÷（全部已知状态工单 − 已取消）；"已完成/TECO"不进分子；分母为 0 时为 null。
 - **超期原因**：取自台账「超期原因」列，未填写写「原因未记录」，**不推测**。
 - **范围过滤**：`--vendor` / `--owner` 会同时收敛 `unknownStatus` 与各清单；`counts.duplicated` 是台账级数据质量计数，始终按全表统计，不随过滤收敛。
+
+- **车间范围核对（D007）**：台账带车间列（表头为车间 / 所属车间 / 属地车间 / 运行部，或其后加「名称」）时，剔除其他车间的工单并 warning（先于 `--vendor`/`--owner` 过滤，`counts.duplicated` 也只按保留的行统计）；车间为空的行保留；没有一行是本车间时不筛，warning 与两份 md 开头写【注意】；无车间列或只有「维护工厂」「车间负责人」这类列时不筛，`tracking.md` 口径写「输入未含车间列，车间范围以取数条件为准」。`meta.workshopScope` 为数组（sheet、status `noColumn|checked|mismatch`、column、total、kept、dropped、droppedRows、blank）。
 
 ### 退出码
 - `0`：成功，末行输出 `{"ok":true,...}`
@@ -67,4 +69,4 @@ seed 只改变故障描述细节与人员姓氏，不改变结论：主样例恒
 node scripts/selftest.js
 ```
 
-184 条断言，覆盖：SAP 订单导出列名与系统状态映射（REL/TECO/CLSD/CRTD/DLFL）、"已完成/完工/技术完成"归待验收不算闭环、否定前缀先判、状态非法与空值单列、节点时间倒序、工单号重复、要求完成时间缺失按时限类别推算（类别来源标注）、工单类型 PM01/PM02/PM03 与中文映射、无类别不推算、`--sla` 按类别与旧版按优先级覆盖、停滞阈值与临期窗口参数化、节点全缺未判定、时长不可计算为 null、按时限类别达标率未判定、无未闭环工单时各节显示「无」、催办清单按工作中心分组与「原因未记录」、责任方缺失、合计行/标题行/别名列头、空工单号、缺表缺列、时间不可解析、参数校验、区间与范围过滤、默认输出目录为 tmpdir、声明行与【注意】、产出结构与落盘、演示case 预期计数。全绿退出 0。
+198 条断言，覆盖：SAP 订单导出列名与系统状态映射（REL/TECO/CLSD/CRTD/DLFL）、"已完成/完工/技术完成"归待验收不算闭环、否定前缀先判、状态非法与空值单列、节点时间倒序、工单号重复、要求完成时间缺失按时限类别推算（类别来源标注）、工单类型 PM01/PM02/PM03 与中文映射、无类别不推算、`--sla` 按类别与旧版按优先级覆盖、停滞阈值与临期窗口参数化、节点全缺未判定、时长不可计算为 null、按时限类别达标率未判定、无未闭环工单时各节显示「无」、催办清单按工作中心分组与「原因未记录」、责任方缺失、合计行/标题行/别名列头、空工单号、缺表缺列、时间不可解析、参数校验、区间与范围过滤、默认输出目录为 tmpdir、声明行与【注意】、产出结构与落盘、车间范围核对（混合剔除、空车间保留、全不一致【注意】、无车间列、维护工厂不认、「所属车间」同样核对）、演示case 预期计数。全绿退出 0。

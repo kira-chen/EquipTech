@@ -391,6 +391,36 @@ ok(r.j.warnings.some((w) => w.includes('缺少列: 位号')), 'K11 「设备编�
   ok(os2.length === 2 && os2[0].existingNotifNo === '10046716' && os2[1].existingNotifNo === null, 'M8 defects.json 的 sourceNo（通知单号）带出，缺陷编号不当已有通知单号');
 }
 
+// ============ W. 车间范围核对（D007，批量 --input） ============
+const wsHead = ['位号', '缺陷描述', '等级', '介质'];
+const wsBook = (col, vals) => mk(`ws-${col}-${vals.join('_') || 'none'}.xlsx`, {
+  '缺陷记录': [col ? [...wsHead, col] : wsHead,
+    ...vals.map((v, i) => (col ? [`P-90${i}`, '机封滴漏', 'C', '柴油', v] : [`P-90${i}`, '机封滴漏', 'C', '柴油']))],
+});
+const wsOf = (x) => ((x.j && x.j.meta && x.j.meta.workshopScope) || [])[0] || {};
+const wsTags = (x) => ((x.j && x.j.orders) || []).map((o) => o.equipment && o.equipment.tag);
+r = run(['--input', wsBook('车间', ['常减压车间', '催化车间', '', '常减压']), '--workshop', '常减压车间', ...BASE], 'ws-mix');
+eq(r.j && r.j.counts.total, 3, 'W1 两车间混合：只为本车间与车间为空的行出草稿（3 张）');
+ok(r.j && !wsTags(r).includes('P-901') && wsTags(r).includes('P-900'), 'W2 催化车间的 P-901 不出草稿');
+ok(r.j && r.j.warnings.some((w) => /剔除其他车间 1 行/.test(w) && /催化车间 1 行/.test(w)), 'W3 warning 写明剔除行数与车间名');
+ok(wsOf(r).status === 'checked' && wsOf(r).droppedRows === 1 && (wsOf(r).dropped || {})['催化车间'] === 1, 'W4 meta.workshopScope 记录剔除情况');
+ok(wsOf(r).blank === 1 && wsTags(r).includes('P-902'), 'W5 车间列为空的行按本车间保留');
+ok(r.md && /车间范围：已按车间列核对「常减压车间」，剔除其他车间的行/.test(r.md), 'W6 md 口径写明按车间核对');
+r = run(['--input', wsBook('车间', ['催化车间', '焦化车间']), '--workshop', '常减压车间', ...BASE], 'ws-mis');
+ok(r.j && r.j.counts.total === 2 && wsOf(r).status === 'mismatch', 'W7 车间列全不一致：不筛，status=mismatch');
+ok(r.j && r.j.warnings.some((w) => /^【注意】/.test(w)), 'W8 车间列全不一致 warning 以【注意】开头');
+const wsAt = r.md ? r.md.indexOf('【注意】工作表「缺陷记录」的车间列取值') : -1;
+ok(wsAt > 0 && wsAt < r.md.indexOf('## 一'), 'W9 md 开头（第一节之前）有【注意】提示');
+r = run(['--input', wsBook(null, ['', '']), '--workshop', '常减压车间', ...BASE], 'ws-nocol');
+ok(wsOf(r).status === 'noColumn' && r.md && /输入未含车间列，车间范围以取数条件为准/.test(r.md), 'W10 无车间列：不筛，md 口径说明以取数条件为准');
+r = run(['--input', wsBook('维护工厂', ['1100', '1200']), '--workshop', '常减压车间', ...BASE], 'ws-plant');
+ok(wsOf(r).status === 'noColumn' && r.j.counts.total === 2, 'W11 「维护工厂」列不当车间列（noColumn，不筛）');
+r = run(['--input', wsBook('车间', ['催化车间']), ...BASE], 'ws-nows');
+ok(wsOf(r).status === 'noWorkshop' && r.md && !/车间范围：/.test(r.md), 'W12 未给 --workshop 不核对、不写口径句');
+
+r = run(['--input', wsBook('所属车间', ['常减压车间', '催化车间']), '--workshop', '常减压车间', ...BASE], 'ws-ssc');
+ok(wsOf(r).status === 'checked' && wsOf(r).column === '所属车间' && r.j.counts.total === 1, 'W13 「所属车间」列同样核对');
+
 // ============ L. 演示case 样例预期计数 ============
 // 演示样例：仓库内在 炼厂车间设备员/演示case/<分类>/<技能>/，开发包内在技能目录 examples/
 const skillsRoot = path.resolve(__dirname, '../../..');

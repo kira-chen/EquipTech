@@ -18,7 +18,7 @@ node "<技能目录>/scripts/turnaround.js" \
 | 参数 | 必需 | 说明 |
 |---|---|---|
 | `--input` | 是 | 大检修项目清单 xlsx 路径，或同结构 CSV 目录；厂内表、指挥部导出、SAP PM 工单导出均可 |
-| `--workshop` | 是 | 车间名称 |
+| `--workshop` | 是 | 车间名称；输入表带车间列时按它核对车间范围 |
 | `--project` | 是 | 大检修名称，如「2026年装置大检修」 |
 | `--date` | 是 | 统计日期 YYYY-MM-DD，滞后与应有进度均以此日为基准 |
 | `--start` | 是 | 大检修计划开始日期 YYYY-MM-DD，用于日历进度参照 |
@@ -33,7 +33,7 @@ node "<技能目录>/scripts/turnaround.js" \
 
 | 文件 | 内容 |
 |---|---|
-| `progress.json` | byProject、lagging、criticalLagging、notStarted、readyGap、materialGap、manpower、tcfd（三查四定）、overall、dayChange、inconsistent、unknownStatus、undetermined、planIssues、missingPlan、counts、meta（含 `linearCheck`、`statusEnum`、`tcfdProvided`） |
+| `progress.json` | byProject、lagging、criticalLagging、notStarted、readyGap、materialGap、manpower、tcfd（三查四定）、overall、dayChange、inconsistent、unknownStatus、undetermined、planIssues、missingPlan、counts、meta（含 `linearCheck`、`statusEnum`、`tcfdProvided`、`workshopScope`） |
 | `progress.md` | 九节报告 + 附，分析段留 `<!-- ANALYSIS_START/END -->` 占位，末尾通用声明行；提示用「【注意】」，不用 emoji |
 | `进度表.xlsx` | 工作表「进度表」：标题行、指标摘要行（含已中交 / 已开工 / 三查四定未关闭）、免责声明行、逐项目明细与口径说明；有三查四定问题时另附工作表「三查四定问题」 |
 | `summary.json` | 末行摘要落盘（Windows 控制台乱码兜底） |
@@ -53,6 +53,7 @@ node "<技能目录>/scripts/turnaround.js" \
 - **日进度**：增量 = 本日 − 上一日；任一日未填报 → `null`，不按 0；`nodeChanged` 单列本日到达中交 / 开工节点的项目；上一日有、本日缺的进 `dropped` 并 warning。
 - **列名别名**经 `C.mergeAliases` 并入共享系统别名：功能位置 → 位号（SAP「设备」编号不当位号）、订单号 → 项目编号、订单描述 → 项目名称、基本开始 / 结束日期 → 计划开工 / 完工、实际开始 / 结束日期 → 实际开工 / 完工、主工作中心 → 承修单位、用户状态 → 状态。
 - **免责声明**：`滞后天数与工期影响均基于计划节点测算，最终以指挥部判定为准。` 固化在 `meta / overall / lagging[]`，写入 md 头部、关键路径滞后节、滞后节末尾与 `进度表.xlsx` 第三行。**不得删改。**
+- **车间范围核对（D007）**：五张表各自核对，带车间列（表头为车间 / 所属车间 / 属地车间 / 运行部，或其后加「名称」）时剔除其他车间的行并 warning；车间为空的行保留；没有一行是本车间时不筛，warning 与 md 开头写【注意】；无车间列或只有「维护工厂」「车间负责人」这类列时不筛，md 口径写「输入未含车间列，车间范围以取数条件为准」。`meta.workshopScope` 为数组，每张表一项（sheet、status `noColumn|checked|mismatch`、column、total、kept、dropped、droppedRows、blank）。
 
 ### 退出码
 - `0`：成功，末行输出 `{"ok":true,...}`
@@ -72,4 +73,4 @@ node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 node scripts/selftest.js
 ```
 
-323 条断言，覆盖：基础加权与应有进度、**默认不启用 `--linear-check` 时类型③不判定**、**状态-比例矛盾单列且不修正任一字段（含已中交 / 已开工相容规则）**、**已中交 / 已开工独立状态与同义词、不归已完工、"已开工"语义 warning**、比例为空显示「—」+ 定性进度、比例越界置空不截断、免责声明多处固化、关键路径【注意】标注与排序、计划完工早于计划开工单列、开工条件与材料缺口分别单列、**三查四定问题（未关闭 / 未判定 / 四定不全 / 超期 / 项目不存在 / 附加工作表 / 缺表写未提供）**、缺可选表写「未提供」、工期缺失不参与加权、无可加权样本为 null、状态未知不就近映射、取消项处理、`--prev` 日进度（含中交节点变化、增量 null、零进度、新增与缺失项）、`进度表.xlsx` 结构、指挥部导出别名、**SAP PM 工单导出别名（功能位置 / 订单号 / 基本开始日期 / 主工作中心 / 用户状态，设备编号不当位号）**、空编号与重复编号、日期不可解析、缺表缺列、参数校验（含 `--linear-check` 为开关、默认输出目录为 tmpdir）、统计日期越界提示、九节结构与落盘、CSV 目录输入、文档口径。全绿退出 0。
+340 条断言，覆盖：基础加权与应有进度、**默认不启用 `--linear-check` 时类型③不判定**、**状态-比例矛盾单列且不修正任一字段（含已中交 / 已开工相容规则）**、**已中交 / 已开工独立状态与同义词、不归已完工、"已开工"语义 warning**、比例为空显示「—」+ 定性进度、比例越界置空不截断、免责声明多处固化、关键路径【注意】标注与排序、计划完工早于计划开工单列、开工条件与材料缺口分别单列、**三查四定问题（未关闭 / 未判定 / 四定不全 / 超期 / 项目不存在 / 附加工作表 / 缺表写未提供）**、缺可选表写「未提供」、工期缺失不参与加权、无可加权样本为 null、状态未知不就近映射、取消项处理、`--prev` 日进度（含中交节点变化、增量 null、零进度、新增与缺失项）、`进度表.xlsx` 结构、指挥部导出别名、**SAP PM 工单导出别名（功能位置 / 订单号 / 基本开始日期 / 主工作中心 / 用户状态，设备编号不当位号）**、空编号与重复编号、日期不可解析、缺表缺列、参数校验（含 `--linear-check` 为开关、默认输出目录为 tmpdir）、统计日期越界提示、九节结构与落盘、CSV 目录输入、文档口径、车间范围核对（项目清单混合剔除、空车间保留、全不一致【注意】、无车间列、维护工厂不认、「所属车间」同样核对；材料/人员/开工条件/三查四定各一条混合剔除）。全绿退出 0。

@@ -673,6 +673,46 @@ eq(r.summary.ok, true, '24.1 CSV 目录可读');
 eq(r.summary.counts.total, 1, '24.2 CSV 记录数正确');
 eq(r.summary.overall.percent, 60, '24.3 CSV 加权计算正确');
 
+// ---- W. 车间范围核对（D007）：项目清单全套，其余四张表各一条混合剔除
+{
+  const pj = (no, ws) => [no, `项目${no}`, `P-${no}`, '动设备', '2026-09-12', '2026-09-20', '2026-09-12', '', 8, '机修一队', '张班长', '施工中', 60, '', ws];
+  const pjNo = (no) => pj(no).slice(0, 14);
+  const wsOf = (x, i = 0) => ((x.prog && x.prog.meta && x.prog.meta.workshopScope) || [])[i] || {};
+  const nos = (x) => ((x.prog && x.prog.byProject) || []).map((p) => p.no);
+  let w = run(mk('ws-mix.xlsx', { '项目清单': [[...HDR, '车间'], pj('W-01', '测试车间'), pj('W-02', '加氢车间'), pj('W-03', ''), pj('W-04', '测试')] }), [], 'ws-mix');
+  eq(w.prog && w.prog.counts.total, 3, 'W1 两车间混合：只跟踪本车间与车间为空的项目（3 个）');
+  ok(w.prog && !nos(w).includes('W-02') && nos(w).includes('W-01') && nos(w).includes('W-04'), 'W2 加氢车间的 W-02 不进进度表');
+  ok(w.prog && w.prog.warnings.some((x) => /剔除其他车间 1 行/.test(x) && /加氢车间 1 行/.test(x)), 'W3 warning 写明剔除行数与车间名');
+  ok(wsOf(w).status === 'checked' && wsOf(w).droppedRows === 1 && (wsOf(w).dropped || {})['加氢车间'] === 1, 'W4 meta.workshopScope 记录剔除情况');
+  ok(wsOf(w).blank === 1 && nos(w).includes('W-03'), 'W5 车间列为空的行按本车间保留');
+  ok(w.md && /车间范围：已按车间列核对「测试车间」，剔除其他车间的行/.test(w.md), 'W6 md 口径写明按车间核对');
+  w = run(mk('ws-mis.xlsx', { '项目清单': [[...HDR, '车间'], pj('W-01', '加氢车间'), pj('W-02', '焦化车间')] }), [], 'ws-mis');
+  ok(w.prog && w.prog.counts.total === 2 && wsOf(w).status === 'mismatch', 'W7 车间列全不一致：不筛，status=mismatch');
+  ok(w.prog && w.prog.warnings.some((x) => /^【注意】/.test(x)), 'W8 车间列全不一致 warning 以【注意】开头');
+  const at = w.md ? w.md.indexOf('的车间列取值与 --workshop「测试车间」不一致') : -1;
+  ok(at > 0 && at < w.md.indexOf('## 一'), 'W9 md 开头（第一节之前）有【注意】提示');
+  w = run(mk('ws-nocol.xlsx', { '项目清单': [HDR, pjNo('W-01'), pjNo('W-02')] }), [], 'ws-nocol');
+  ok(wsOf(w).status === 'noColumn' && w.prog.counts.total === 2 && /输入未含车间列，车间范围以取数条件为准/.test(w.md), 'W10 无车间列：不筛，md 口径说明以取数条件为准');
+  w = run(mk('ws-plant.xlsx', { '项目清单': [[...HDR, '维护工厂'], pj('W-01', '1100'), pj('W-02', '1200')] }), [], 'ws-plant');
+  ok(wsOf(w).status === 'noColumn' && w.prog.counts.total === 2, 'W11 「维护工厂」列不当车间列（noColumn，不筛）');
+  // 材料到货 / 人员到位 / 开工条件 / 三查四定：各自带车间列时也核对
+  w = run(mk('ws-sub.xlsx', {
+    '项目清单': [HDR, pjNo('W-01')],
+    '材料到货': [['项目编号', '材料名称', '需求数量', '到货数量', '到货状态', '车间'], ['W-01', '机封', 1, 0, '未到货', '测试车间'], ['W-01', '垫片', 1, 0, '未到货', '加氢车间']],
+    '人员到位': [['项目编号', '施工单位', '计划人数', '到位人数', '车间'], ['W-01', '机修一队', 5, 3, '测试车间'], ['W-01', '机修二队', 5, 1, '加氢车间']],
+    '开工条件': [['项目编号', '条件项', '是否具备', '责任单位', '车间'], ['W-01', '设备交出', '否', '测试车间', '测试车间'], ['W-01', '盲板确认', '否', '加氢车间', '加氢车间']],
+    '三查四定': [['问题编号', '项目编号', '问题描述', '整改状态', '车间'], ['Q-1', 'W-01', '螺栓未紧固', '未整改', '测试车间'], ['Q-2', 'W-01', '保温未恢复', '未整改', '加氢车间']],
+  }), [], 'ws-sub');
+  const sc = (name) => ((w.prog && w.prog.meta && w.prog.meta.workshopScope) || []).find((x) => x.sheet === `ws-sub.xlsx/${name}`) || {};
+  ok(w.prog && w.prog.materialGap.length === 1 && w.prog.materialGap[0].material === '机封' && sc('材料到货').droppedRows === 1, 'W12 材料到货混合：剔除其他车间的材料行');
+  ok(w.prog && w.prog.manpower.length === 1 && w.prog.manpower[0].contractor === '机修一队' && sc('人员到位').droppedRows === 1, 'W13 人员到位混合：剔除其他车间的人员行');
+  ok(w.prog && w.prog.readyGap.length === 1 && w.prog.readyGap[0].item === '设备交出' && sc('开工条件').droppedRows === 1, 'W14 开工条件混合：剔除其他车间的条件行');
+  ok(w.prog && w.prog.tcfd.items.length === 1 && w.prog.tcfd.items[0].id === 'Q-1' && sc('三查四定').droppedRows === 1, 'W15 三查四定混合：剔除其他车间的问题行');
+  ok(sc('项目清单').status === 'noColumn' && w.md && /「ws-sub\.xlsx\/项目清单」未含车间列/.test(w.md), 'W16 项目清单无车间列、子表有车间列时口径分表写明');
+  w = run(mk('ws-ssc.xlsx', { '项目清单': [[...HDR, '所属车间'], pj('W-01', '测试车间'), pj('W-02', '加氢车间')] }), [], 'ws-ssc');
+  ok(wsOf(w).status === 'checked' && wsOf(w).column === '所属车间' && w.prog.counts.total === 1, 'W17 「所属车间」列同样核对');
+}
+
 // ---- 25. 文档口径（出现与不出现两个方向）
 const skill = fs.readFileSync(path.join(ROOT, 'SKILL.md'), 'utf8');
 ok(/大修进度日报/.test(skill), '25.1 SKILL.md 触发词用「大修进度日报」');

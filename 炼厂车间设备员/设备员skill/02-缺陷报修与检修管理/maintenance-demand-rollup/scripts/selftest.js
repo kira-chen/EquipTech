@@ -588,6 +588,52 @@ ok(r.s.warnings.some((w) => /已转工单/.test(w)), 'P13 已转工单的通知�
   ok(eZ.s.ok === false && /1 条周期项下次到期日晚于申报周期末/.test(eZ.s.error || ''), 'X21 全部周期项都在周期外时报错并说明条数');
 }
 
+// ============ WS. 车间范围核对（D007）：四张来源表各自核对 ============
+{
+  const DH = ['缺陷编号', '位号', '设备名称', '缺陷描述', '等级', '状态', '是否需停机', '备件需求'];
+  const defRows = (col, list) => [col ? [...DH, col] : DH,
+    ...list.map(([no, ws], i) => (col ? [no, `P-W${i}`, '泵', '机封滴漏', 'B', '待处理', '否', '', ws] : [no, `P-W${i}`, '泵', '机封滴漏', 'B', '待处理', '否', '']))];
+  const wsOf = (x, i = 0) => ((x.j && x.j.meta && x.j.meta.workshopScope) || [])[i] || {};
+  const nos = (x) => ((x.j && x.j.demands) || []).map((d) => d.basisNo);
+  const MIX = [['QW-1', '加氢车间'], ['QW-2', '常减压车间'], ['QW-3', ''], ['QW-4', '加氢']];
+  let w = run(['--input', mk('ws-mix.xlsx', { '缺陷台账': defRows('车间', MIX) }), ...BASE], 'ws-mix');
+  eq(w.j && w.j.counts.bySource['未闭环缺陷'], 3, 'WS1 两车间混合：只汇总本车间与车间为空的缺陷（3 条）');
+  ok(w.j && !nos(w).includes('QW-2') && nos(w).includes('QW-1') && nos(w).includes('QW-4'), 'WS2 常减压车间的 QW-2 不进申报清单');
+  ok(w.j && w.j.warnings.some((x) => /剔除其他车间 1 行/.test(x) && /常减压车间 1 行/.test(x)), 'WS3 warning 写明剔除行数与车间名');
+  ok(wsOf(w).status === 'checked' && wsOf(w).droppedRows === 1 && (wsOf(w).dropped || {})['常减压车间'] === 1, 'WS4 meta.workshopScope 记录剔除情况');
+  ok(wsOf(w).blank === 1 && nos(w).includes('QW-3'), 'WS5 车间列为空的行按本车间保留');
+  ok(w.md && /车间范围：已按车间列核对「加氢车间」，剔除其他车间的行：「ws-mix\.xlsx\/缺陷台账」1 行/.test(w.md), 'WS6 md 口径写明按车间核对');
+  ok(w.xlsx && !JSON.stringify(w.xlsx).includes('QW-2'), 'WS7 检修需求表.xlsx 不含其他车间的需求');
+  w = run(['--input', mk('ws-mis.xlsx', { '缺陷台账': defRows('车间', [['QW-1', '常减压车间'], ['QW-2', '焦化车间']]) }), ...BASE], 'ws-mis');
+  ok(w.j && w.j.counts.bySource['未闭环缺陷'] === 2 && wsOf(w).status === 'mismatch', 'WS8 车间列全不一致：不筛，status=mismatch');
+  ok(w.j && w.j.warnings.some((x) => /^【注意】/.test(x)), 'WS9 车间列全不一致 warning 以【注意】开头');
+  const at = w.md ? w.md.indexOf('的车间列取值与 --workshop「加氢车间」不一致') : -1;
+  ok(at > 0 && at < w.md.indexOf('## 一'), 'WS10 md 开头（第一节之前）有【注意】提示');
+  w = run(['--input', mk('ws-nocol.xlsx', { '缺陷台账': defRows(null, MIX) }), ...BASE], 'ws-nocol');
+  ok(wsOf(w).status === 'noColumn' && w.j.counts.bySource['未闭环缺陷'] === 4 && /输入未含车间列，车间范围以取数条件为准/.test(w.md), 'WS11 无车间列：不筛，md 口径说明以取数条件为准');
+  w = run(['--input', mk('ws-plant.xlsx', { '缺陷台账': defRows('维护工厂', [['QW-1', '1100'], ['QW-2', '1200']]) }), ...BASE], 'ws-plant');
+  ok(wsOf(w).status === 'noColumn' && w.j.counts.bySource['未闭环缺陷'] === 2, 'WS12 「维护工厂」列不当车间列（noColumn，不筛）');
+  // 其余三张来源表：各至少一条混合剔除
+  const other = mk('ws-other.xlsx', {
+    '工单台账': [['工单号', '位号', '设备名称', '工单内容', '状态', '计划完成', '是否需停机', '等级', '车间'],
+      ['GW-1', 'K-W1', '压缩机', '入口过滤器清洗', '已派工', '2026-10-10', '是', 'B', '加氢车间'],
+      ['GW-2', 'K-W2', '压缩机', '入口过滤器清洗', '已派工', '2026-10-10', '是', 'B', '常减压车间']],
+    '周期检修项': [['周期项编号', '位号', '设备名称', '项目名称', '检修周期', '上次检修', '是否需停机', '车间'],
+      ['ZW-1', 'P-Z1', '泵', '轴承加脂', '6个月', '2026-04-20', '否', '加氢车间'],
+      ['ZW-2', 'P-Z2', '泵', '轴承加脂', '6个月', '2026-04-20', '否', '常减压车间'],
+      ['ZW-3', 'P-Z3', '泵', '轴承加脂', '6个月', '2026-04-20', '否', '常减压车间']],
+    '隐患台账': [['隐患编号', '位号', '设备名称', '隐患描述', '隐患等级', '整改措施', '整改期限', '状态', '车间'],
+      ['YW-1', 'V-Y1', '罐', '支架腐蚀', '一般隐患', '更换支架', '2026-10-20', '整改中', '加氢车间'],
+      ['YW-2', 'V-Y2', '罐', '支架腐蚀', '一般隐患', '更换支架', '2026-10-20', '整改中', '催化车间']],
+  });
+  w = run(['--input', other, ...BASE, '--include-cyclic'], 'ws-other');
+  ok(w.j && nos(w).includes('GW-1') && !nos(w).includes('GW-2') && wsOf(w, 0).sheet === 'ws-other.xlsx/工单台账' && wsOf(w, 0).droppedRows === 1, 'WS13 工单台账混合：剔除其他车间工单');
+  ok(w.j && nos(w).includes('ZW-1') && !nos(w).includes('ZW-2') && !nos(w).includes('ZW-3') && wsOf(w, 1).droppedRows === 2, 'WS14 周期检修项混合：剔除其他车间周期项');
+  ok(w.j && nos(w).includes('YW-1') && !nos(w).includes('YW-2') && wsOf(w, 2).droppedRows === 1 && (wsOf(w, 2).dropped || {})['催化车间'] === 1, 'WS15 隐患台账混合：剔除其他车间隐患');
+  w = run(['--input', mk('ws-ssc.xlsx', { '缺陷台账': defRows('所属车间', [['QW-1', '加氢车间'], ['QW-2', '常减压车间']]) }), ...BASE], 'ws-ssc');
+  ok(wsOf(w).status === 'checked' && wsOf(w).column === '所属车间' && w.j.counts.bySource['未闭环缺陷'] === 1, 'WS16 「所属车间」列同样核对');
+}
+
 // ============ O. 演示case 预期计数（目录不存在则跳过） ============
 // 演示样例：仓库内在 炼厂车间设备员/演示case/<分类>/<技能>/，开发包内在技能目录 examples/
 const skillsRoot = path.resolve(__dirname, '../../..');

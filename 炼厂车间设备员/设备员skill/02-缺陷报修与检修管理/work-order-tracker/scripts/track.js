@@ -43,6 +43,9 @@ const ALIASES = C.mergeAliases({
   '时限类别': ['时限类别', '类别', '工单类型', '订单类型', '维修类型', '优先级'],
   '时限': ['时限', '时限(天)', '时限天数', '要求时限', '完成时限', '天数'],
 });
+// 车间范围核对（D007）：「车间」只认车间 / 所属车间 / 属地车间 / 运行部（或其后加「名称」），
+// 不让共享别名里的维护工厂 / 属地单位 / 使用单位占用该字段
+ALIASES['车间'] = [...C.WORKSHOP_COLS, ...C.WORKSHOP_COLS.map((c) => c + '名称')];
 
 // ---- 状态：按 SAP 系统状态六态归一（C.normSapStatus），认不出的保留旧版车间台账同义词，再认不出一律单列，不得就近映射
 const STATUS_ENUM = ['待审核', '已派工', '施工中', '待验收', '已闭环', '已取消'];
@@ -192,9 +195,14 @@ function main() {
   const rows = C.pickSheet(book, '工单台账', '工单', '维修工单', '报修台账', '订单', '维修订单');
   if (!rows) throw new Error('未在输入中找到「工单台账」工作表（SAP 订单导出请将工作表命名为「工单」或「订单」）');
   const sheetName = `${path.basename(a.input)}/工单台账`;
-  const recs = C.toRecords(rows, ['工单号', '状态'], sheetName,
-    ['通知单号', '位号', '设备编号', '设备名称', '故障描述', '工单类型', '优先级', '报修时间', '要求完成时间', '派工时间', '开工时间', '完工时间', '验收时间', '承修单位', '责任人', '超期原因'],
+  const allRecs = C.toRecords(rows, ['工单号', '状态'], sheetName,
+    ['通知单号', '位号', '设备编号', '设备名称', '故障描述', '工单类型', '优先级', '报修时间', '要求完成时间', '派工时间', '开工时间', '完工时间', '验收时间', '承修单位', '责任人', '超期原因', '车间'],
     warnings, ALIASES);
+  // 车间范围核对（D007）：输入带车间列时剔除其他车间的工单
+  const ws = C.workshopScope(allRecs, a.workshop, '工单台账', warnings);
+  const scopes = [ws.scope];
+  const wsNote = C.workshopScopeNote(scopes, a.workshop);
+  const recs = ws.records;
 
   const orders = [];
   const unknownStatus = [];
@@ -453,7 +461,7 @@ function main() {
       workshop: a.workshop, date, from: from || null,
       vendorFilter: a.vendor || null, ownerFilter: a.owner || null,
       source: path.basename(a.input), generatedAt: C.localDateTime(),
-      slaSource, slaDays: sla, slaOfficial, stallDays, dueSoonDays,
+      slaSource, slaDays: sla, slaOfficial, stallDays, dueSoonDays, workshopScope: scopes,
       statusMapping: 'SAP 系统状态 CRTD/OSNO→待审核，REL/NOPR→已派工，PCNF→施工中，TECO/CNF/已完成/完工→待验收，CLSD/NOCO→已闭环，DLFL/LKD→已取消',
       disclaimer: DISCLAIMER,
     },
@@ -468,11 +476,13 @@ function main() {
   const slaLine = CAT_ENUM.map((c) => `${c} ${sla[c]} 天`).join('、');
   L.push(`# ${a.workshop} 维修工单跟踪（${rangeCn}）`);
   L.push('');
+  if (wsNote.alert) { L.push(`**${wsNote.alert}**`); L.push(''); }
   L.push(`> ${DISCLAIMER}`);
   L.push('');
   L.push(`数据来源：${path.basename(a.input)}${a.vendor ? ` ｜ 承修单位/工作中心：${a.vendor}` : ''}${a.owner ? ` ｜ 责任人：${a.owner}` : ''}`);
   L.push(`时限口径：${slaSource}（${slaLine}）｜ 停滞阈值：${stallDays} 天 ｜ 临期窗口：${dueSoonDays} 天`);
   if (!slaOfficial) L.push(`【注意】${DEFAULT_SLA_NOTE}`);
+  if (wsNote.note) L.push(wsNote.note);
   L.push(`生成时间：${C.localDateTime()}（北京时间）`);
   L.push('');
   L.push('## 一、状态分布');
@@ -564,6 +574,7 @@ function main() {
   const U = [];
   U.push(`# ${a.workshop} 维修工单催办清单（${rangeCn}）`);
   U.push('');
+  if (wsNote.alert) { U.push(`**${wsNote.alert}**`); U.push(''); }
   U.push(`时限口径：${slaSource} ｜ 停滞阈值：${stallDays} 天 ｜ 生成时间：${C.localDateTime()}（北京时间）`);
   if (!slaOfficial) U.push(`【注意】${DEFAULT_SLA_NOTE}`);
   U.push('');

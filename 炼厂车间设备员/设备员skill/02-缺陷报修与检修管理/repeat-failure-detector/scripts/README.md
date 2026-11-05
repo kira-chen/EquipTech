@@ -15,7 +15,7 @@ node "<技能目录>/scripts/detect.js" \
 | 参数 | 必需 | 说明 |
 |---|---|---|
 | `--input` | 是 | 工单台账 / 故障记录 / SAP 通知单（订单）导出 xlsx，或同结构 CSV 目录；**多文件用逗号分隔**（按装置分文件时直接一起传），任一文件不存在报错，某文件无故障表则跳过并 warning |
-| `--workshop` | 是 | 车间名称，写入报告标题 |
+| `--workshop` | 是 | 车间名称，写入报告标题；输入带车间列时按它核对车间范围 |
 | `--to` | 否 | 统计区间截止日 YYYY-MM-DD，默认当日（北京时间） |
 | `--from` | 否 | 统计区间起始日 YYYY-MM-DD，默认 `--to` 往前 12 个自然月的次日（「一年内」），默认时 warning 说明；晚于 `--to` 时报错 |
 | `--out` | 否 | 输出目录，默认系统临时目录 `<os.tmpdir()>/rfd-out`，**建议始终传 `--out`** |
@@ -36,7 +36,7 @@ node "<技能目录>/scripts/detect.js" \
 
 | 文件 | 内容 |
 |---|---|
-| `repeats.json` | `byEquipment`（同设备重复故障组，含 SAP 设备编号、损坏/原因代码、通知单号）、`byModel`（同型号共性故障）、`topFrequency`（故障频次排行）、`shorteningInterval`（间隔缩短设备）、`uninformative`（现象无信息量，未参与判定）、`counts`、`meta`（含 `fileStats` 逐文件行数、`fromDefaulted`、两行声明）、`warnings` |
+| `repeats.json` | `byEquipment`（同设备重复故障组，含 SAP 设备编号、损坏/原因代码、通知单号）、`byModel`（同型号共性故障）、`topFrequency`（故障频次排行）、`shorteningInterval`（间隔缩短设备）、`uninformative`（现象无信息量，未参与判定）、`counts`、`meta`（含 `fileStats` 逐文件行数、`fromDefaulted`、两行声明、`workshopScope`）、`warnings` |
 | `repeats.md` | 七节报告，开头两行声明，分析段留 `<!-- ANALYSIS_START/END -->` 占位，提示用「【注意】」 |
 | `summary.json` | 末行摘要落盘（Windows 控制台乱码兜底） |
 
@@ -54,6 +54,10 @@ node "<技能目录>/scripts/detect.js" \
 | `shortening` | 故障间隔缩短的设备数（D4） |
 | `uninformative` | 故障现象无信息量、未参与判定的记录数（U1） |
 | `outOfRange` | 故障时间落在统计区间外被跳过的记录数 |
+
+### 车间范围核对（D007）
+
+每个输入文件的故障记录表带车间列（表头为车间 / 所属车间 / 属地车间 / 运行部，或其后加「名称」）时，剔除其他车间的记录并 warning（先于统计区间过滤）；车间为空的行保留；没有一行是本车间时不筛，warning 与 md 开头写【注意】；无车间列或只有「维护工厂」「车间负责人」这类列时不筛，md 口径写「输入未含车间列，车间范围以取数条件为准」。`meta.workshopScope` 为数组，每个文件一项（sheet、status `noColumn|checked|mismatch`、column、total、kept、dropped、droppedRows、blank）。
 
 ### 退出码
 - `0`：成功，末行输出 `{"ok":true,...}`
@@ -95,4 +99,4 @@ seed 只改变滴漏滴数与处理方式措辞，不改变结论：主样例在
 node scripts/selftest.js
 ```
 
-218 条断言，覆盖：无信息描述识别（含有代码即有信息）、现象与部位归一、相似度与 matchBasis（代码相同/不同/仅一方有）、D1/D2 基础判定（默认 2 次）、声明行两行、无信息不参与判定、D3 共性故障、频次与间隔、D4 间隔缩短、`--by` 三维度、`--min-count` 抬高阈值、统计区间与区间外、缺字段、设备台账（SAP 列名）、别名与合计行、参数校验、`--similarity`、产出结构、SAP 通知单导出（代码优先归类、对象部件作部位、原因代码不混、通知单号）、多文件合并与跳过、默认「一年内」区间与默认输出目录、别名收窄（裸「编号」不当工单号、「设备」作设备编号）、演示case 预期计数。全绿退出 0。
+232 条断言，覆盖：无信息描述识别（含有代码即有信息）、现象与部位归一、相似度与 matchBasis（代码相同/不同/仅一方有）、D1/D2 基础判定（默认 2 次）、声明行两行、无信息不参与判定、D3 共性故障、频次与间隔、D4 间隔缩短、`--by` 三维度、`--min-count` 抬高阈值、统计区间与区间外、缺字段、设备台账（SAP 列名）、别名与合计行、参数校验、`--similarity`、产出结构、SAP 通知单导出（代码优先归类、对象部件作部位、原因代码不混、通知单号）、多文件合并与跳过、默认「一年内」区间与默认输出目录、别名收窄（裸「编号」不当工单号、「设备」作设备编号）、车间范围核对（混合剔除、空车间保留、全不一致【注意】、无车间列、维护工厂不认、「所属车间」同样核对、多文件逐个核对）、演示case 预期计数。全绿退出 0。

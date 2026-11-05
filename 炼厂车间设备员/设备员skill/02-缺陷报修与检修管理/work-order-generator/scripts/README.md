@@ -43,7 +43,7 @@ node "<技能目录>/scripts/workorder.js" --input "<缺陷记录xlsx>" \
 | `--notif-type` | 否 | 通知单类型 `M1/M2/M3`；不指定时按优先级推（1/2→M2 故障报告，3/4→M1 维修申请），优先级未判定则类型也未判定。厂内 M1/M2 定义可能不同，以厂内为准 |
 | `--vendor` | 否 | 建议承修单位（仅建议，派工由厂内流程定） |
 | `--reporter` | 否 | 报告人；不给时取缺陷记录的发现人/报告人 |
-| `--workshop` | 否 | 车间名，写入报告标题 |
+| `--workshop` | 否 | 车间名，写入报告标题；批量 `--input` 带车间列时按它核对车间范围（见「关键行为」） |
 | `--name` / `--part` / `--medium` | 否 | 文字描述路径下补充设备名称/对象部件/介质 |
 | `--out` | 否 | 输出目录，默认系统临时目录 `<os.tmpdir()>/wo-out`，**建议始终传 `--out`** |
 
@@ -53,10 +53,14 @@ node "<技能目录>/scripts/workorder.js" --input "<缺陷记录xlsx>" \
 
 | 文件 | 内容 |
 |---|---|
-| `notifications.json` | 逐张草稿（`equipment` / `fault` / `notification` / `dispatch` / `priority` / `schedule` / `history`）、`missingInfo`、`undetermined`、`counts`、`meta`（含声明行与说明行） |
+| `notifications.json` | 逐张草稿（`equipment` / `fault` / `notification` / `dispatch` / `priority` / `schedule` / `history`）、`missingInfo`、`undetermined`、`counts`、`meta`（含声明行与说明行、`workshopScope`） |
 | `notifications.md` | 三节报告：通知单草稿清单概览、通知单草稿正文、信息缺口清单（含未判定项）；含分析段占位符，首尾各一处说明行 |
 | `notifications.csv` | SAP 通知单草稿列，带 BOM：草稿序号、通知单号(SAP生成，留空)、通知单类型、功能位置、设备编号、设备描述、通知单短文本、长文本、优先级、故障代码、对象部件、要求开始、要求结束、报告单位、报告人、缺陷登记号、建议专业归口、建议承修单位、信息待补充项 |
 | `summary.json` | 末行摘要落盘 |
+
+### 关键行为
+
+- **车间范围核对（D007，仅批量 `--input`）**：「缺陷记录」表带车间列（表头为车间 / 所属车间 / 属地车间 / 运行部，或其后加「名称」）且给了 `--workshop` 时，剔除其他车间的行并 warning，不为其出草稿；车间为空的行保留；没有一行是本车间时不筛，warning 与 md 开头写【注意】；无车间列或只有「维护工厂」「车间负责人」这类列时不筛，md 口径写「输入未含车间列，车间范围以取数条件为准」。结果写 `notifications.json` 的 `meta.workshopScope`（数组：sheet、status `noWorkshop|noColumn|checked|mismatch`、column、total、kept、dropped、droppedRows、blank；`--defect` 路径为空数组）。
 
 ### 退出码
 - `0`：成功，末行 `{"ok":true,...}`
@@ -99,4 +103,4 @@ node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 node scripts/selftest.js
 ```
 
-225 条断言：规则引擎（现象识别与 defect-intake-grading 同口径，含「温度偏高/持续上升」「高约 15℃」温升写法、专业归口顺序、SAP 优先级 1~4 与中文/旧四级映射、通知单类型、工时与备件表已删除）、文字描述路径（不自编工单号、工时备件留空、声明行与【注意】）、defects.json 对接（A/B/C 与旧四级、未判定不默认）、SAP 技术对象台账列名、SAP 订单历史列名（未完工工单行不列入历史）、已废参数报错、要求结束早于当前、批量与 SAP 通知单导出列名、产出完整性（CSV 为 SAP 通知单列、不含 EAM/工时）、参数校验、合计行与缺列缺表、位号与设备编号不混、输入已带通知单号时单列「已有通知单号」并注明勿重复创建（含 defects.json 的 sourceNo）、演示case 预期计数。
+238 条断言：规则引擎（现象识别与 defect-intake-grading 同口径，含「温度偏高/持续上升」「高约 15℃」温升写法、专业归口顺序、SAP 优先级 1~4 与中文/旧四级映射、通知单类型、工时与备件表已删除）、文字描述路径（不自编工单号、工时备件留空、声明行与【注意】）、defects.json 对接（A/B/C 与旧四级、未判定不默认）、SAP 技术对象台账列名、SAP 订单历史列名（未完工工单行不列入历史）、已废参数报错、要求结束早于当前、批量与 SAP 通知单导出列名、产出完整性（CSV 为 SAP 通知单列、不含 EAM/工时）、参数校验、合计行与缺列缺表、位号与设备编号不混、输入已带通知单号时单列「已有通知单号」并注明勿重复创建（含 defects.json 的 sourceNo）、车间范围核对（混合剔除、空车间保留、全不一致【注意】、无车间列、维护工厂不认、「所属车间」同样核对、未给 --workshop 不核对）、演示case 预期计数。

@@ -109,6 +109,9 @@ const ALIASES = C.mergeAliases({
   '库存数量': ['库存数量', '库存', '现有库存', '结存数量', '可用库存', '非限制使用库存', '非限制库存', '现有量'],
   '备件名称': ['备件名称', '名称', '物料名称', '备件', '物料描述'],
 });
+// 车间范围核对（D007）：「车间」只认车间 / 所属车间 / 属地车间 / 运行部（或其后加「名称」），
+// 不让共享别名里的维护工厂 / 属地单位 / 使用单位占用该字段
+ALIASES['车间'] = [...C.WORKSHOP_COLS, ...C.WORKSHOP_COLS.map((c) => c + '名称')];
 
 // -------------------------------------------------------------- 闭环判定（SAP 六态优先，车间台账写法兜底）
 const CLOSED = ['已闭环', '已完成', '已关闭', '关闭', '闭环', '已消缺', '已验收', '已结束', '完工', '已整改', '已销号', '销号'];
@@ -327,6 +330,14 @@ function main() {
     return true;
   }
 
+  /** 车间范围核对（D007）：四类来源表各自核对，带车间列时剔除其他车间的行 */
+  const scopes = [];
+  function scoped(recs, sheet) {
+    const ws = C.workshopScope(recs, a.workshop, sheet, warnings);
+    scopes.push(ws.scope);
+    return ws.records;
+  }
+
   /** 来源表有没有备件列：没有备件列（如 MCP 通知单/工单表）≠ 备件列为空，前者备件需求未知，不能判「无备件需求」 */
   function spareColOf(recs, sheet) {
     const has = recs.hasCol('备件需求') || recs.hasCol('备件型号');
@@ -344,9 +355,9 @@ function main() {
     if (defRows) {
       foundSources.push(`${base}→未闭环缺陷`);
       const hourHdr = durationHourHeader(defRows);
-      const recs = C.toRecords(defRows, ['位号'], `${base}/缺陷台账`,
-        ['缺陷编号', '缺陷描述', '设备名称', '等级', '状态', '发现时间', '是否需停机', '预计工期', '备件需求', '备件型号', '需求数量', '专业'],
-        warnings, ALIASES);
+      const recs = scoped(C.toRecords(defRows, ['位号'], `${base}/缺陷台账`,
+        ['缺陷编号', '缺陷描述', '设备名称', '等级', '状态', '发现时间', '是否需停机', '预计工期', '备件需求', '备件型号', '需求数量', '专业', '车间'],
+        warnings, ALIASES), `${base}/缺陷台账`);
       const spareCol = spareColOf(recs, `${base}/缺陷台账`);
       for (const r of recs) {
         const tag = C.str(r['位号']);
@@ -376,9 +387,9 @@ function main() {
     if (ordRows) {
       foundSources.push(`${base}→未闭环工单`);
       const hourHdr = durationHourHeader(ordRows);
-      const recs = C.toRecords(ordRows, ['位号'], `${base}/工单台账`,
-        ['工单号', '工单内容', '设备名称', '工单类型', '状态', '计划完成', '是否需停机', '预计工期', '备件需求', '备件型号', '需求数量', '专业', '等级', '关联通知单号'],
-        warnings, ALIASES);
+      const recs = scoped(C.toRecords(ordRows, ['位号'], `${base}/工单台账`,
+        ['工单号', '工单内容', '设备名称', '工单类型', '状态', '计划完成', '是否需停机', '预计工期', '备件需求', '备件型号', '需求数量', '专业', '等级', '关联通知单号', '车间'],
+        warnings, ALIASES), `${base}/工单台账`);
       const spareCol = spareColOf(recs, `${base}/工单台账`);
       for (const r of recs) {
         const tag = C.str(r['位号']);
@@ -420,9 +431,9 @@ function main() {
       } else {
         foundSources.push(`${base}→周期性检修项`);
         const hourHdr = durationHourHeader(cycRows);
-        const recs = C.toRecords(cycRows, ['位号'], `${base}/周期检修项`,
-          ['周期项编号', '项目名称', '设备名称', '检修周期', '上次检修', '是否需停机', '预计工期', '备件需求', '备件型号', '需求数量', '专业'],
-          warnings, ALIASES);
+        const recs = scoped(C.toRecords(cycRows, ['位号'], `${base}/周期检修项`,
+          ['周期项编号', '项目名称', '设备名称', '检修周期', '上次检修', '是否需停机', '预计工期', '备件需求', '备件型号', '需求数量', '专业', '车间'],
+          warnings, ALIASES), `${base}/周期检修项`);
         const spareCol = spareColOf(recs, `${base}/周期检修项`);
         for (const r of recs) {
           const tag = C.str(r['位号']);
@@ -477,9 +488,9 @@ function main() {
     if (hzRows) {
       foundSources.push(`${base}→隐患整改项`);
       const hourHdr = durationHourHeader(hzRows);
-      const recs = C.toRecords(hzRows, ['位号'], `${base}/隐患台账`,
-        ['隐患编号', '隐患描述', '设备名称', '隐患等级', '整改措施', '整改期限', '状态', '责任人', '是否需停机', '预计工期', '备件需求', '备件型号', '需求数量', '专业'],
-        warnings, ALIASES);
+      const recs = scoped(C.toRecords(hzRows, ['位号'], `${base}/隐患台账`,
+        ['隐患编号', '隐患描述', '设备名称', '隐患等级', '整改措施', '整改期限', '状态', '责任人', '是否需停机', '预计工期', '备件需求', '备件型号', '需求数量', '专业', '车间'],
+        warnings, ALIASES), `${base}/隐患台账`);
       const spareCol = spareColOf(recs, `${base}/隐患台账`);
       for (const r of recs) {
         const tag = C.str(r['位号']);
@@ -801,7 +812,7 @@ function main() {
 
   const result = {
     meta: {
-      workshop: a.workshop, period, periodStart, periodEnd, due, window: a.window || null,
+      workshop: a.workshop, period, periodStart, periodEnd, due, window: a.window || null, workshopScope: scopes,
       includeCyclic, sources: foundSources, generatedAt: C.localDateTime(),
       spareProvided: !!a.spare, spareResolved: !!spareStock,
       templateProvided: !!a.template, declaration: DECL, disclaimer: DISCLAIMER,
@@ -869,12 +880,15 @@ function main() {
 
   // ---- 需求汇总.md
   const L = [];
+  const wsNote = C.workshopScopeNote(scopes, a.workshop);
   L.push(`# ${a.workshop} ${period} 月度检修计划申报（检修需求汇总）`);
   L.push('');
+  if (wsNote.alert) { L.push(`**${wsNote.alert}**`); L.push(''); }
   L.push(`> ${DISCLAIMER}`);
   L.push(`> ${DECL}。`);
   L.push('');
   L.push(`数据来源：${foundSources.join('、')}`);
+  if (wsNote.note) L.push(wsNote.note);
   L.push(`上报周期：${period}${due ? ` ｜ 上报截止：${due}` : ''}${a.window ? ` ｜ 停机窗口：${a.window}` : ''} ｜ 申报对象：${result.meta.reportTo}`);
   L.push(`周期性检修项：${includeCyclic ? (periodEnd ? `已纳入（--include-cyclic），只报下次到期日不晚于 ${periodEnd} 的（含已超期），周期外 ${cyclicOutOfPeriod.length} 条本期不申报` : '已纳入（--include-cyclic），上报周期起止无法识别，未按到期筛选') : '未纳入'}　备件库存表：${spareStock ? '已提供' : '未提供（备件到位情况一律为「未核实」）'}`);
   L.push(`生成时间：${C.localDateTime()}（北京时间）`);

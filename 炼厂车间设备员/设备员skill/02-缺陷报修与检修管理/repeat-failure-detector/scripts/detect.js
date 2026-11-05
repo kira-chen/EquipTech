@@ -41,6 +41,9 @@ const ALIASES = C.mergeAliases({
   '区域': ['区域', '装置区', '所在区域', '位置区域', '工厂区段', '装置'],
   '专业': ['专业', '所属专业', '专业类别'],
 });
+// 车间范围核对（D007）：「车间」只认车间 / 所属车间 / 属地车间 / 运行部（或其后加「名称」），
+// 不让共享别名里的维护工厂 / 属地单位 / 使用单位占用该字段
+ALIASES['车间'] = [...C.WORKSHOP_COLS, ...C.WORKSHOP_COLS.map((c) => c + '名称')];
 
 function loadBook(p) { return fs.statSync(p).isDirectory() ? readCsvDir(p) : readXlsx(p); }
 
@@ -157,6 +160,7 @@ function main() {
   let skippedOutOfRange = 0;
   let filesWithSheet = 0;
   const fileStats = [];
+  const scopes = [];   // 车间范围核对结果，每个输入文件一项
   for (const p of inputs) {
     let book;
     try { book = loadBook(p); } catch (e) { throw new Error(`读取失败 ${p}: ${e.message}`); }
@@ -169,8 +173,12 @@ function main() {
     }
     filesWithSheet++;
     const sheetName = multi ? `${fname}/故障记录` : '工单台账/故障记录';
-    const recs = C.toRecords(rows, ['位号', '故障时间'], sheetName,
-      ['设备编号', '设备名称', '型号', '设备类型', '故障现象', '故障部位', '原因代码', '故障代码', '处理方式', '工单号', '通知单号', '区域', '专业'], warnings, ALIASES);
+    const allRecs = C.toRecords(rows, ['位号', '故障时间'], sheetName,
+      ['设备编号', '设备名称', '型号', '设备类型', '故障现象', '故障部位', '原因代码', '故障代码', '处理方式', '工单号', '通知单号', '区域', '专业', '车间'], warnings, ALIASES);
+    // 车间范围核对（D007）：每个文件各自核对，带车间列时剔除其他车间的记录
+    const ws = C.workshopScope(allRecs, a.workshop, sheetName, warnings);
+    scopes.push(ws.scope);
+    const recs = ws.records;
     let n = 0;
     for (const r of recs) {
       const tag = C.str(r['位号']);
@@ -428,7 +436,7 @@ function main() {
       thresholdNote: `默认口径：同一设备同一部位一年内 ≥${R.DEFAULT_PART_MIN} 次即重复故障（厂内另有口径时用 --min-count 覆盖）`,
       periodAdvice: `建议统计区间 ${R.PERIOD_ADVICE.lo}~${R.PERIOD_ADVICE.hi} 天（约 6~12 个月）；本次实际区间 ${from} ~ ${to}，共 ${periodDays} 天`,
       codePriority: 'SAP 损坏/故障代码优先：双方都有代码时按代码归类，无代码时按现象文本与部位比对',
-      ledgerProvided: !!a.ledger, ledgerUsed,
+      ledgerProvided: !!a.ledger, ledgerUsed, workshopScope: scopes,
       generatedAt: C.localDateTime(),
       disclaimer: DISCLAIMER,
       ruleDisclaimer: R.DISCLAIMER,
@@ -438,13 +446,16 @@ function main() {
   fs.writeFileSync(path.join(outDir, 'repeats.json'), JSON.stringify(result, null, 2), 'utf8');
 
   const L = [];
+  const wsNote = C.workshopScopeNote(scopes, a.workshop);
   L.push(`# ${a.workshop} 重复故障识别报告（${from} ~ ${to}）`);
   L.push('');
+  if (wsNote.alert) { L.push(`**${wsNote.alert}**`); L.push(''); }
   L.push(`> ${DISCLAIMER}`);
   L.push(`> ${R.DISCLAIMER}。`);
   L.push('');
   L.push(`统计区间：${from} ~ ${to}，共 ${periodDays} 天${fromDefaulted ? '（起始日按默认「一年内」口径推算）' : ''} ｜ 归类维度：${by === 'equipment' ? '按设备' : by === 'model' ? '按型号/设备类型' : '按故障部位'} ｜ 数据文件：${inputs.map((p) => path.basename(p)).join('、')}`);
   L.push(`判定阈值：同设备同部位 ≥${minCount} 次，同设备同现象/同代码 ≥${phenMin} 次，相似度阈值 ${simThreshold}`);
+  if (wsNote.note) L.push(wsNote.note);
   L.push(`生成时间：${C.localDateTime()}（北京时间）`);
   L.push('');
   L.push(`【注意】${result.meta.thresholdNote}。${result.meta.codePriority}。`);

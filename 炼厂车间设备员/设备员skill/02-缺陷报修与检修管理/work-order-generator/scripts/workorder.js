@@ -50,6 +50,9 @@ const ALIASES = C.mergeAliases({
   // 输入里已有的 SAP 通知单号（系统已存在）：单独带出，不填进「通知单号(SAP生成)」。不带「通知单」单字别名，免得前缀命中「通知单类型/通知单短文本」
   '已有通知单号': ['通知单号', '维修通知单号', '通知单编号'],
 });
+// 车间范围核对（D007）：「车间」只认车间 / 所属车间 / 属地车间 / 运行部（或其后加「名称」），
+// 不让共享别名里的维护工厂 / 属地单位 / 使用单位占用该字段
+ALIASES['车间'] = [...C.WORKSHOP_COLS, ...C.WORKSHOP_COLS.map((c) => c + '名称')];
 
 function loadBook(p) { return fs.statSync(p).isDirectory() ? readCsvDir(p) : readXlsx(p); }
 const csvLine = (r) => r.map((c) => `"${String(c === null || c === undefined ? '' : c).replace(/"/g, '""')}"`).join(',');
@@ -179,14 +182,19 @@ function main() {
 
   // ---- 收集待转单的缺陷
   const items = [];
+  const scopes = [];   // 车间范围核对结果（仅批量 --input）
   let mode = 'single';
   if (a.input) {
     mode = 'batch';
     if (!fs.existsSync(a.input)) throw new Error(`输入不存在: ${a.input}`);
     const rows = C.pickSheet(loadBook(a.input), '缺陷记录', '缺陷', '记录', '通知单');
     if (!rows) throw new Error('输入文件中未找到「缺陷记录」工作表');
-    const recs = C.toRecords(rows, ['位号', '缺陷描述'], '缺陷记录',
-      ['已有通知单号', '设备编号', '设备名称', '缺陷部位', '缺陷编号', '等级', '介质', '发现时间', '发现人'], warnings, ALIASES);
+    const all = C.toRecords(rows, ['位号', '缺陷描述'], '缺陷记录',
+      ['已有通知单号', '设备编号', '设备名称', '缺陷部位', '缺陷编号', '等级', '介质', '发现时间', '发现人', '车间'], warnings, ALIASES);
+    // 车间范围核对（D007）：输入带车间列时剔除其他车间的行
+    const ws = C.workshopScope(all, a.workshop, '缺陷记录', warnings);
+    scopes.push(ws.scope);
+    const recs = ws.records;
     for (const r of recs) {
       const tag = C.str(r['位号']);
       if (!tag) { warnings.push(`工作表「缺陷记录」第${r._row}行 位号为空，已跳过`); continue; }
@@ -335,7 +343,7 @@ function main() {
     meta: {
       workshop: a.workshop || null, generatedAt: C.localDateTime(), mode,
       applicant: a.applicant, dueDate: due, vendor: a.vendor || null,
-      equipLedger: !!equipMap, historyProvided: !!historyMap, historyN,
+      equipLedger: !!equipMap, historyProvided: !!historyMap, historyN, workshopScope: scopes,
       notice: NOTICE, disclaimer: DISCLAIMER,
     },
     counts, orders, missingInfo, undetermined, warnings,
@@ -357,10 +365,13 @@ function main() {
   // ---- Markdown
   const L = [];
   const V = (v) => (v === null || v === undefined || v === '' ? '待补充' : v);
+  const wsNote = C.workshopScopeNote(scopes, a.workshop);
   L.push(`# 维修通知单草稿${a.workshop ? '（' + a.workshop + '）' : ''}`);
   L.push('');
+  if (wsNote.alert) { L.push(`**${wsNote.alert}**`); L.push(''); }
   L.push(`生成时间：${C.localDateTime()}（北京时间）　报告单位：${a.applicant}　要求结束：${due}　草稿数：${counts.total}`);
   L.push('');
+  if (wsNote.note) { L.push(wsNote.note); L.push(''); }
   L.push(`> ${DISCLAIMER}`);
   L.push(`> ${NOTICE}`);
   L.push('');

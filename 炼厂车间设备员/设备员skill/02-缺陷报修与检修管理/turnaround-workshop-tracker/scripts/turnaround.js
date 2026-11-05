@@ -68,6 +68,9 @@ const ALIASES = C.mergeAliases({
   '整改期限': ['整改期限', '定时间', '完成期限', '期限', '要求完成时间', '计划完成日期'],
   '整改状态': ['整改状态', '状态', '是否关闭', '关闭状态', '整改情况', '完成情况'],
 });
+// 车间范围核对（D007）：「车间」只认车间 / 所属车间 / 属地车间 / 运行部（或其后加「名称」），
+// 不让共享别名里的维护工厂 / 属地单位 / 使用单位占用该字段
+ALIASES['车间'] = [...C.WORKSHOP_COLS, ...C.WORKSHOP_COLS.map((c) => c + '名称')];
 
 // ---- 项目状态枚举（七态；取值不在枚举内一律单列，不得就近映射）
 // 已中交 = 中间交接（检修完工后交付工艺，≠ 已完工）；已开工 = 中交后装置/设备开工（开车投用）
@@ -188,9 +191,12 @@ function main() {
   const rows = C.pickSheet(book, '项目清单', '检修项目', '项目', '大修项目', '大检修项目', '工单清单', '订单清单');
   if (!rows) throw new Error('未在输入中找到「项目清单」工作表');
   const sheetName = `${path.basename(a.input)}/项目清单`;
-  const recs = C.toRecords(rows, ['项目编号', '项目名称', '状态'], sheetName,
-    ['位号', '专业', '计划开工', '计划完工', '实际开工', '实际完工', '工期', '施工单位', '责任人', '完成比例', '备注'],
-    warnings, ALIASES);
+  // 车间范围核对（D007）：项目清单与四张可选表各自核对，带车间列时剔除其他车间的行
+  const scopes = [];
+  const scoped = (list, sheet) => { const ws = C.workshopScope(list, a.workshop, sheet, warnings); scopes.push(ws.scope); return ws.records; };
+  const recs = scoped(C.toRecords(rows, ['项目编号', '项目名称', '状态'], sheetName,
+    ['位号', '专业', '计划开工', '计划完工', '实际开工', '实际完工', '工期', '施工单位', '责任人', '完成比例', '备注', '车间'],
+    warnings, ALIASES), sheetName);
 
   const projects = [];
   const inconsistent = [];
@@ -302,8 +308,8 @@ function main() {
     else {
       materialProvided = true;
       const msheet = `${path.basename(a.input)}/材料到货`;
-      const mrecs = C.toRecords(mrows, ['项目编号', '材料名称'], msheet,
-        ['需求数量', '到货数量', '需求日期', '到货状态', '备注'], warnings, ALIASES);
+      const mrecs = scoped(C.toRecords(mrows, ['项目编号', '材料名称'], msheet,
+        ['需求数量', '到货数量', '需求日期', '到货状态', '备注', '车间'], warnings, ALIASES), msheet);
       for (const r of mrecs) {
         const no = C.str(r['项目编号']);
         const mat = C.str(r['材料名称']);
@@ -342,7 +348,7 @@ function main() {
     else {
       manpowerProvided = true;
       const psheet = `${path.basename(a.input)}/人员到位`;
-      const precs = C.toRecords(prows, ['项目编号'], psheet, ['施工单位', '计划人数', '到位人数', '备注'], warnings, ALIASES);
+      const precs = scoped(C.toRecords(prows, ['项目编号'], psheet, ['施工单位', '计划人数', '到位人数', '备注', '车间'], warnings, ALIASES), psheet);
       for (const r of precs) {
         const no = C.str(r['项目编号']);
         if (!no) continue;
@@ -374,7 +380,7 @@ function main() {
     else {
       readyProvided = true;
       const csheet = `${path.basename(a.input)}/开工条件`;
-      const crecs = C.toRecords(crows, ['项目编号', '条件项'], csheet, ['是否具备', '责任单位', '责任人', '备注'], warnings, ALIASES);
+      const crecs = scoped(C.toRecords(crows, ['项目编号', '条件项'], csheet, ['是否具备', '责任单位', '责任人', '备注', '车间'], warnings, ALIASES), csheet);
       for (const r of crecs) {
         const no = C.str(r['项目编号']);
         const item = C.str(r['条件项']);
@@ -410,8 +416,8 @@ function main() {
     else {
       tcfd.provided = true;
       const tsheet = `${path.basename(a.input)}/三查四定`;
-      const trecs = C.toRecords(trows, ['问题描述'], tsheet,
-        ['问题编号', '项目编号', '位号', '问题类别', '整改措施', '责任单位', '责任人', '整改期限', '整改状态', '备注'], warnings, ALIASES);
+      const trecs = scoped(C.toRecords(trows, ['问题描述'], tsheet,
+        ['问题编号', '项目编号', '位号', '问题类别', '整改措施', '责任单位', '责任人', '整改期限', '整改状态', '备注', '车间'], warnings, ALIASES), tsheet);
       for (const r of trecs) {
         const desc = C.str(r['问题描述']);
         if (!desc) { warnings.push(`工作表「${tsheet}」第${r._row}行 问题描述为空，已跳过`); continue; }
@@ -755,7 +761,7 @@ function main() {
       critical: [...criticalSet], criticalMissing,
       prevFile: a.prev ? path.basename(a.prev) : null,
       source: path.basename(a.input), generatedAt: C.localDateTime(),
-      materialProvided, manpowerProvided, readyProvided, tcfdProvided: tcfd.provided,
+      materialProvided, manpowerProvided, readyProvided, tcfdProvided: tcfd.provided, workshopScope: scopes,
       statusEnum: STATUS_ENUM,
       disclaimer: DISCLAIMER,
     },
@@ -769,9 +775,12 @@ function main() {
   const pctCell = (p) => (p.percent === null ? '—' : `${p.percent}%`);
   const star = (x) => (x ? '★' : '');
   const L = [];
+  const wsNote = C.workshopScopeNote(scopes, a.workshop);
   L.push(`# ${a.workshop} ${a.project} 检修进度（截至 ${date}）`);
   L.push('');
+  if (wsNote.alert) { L.push(`**${wsNote.alert}**`); L.push(''); }
   L.push(`数据来源：${path.basename(a.input)} ｜ 大检修计划：${taStart} ~ ${taEnd} ｜ 滞后判定阈值：${lagDays} 天 ｜ 线性进度核对：${linear ? '已启用（--linear-check）' : '未启用'}`);
+  if (wsNote.note) L.push(wsNote.note);
   if (criticalSet.size) L.push(`关键路径项目：${[...criticalSet].join('、')}`);
   L.push(`生成时间：${C.localDateTime()}（北京时间）`);
   L.push('');

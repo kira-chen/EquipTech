@@ -35,7 +35,7 @@ node "<技能目录>/scripts/intake.js" --input "<缺陷记录xlsx 或 SAP 通�
 | `--due` | 否 | 覆盖建议处理时限（天），如 `"A=1,B=3,C=7"`；默认为经验值，厂内规定为准 |
 | `--equip-ledger` | 否 | 设备台账（SAP 技术对象导出），校验位号并补全名称、介质、设备编号 |
 | `--ledger` | 否 | 现有缺陷台账或通知单清单，用于查重与登记号避让；状态按 SAP 系统状态归一 |
-| `--workshop` | 否 | 车间名，写入报告标题 |
+| `--workshop` | 否 | 车间名，写入报告标题；批量时输入带车间列则按它核对车间范围（见下「关键行为」） |
 | `--prefix` | 否 | 车间内部登记号前缀，默认 `QX`（通知单号由 SAP 生成，脚本不编） |
 | `--out` | 否 | 输出目录，默认系统临时目录 `<os.tmpdir()>/dig-out`，**建议始终传 `--out`** |
 
@@ -43,11 +43,15 @@ node "<技能目录>/scripts/intake.js" --input "<缺陷记录xlsx 或 SAP 通�
 
 | 文件 | 内容 |
 |---|---|
-| `defects.json` | 逐条缺陷（含 `notification`：type/sapPriority/faultCode/shortText/requiredStart/requiredEnd；批量时含原记录编号与等级 `sourceNo` / `sourceNoKind`（notification 通知单号 / defect 缺陷编号）/ `sourceLevel` / `sourceLevelDiffers`，单条为 null）、等级、定级依据与规则号、未判定、疑似重复、counts（含 `sourceLevelDiffers`）、meta |
+| `defects.json` | 逐条缺陷（含 `notification`：type/sapPriority/faultCode/shortText/requiredStart/requiredEnd；批量时含原记录编号与等级 `sourceNo` / `sourceNoKind`（notification 通知单号 / defect 缺陷编号）/ `sourceLevel` / `sourceLevelDiffers`，单条为 null）、等级、定级依据与规则号、未判定、疑似重复、counts（含 `sourceLevelDiffers`）、meta（含 `workshopScope`） |
 | `defects.md` | 五节报告（登记概览、缺陷单、未判定清单、疑似重复清单、维修通知单草稿），开头带声明行 |
 | `ledger.csv` | 台账追加行，带 BOM |
 | `notification.csv` | 维修通知单草稿，带 BOM：草稿序号、功能位置、设备编号、通知单类型、优先级、故障代码、通知单短文本、长文本、要求开始、要求结束、报告人、缺陷登记号 |
 | `summary.json` | 末行摘要落盘 |
+
+### 关键行为
+
+- **车间范围核对（D007，仅批量 `--input`）**：「缺陷记录」表带车间列（表头为车间 / 所属车间 / 属地车间 / 运行部，或其后加「名称」）且给了 `--workshop` 时，剔除其他车间的行并 warning；车间为空的行保留；没有一行是本车间时不筛，warning 与 md 开头写【注意】；无车间列或只有「维护工厂」「车间负责人」这类列时不筛，md 口径写「输入未含车间列，车间范围以取数条件为准」。结果写 `defects.json` 的 `meta.workshopScope`（数组，每张表一项：sheet、status `noWorkshop|noColumn|checked|mismatch`、column、total、kept、dropped、droppedRows、blank；单条登记为空数组）。
 
 ### 退出码
 - `0`：成功，末行 `{"ok":true,...}`
@@ -84,4 +88,4 @@ node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 node scripts/selftest.js
 ```
 
-185 条断言，含规则引擎单元测试（A/B/C 默认、口语「漏」识别、温升口语与数值写法（温度偏高/升高/持续上升、偏高 8℃、高约 15℃）识别、iv 兼容、介质中危、专业归口顺序、`--due` 解析、通知单类型）、单条登记（本地时间、方案切换、通知单草稿列）、批量（未判定不进草稿）、查重（SAP 状态归一）、台账校验（SAP 列名）、产出完整性、参数校验、别名与合计行、原记录编号与系统等级带出（sourceNo / sourceNoKind / sourceLevel / sourceLevelDiffers）、演示case 预期计数。
+202 条断言，含规则引擎单元测试（A/B/C 默认、口语「漏」识别、温升口语与数值写法（温度偏高/升高/持续上升、偏高 8℃、高约 15℃）识别、iv 兼容、介质中危、专业归口顺序、`--due` 解析、通知单类型）、单条登记（本地时间、方案切换、通知单草稿列）、批量（未判定不进草稿）、查重（SAP 状态归一）、台账校验（SAP 列名）、产出完整性、参数校验、别名与合计行、原记录编号与系统等级带出（sourceNo / sourceNoKind / sourceLevel / sourceLevelDiffers）、车间范围核对（混合剔除、空车间保留、全不一致【注意】、无车间列、维护工厂与属地单位不认、「所属车间」同样核对、未给 --workshop 不核对）、演示case 预期计数。

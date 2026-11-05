@@ -40,6 +40,9 @@ const ALIASES = C.mergeAliases({
   '原通知单号': ['通知单号', '维修通知单号', '通知单编号'],
   '原缺陷编号': ['缺陷编号', '缺陷号', '缺陷登记号'],
 });
+// 车间范围核对（D007）：「车间」只认车间 / 所属车间 / 属地车间 / 运行部（或其后加「名称」），
+// 不让共享别名里的维护工厂 / 属地单位 / 使用单位占用该字段
+ALIASES['车间'] = [...C.WORKSHOP_COLS, ...C.WORKSHOP_COLS.map((c) => c + '名称')];
 
 /** 原记录等级 → 当前分级方案下的等级键（abc：A/B/C，旧 I~IV 按 I→A、II→B、III/IV→C 换算；iv：I~IV）；识别不了返回 null */
 function normSourceLevel(v, scheme) {
@@ -128,12 +131,17 @@ function main() {
 
   // ---- 收集待登记项
   const inputs = [];
+  const scopes = [];   // 车间范围核对结果（仅批量 --input）
   if (batch) {
     if (!fs.existsSync(a.input)) throw new Error(`输入不存在: ${a.input}`);
     const rows = C.pickSheet(loadBook(a.input), '缺陷记录', '缺陷', '记录', '通知单');
     if (!rows) throw new Error('输入文件中未找到「缺陷记录」工作表');
-    const recs = C.toRecords(rows, ['位号', '缺陷描述'], '缺陷记录',
-      ['原通知单号', '原缺陷编号', '等级', '设备名称', '缺陷部位', '发现时间', '发现人', '是否影响运行', '介质', '设备编号'], warnings, ALIASES);
+    const all = C.toRecords(rows, ['位号', '缺陷描述'], '缺陷记录',
+      ['原通知单号', '原缺陷编号', '等级', '设备名称', '缺陷部位', '发现时间', '发现人', '是否影响运行', '介质', '设备编号', '车间'], warnings, ALIASES);
+    // 车间范围核对（D007）：输入带车间列时剔除其他车间的行
+    const ws = C.workshopScope(all, a.workshop, '缺陷记录', warnings);
+    scopes.push(ws.scope);
+    const recs = ws.records;
     // 原记录编号：有通知单号列取通知单号（SAP 系统已存在的通知单），否则取缺陷编号列
     const hasNotifCol = recs.hasCol('原通知单号');
     for (const r of recs) {
@@ -256,7 +264,7 @@ function main() {
     meta: {
       workshop: a.workshop || null, generatedAt: C.localDateTime(), mode: batch ? 'batch' : 'single', prefix,
       gradingScheme: scheme, gradingSchemeName: R.SCHEMES[scheme].name, dueDays: dueParsed.due,
-      equipLedger: !!a['equip-ledger'], defectLedger: !!a.ledger, disclaimer: DISCLAIMER,
+      equipLedger: !!a['equip-ledger'], defectLedger: !!a.ledger, workshopScope: scopes, disclaimer: DISCLAIMER,
     },
     counts, defects, undetermined, possibleDuplicate, warnings,
   };
@@ -279,10 +287,13 @@ function main() {
 
   // Markdown
   const L = [];
+  const wsNote = C.workshopScopeNote(scopes, a.workshop);
   L.push(`# 设备缺陷登记单${a.workshop ? '（' + a.workshop + '）' : ''}`);
   L.push('');
+  if (wsNote.alert) { L.push(`**${wsNote.alert}**`); L.push(''); }
   L.push(`生成时间：${C.localDateTime()}（北京时间）　登记方式：${batch ? '批量' : '单条'}　分级方案：${R.SCHEMES[scheme].name}`);
   L.push('');
+  if (wsNote.note) { L.push(wsNote.note); L.push(''); }
   L.push(`> ${DISCLAIMER}`);
   L.push('');
   L.push('## 一、登记概览');

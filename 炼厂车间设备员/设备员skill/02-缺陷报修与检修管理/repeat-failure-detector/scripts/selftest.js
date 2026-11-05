@@ -536,6 +536,39 @@ ok(al.records.every((x) => x.orderNo === ''), '23.3 裸「编号」列不再被�
 ok(/【注意】/.test(r.md) && !/[✅⚠️❌]/.test(r.md), '23.4 md 用【注意】提示且不含 emoji');
 
 
+// ================================================================ W. 车间范围核对（D007）
+{
+  const WH = ['位号', '故障部位', '故障现象', '故障时间'];
+  const rowsOf = (col, list) => [col ? [...WH, col] : WH, ...list.map(([t, ws, n]) => (col ? [t, '机械密封', '机封泄漏', d(n), ws] : [t, '机械密封', '机封泄漏', d(n)]))];
+  const MIX = [['P-901', '测试车间', 10], ['P-901', '测试车间', 50], ['P-902', '催化车间', 20], ['P-902', '催化车间', 60], ['P-903', '', 30], ['P-903', '测试', 90]];
+  const wsOf = (x, i = 0) => ((x.json && x.json.meta && x.json.meta.workshopScope) || [])[i] || {};
+  const tagsOf = (x) => ((x.json && x.json.byEquipment) || []).map((g) => g.tag);
+  let w = run(mk('ws-mix.xlsx', { '工单台账': rowsOf('车间', MIX) }), [], 'ws-mix');
+  eq(w.json && w.json.counts.valid, 4, 'W1 两车间混合：只统计本车间与车间为空的记录（4 条）');
+  ok(w.json && !tagsOf(w).includes('P-902') && tagsOf(w).includes('P-901') && w.json.counts.repeatEquipment === 2, 'W2 催化车间 P-902 的重复故障不进本车间报告');
+  ok(w.json && w.json.warnings.some((x) => /剔除其他车间 2 行/.test(x) && /催化车间 2 行/.test(x)), 'W3 warning 写明剔除行数与车间名');
+  ok(wsOf(w).status === 'checked' && wsOf(w).droppedRows === 2 && (wsOf(w).dropped || {})['催化车间'] === 2, 'W4 meta.workshopScope 记录剔除情况');
+  ok(wsOf(w).blank === 1 && tagsOf(w).includes('P-903'), 'W5 车间列为空的行按本车间保留');
+  ok(w.md && /车间范围：已按车间列核对「测试车间」，剔除其他车间的行/.test(w.md), 'W6 md 口径写明按车间核对');
+  w = run(mk('ws-mis.xlsx', { '工单台账': rowsOf('车间', [['P-902', '催化车间', 20], ['P-902', '焦化车间', 60]]) }), [], 'ws-mis');
+  ok(w.json && w.json.counts.valid === 2 && wsOf(w).status === 'mismatch', 'W7 车间列全不一致：不筛，status=mismatch');
+  ok(w.json && w.json.warnings.some((x) => /^【注意】/.test(x)), 'W8 车间列全不一致 warning 以【注意】开头');
+  const at = w.md ? w.md.indexOf('的车间列取值与 --workshop「测试车间」不一致') : -1;
+  ok(at > 0 && at < w.md.indexOf('## 一'), 'W9 md 开头（第一节之前）有【注意】提示');
+  w = run(mk('ws-nocol.xlsx', { '工单台账': rowsOf(null, MIX) }), [], 'ws-nocol');
+  ok(wsOf(w).status === 'noColumn' && w.json.counts.valid === 6 && /输入未含车间列，车间范围以取数条件为准/.test(w.md), 'W10 无车间列：不筛，md 口径说明以取数条件为准');
+  w = run(mk('ws-plant.xlsx', { '工单台账': rowsOf('维护工厂', [['P-902', '1100', 20], ['P-902', '1200', 60]]) }), [], 'ws-plant');
+  ok(wsOf(w).status === 'noColumn' && w.json.counts.valid === 2, 'W11 「维护工厂」列不当车间列（noColumn，不筛）');
+  // 多文件：各文件各自核对
+  const g1 = mk('ws-f1.xlsx', { '工单台账': rowsOf(null, [['P-901', '', 10], ['P-901', '', 50]]) });
+  const g2 = mk('ws-f2.xlsx', { '故障记录': rowsOf('车间', [['P-904', '测试车间', 10], ['P-905', '催化车间', 40], ['P-905', '催化车间', 80]]) });
+  w = run(`${g1},${g2}`, [], 'ws-multi');
+  ok(w.json && (w.json.meta.workshopScope || []).length === 2 && wsOf(w, 0).status === 'noColumn' && wsOf(w, 1).status === 'checked' && wsOf(w, 1).droppedRows === 2, 'W12 多文件逐个核对，scopes 各记一项');
+  ok(w.json && w.json.counts.valid === 3 && !tagsOf(w).includes('P-905') && /「ws-f2\.xlsx\/故障记录」2 行/.test(w.md) && /「ws-f1\.xlsx\/故障记录」未含车间列/.test(w.md), 'W13 多文件：剔除第二个文件的其他车间行，口径分文件写明');
+  w = run(mk('ws-ssc.xlsx', { '工单台账': rowsOf('所属车间', [['P-901', '测试车间', 10], ['P-902', '催化车间', 20]]) }), [], 'ws-ssc');
+  ok(wsOf(w).status === 'checked' && wsOf(w).column === '所属车间' && w.json.counts.valid === 1, 'W14 「所属车间」列同样核对');
+}
+
 // ================================================================ 24. 演示case 样例预期计数（目录不存在则跳过）
 // 演示样例：仓库内在 炼厂车间设备员/演示case/<分类>/<技能>/，开发包内在技能目录 examples/
 const skillsRoot = path.resolve(__dirname, '../../..');
