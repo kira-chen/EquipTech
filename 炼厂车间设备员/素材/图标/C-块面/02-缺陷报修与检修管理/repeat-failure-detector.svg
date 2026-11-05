@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="128" height="128">
+  <defs>
+    <linearGradient id="bg-repeat-failure-detector" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F87171"/><stop offset="1" stop-color="#B91C1C"/></linearGradient>
+    <linearGradient id="hl-repeat-failure-detector" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".35" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <filter id="ds" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="10" stdDeviation="9" flood-color="#000" flood-opacity=".3"/></filter>
+    <filter id="ds2" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#000" flood-opacity=".25"/></filter>
+    <linearGradient id="wf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#DCE6F2"/></linearGradient>
+    <linearGradient id="wf2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#EEF2F7"/><stop offset="1" stop-color="#C5D2E0"/></linearGradient>
+    <linearGradient id="wfu" gradientUnits="userSpaceOnUse" x1="0" y1="96" x2="0" y2="416"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#CFDAE7"/></linearGradient>
+    <linearGradient id="steelV" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F3F4F6"/><stop offset=".35" stop-color="#D1D5DB"/><stop offset=".75" stop-color="#9CA3AF"/><stop offset="1" stop-color="#6B7280"/></linearGradient>
+    <linearGradient id="steelH" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#9CA3AF"/><stop offset=".3" stop-color="#F3F4F6"/><stop offset=".7" stop-color="#C4C9D1"/><stop offset="1" stop-color="#6B7280"/></linearGradient>
+    <radialGradient id="steelR" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#F9FAFB"/><stop offset=".5" stop-color="#C4C9D1"/><stop offset="1" stop-color="#4B5563"/></radialGradient>
+    <linearGradient id="brass" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#B45309"/><stop offset=".45" stop-color="#FDE68A"/><stop offset="1" stop-color="#D97706"/></linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#E8EEF5"/></linearGradient>
+    <radialGradient id="face" cx=".4" cy=".35" r=".8"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#E2E8F0"/></radialGradient>
+    <radialGradient id="glass" cx=".35" cy=".3" r=".9"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".4" stop-color="#E0F2FE" stop-opacity=".7"/><stop offset="1" stop-color="#7DD3FC" stop-opacity=".55"/></radialGradient>
+    <radialGradient id="rg-red" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#FECACA"/><stop offset=".5" stop-color="#EF4444"/><stop offset="1" stop-color="#991B1B"/></radialGradient>
+    <linearGradient id="lg-red" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FECACA"/><stop offset=".45" stop-color="#EF4444"/><stop offset="1" stop-color="#991B1B"/></linearGradient>
+    <linearGradient id="lh-red" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#991B1B"/><stop offset=".3" stop-color="#FECACA"/><stop offset=".7" stop-color="#EF4444"/><stop offset="1" stop-color="#991B1B"/></linearGradient>
+    <radialGradient id="rg-orange" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#FED7AA"/><stop offset=".5" stop-color="#F97316"/><stop offset="1" stop-color="#9A3412"/></radialGradient>
+    <linearGradient id="lg-orange" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FED7AA"/><stop offset=".45" stop-color="#F97316"/><stop offset="1" stop-color="#9A3412"/></linearGradient>
+    <linearGradient id="lh-orange" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#9A3412"/><stop offset=".3" stop-color="#FED7AA"/><stop offset=".7" stop-color="#F97316"/><stop offset="1" stop-color="#9A3412"/></linearGradient>
+    <radialGradient id="rg-amber" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#FDE68A"/><stop offset=".5" stop-color="#F59E0B"/><stop offset="1" stop-color="#92400E"/></radialGradient>
+    <linearGradient id="lg-amber" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FDE68A"/><stop offset=".45" stop-color="#F59E0B"/><stop offset="1" stop-color="#92400E"/></linearGradient>
+    <linearGradient id="lh-amber" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#92400E"/><stop offset=".3" stop-color="#FDE68A"/><stop offset=".7" stop-color="#F59E0B"/><stop offset="1" stop-color="#92400E"/></linearGradient>
+    <radialGradient id="rg-yellow" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#FEF9C3"/><stop offset=".5" stop-color="#FACC15"/><stop offset="1" stop-color="#A16207"/></radialGradient>
+    <linearGradient id="lg-yellow" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FEF9C3"/><stop offset=".45" stop-color="#FACC15"/><stop offset="1" stop-color="#A16207"/></linearGradient>
+    <linearGradient id="lh-yellow" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#A16207"/><stop offset=".3" stop-color="#FEF9C3"/><stop offset=".7" stop-color="#FACC15"/><stop offset="1" stop-color="#A16207"/></linearGradient>
+    <radialGradient id="rg-green" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#BBF7D0"/><stop offset=".5" stop-color="#22C55E"/><stop offset="1" stop-color="#166534"/></radialGradient>
+    <linearGradient id="lg-green" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#BBF7D0"/><stop offset=".45" stop-color="#22C55E"/><stop offset="1" stop-color="#166534"/></linearGradient>
+    <linearGradient id="lh-green" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#166534"/><stop offset=".3" stop-color="#BBF7D0"/><stop offset=".7" stop-color="#22C55E"/><stop offset="1" stop-color="#166534"/></linearGradient>
+    <radialGradient id="rg-teal" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#99F6E4"/><stop offset=".5" stop-color="#14B8A6"/><stop offset="1" stop-color="#115E59"/></radialGradient>
+    <linearGradient id="lg-teal" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#99F6E4"/><stop offset=".45" stop-color="#14B8A6"/><stop offset="1" stop-color="#115E59"/></linearGradient>
+    <linearGradient id="lh-teal" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#115E59"/><stop offset=".3" stop-color="#99F6E4"/><stop offset=".7" stop-color="#14B8A6"/><stop offset="1" stop-color="#115E59"/></linearGradient>
+    <radialGradient id="rg-blue" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#BFDBFE"/><stop offset=".5" stop-color="#3B82F6"/><stop offset="1" stop-color="#1E3A8A"/></radialGradient>
+    <linearGradient id="lg-blue" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#BFDBFE"/><stop offset=".45" stop-color="#3B82F6"/><stop offset="1" stop-color="#1E3A8A"/></linearGradient>
+    <linearGradient id="lh-blue" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#1E3A8A"/><stop offset=".3" stop-color="#BFDBFE"/><stop offset=".7" stop-color="#3B82F6"/><stop offset="1" stop-color="#1E3A8A"/></linearGradient>
+    <radialGradient id="rg-indigo" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#C7D2FE"/><stop offset=".5" stop-color="#6366F1"/><stop offset="1" stop-color="#3730A3"/></radialGradient>
+    <linearGradient id="lg-indigo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#C7D2FE"/><stop offset=".45" stop-color="#6366F1"/><stop offset="1" stop-color="#3730A3"/></linearGradient>
+    <linearGradient id="lh-indigo" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#3730A3"/><stop offset=".3" stop-color="#C7D2FE"/><stop offset=".7" stop-color="#6366F1"/><stop offset="1" stop-color="#3730A3"/></linearGradient>
+    <radialGradient id="rg-violet" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#DDD6FE"/><stop offset=".5" stop-color="#8B5CF6"/><stop offset="1" stop-color="#5B21B6"/></radialGradient>
+    <linearGradient id="lg-violet" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#DDD6FE"/><stop offset=".45" stop-color="#8B5CF6"/><stop offset="1" stop-color="#5B21B6"/></linearGradient>
+    <linearGradient id="lh-violet" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#5B21B6"/><stop offset=".3" stop-color="#DDD6FE"/><stop offset=".7" stop-color="#8B5CF6"/><stop offset="1" stop-color="#5B21B6"/></linearGradient>
+    <radialGradient id="rg-slate" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#E2E8F0"/><stop offset=".5" stop-color="#64748B"/><stop offset="1" stop-color="#1E293B"/></radialGradient>
+    <linearGradient id="lg-slate" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#E2E8F0"/><stop offset=".45" stop-color="#64748B"/><stop offset="1" stop-color="#1E293B"/></linearGradient>
+    <linearGradient id="lh-slate" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#1E293B"/><stop offset=".3" stop-color="#E2E8F0"/><stop offset=".7" stop-color="#64748B"/><stop offset="1" stop-color="#1E293B"/></linearGradient>
+    <radialGradient id="rg-steel" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#F9FAFB"/><stop offset=".5" stop-color="#C4C9D1"/><stop offset="1" stop-color="#4B5563"/></radialGradient>
+    <linearGradient id="lg-steel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F9FAFB"/><stop offset=".45" stop-color="#C4C9D1"/><stop offset="1" stop-color="#4B5563"/></linearGradient>
+    <linearGradient id="lh-steel" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4B5563"/><stop offset=".3" stop-color="#F9FAFB"/><stop offset=".7" stop-color="#C4C9D1"/><stop offset="1" stop-color="#4B5563"/></linearGradient>
+    <radialGradient id="rg-kraft" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#F3DFBC"/><stop offset=".5" stop-color="#C99A5E"/><stop offset="1" stop-color="#8A5A2B"/></radialGradient>
+    <linearGradient id="lg-kraft" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F3DFBC"/><stop offset=".45" stop-color="#C99A5E"/><stop offset="1" stop-color="#8A5A2B"/></linearGradient>
+    <linearGradient id="lh-kraft" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#8A5A2B"/><stop offset=".3" stop-color="#F3DFBC"/><stop offset=".7" stop-color="#C99A5E"/><stop offset="1" stop-color="#8A5A2B"/></linearGradient>
+  </defs>
+  <rect y="14" width="512" height="498" rx="112" fill="#731111"/>
+  <rect width="512" height="496" rx="112" fill="url(#bg-repeat-failure-detector)"/>
+  <rect width="512" height="496" rx="112" fill="url(#hl-repeat-failure-detector)"/>
+  <rect x="3" y="3" width="506" height="490" rx="109" fill="none" stroke="url(#rim)" stroke-width="6"/>
+  <g transform="translate(0 -6)" filter="url(#ds)">
+    <path d="M143 215 A120 120 0 0 1 348 179" fill="none" stroke="url(#wfu)" stroke-width="30" stroke-linecap="round"/><polygon points="372,208 322,201 374,157" fill="#F4F7FB" stroke="#F4F7FB" stroke-width="8" stroke-linejoin="round"/>
+    <path d="M369 297 A120 120 0 0 1 164 333" fill="none" stroke="url(#wfu)" stroke-width="30" stroke-linecap="round"/><polygon points="140,304 190,311 138,355" fill="#DCE5F0" stroke="#DCE5F0" stroke-width="8" stroke-linejoin="round"/>
+    <circle cx="256" cy="256" r="82" fill="url(#wf)"/>
+    <polygon points="267,194 220,266 250,266 242,322 292,248 260,248" fill="#B91C1C" stroke="#B91C1C" stroke-width="8" stroke-linejoin="round"/>
+  </g>
+</svg>
