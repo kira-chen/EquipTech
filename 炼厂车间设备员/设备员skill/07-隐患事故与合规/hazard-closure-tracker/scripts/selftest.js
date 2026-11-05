@@ -477,6 +477,83 @@ r = run(negSt2, [], 'status-negation2');
 ok(['YH-M01', 'YH-M02', 'YH-M03'].every((n) => !r.hz.overdue.some((x) => x.no === n)), '21.4 「已整改未销号」「已完成整改，未闭环」「不符合项整改完成」按已整改（交验收判定），不计超期');
 eq(r.hz.overdue.map((x) => x.no).sort().join(','), 'YH-M04,YH-M05', '21.5 「整改未完成」「暂未完成」计超期');
 
+// ================= 22. 车间范围核对（D007）：按「车间」列核对，责任单位不核对 =================
+{
+  const sc = (i) => ((r.hz && r.hz.meta.workshopScope) || [])[i] || {};
+  const row = (no, unit, deadline, st, ws) => [no, '隐患' + no, '一般隐患', '自查', D(-40), '王', unit, deadline, '整改', st, '', '', '', ws];
+  // 22.1~22.12 责任单位 + 车间两列：车间列归车间，责任单位照常取值、不参与核对
+  const wsMix = mk('ws-mix.xlsx', { '隐患台账': [[...H, '车间'],
+    row('YH-W1', '储运车间', D(-10), '未整改', '测试车间'),
+    row('YH-W2', '维修班', D(20), '整改中', '测试'),
+    row('YH-W3', '测试车间', D(-15), '未整改', '催化车间'),
+    row('YH-W4', '测试车间', D(-20), '未整改', '催化车间'),
+    row('YH-W5', '电气班', D(20), '整改中', ''),
+  ] });
+  r = run(wsMix, [], 'ws-mix');
+  eq(r.summary.counts.total, 3, '22.1 混合输入只统计本车间与车间为空的行（剔除催化车间 2 行）');
+  eq(r.summary.counts.overdue, 1, '22.2 超期只含本车间隐患（催化车间 2 项超期不计）');
+  ok(!r.hz.items.some((x) => x.no === 'YH-W3' || x.no === 'YH-W4'), '22.3 其他车间隐患不进清单（责任单位写本车间也不保留）');
+  ok(r.hz.items.some((x) => x.no === 'YH-W5'), '22.4 车间列为空的行按本车间保留');
+  const w1 = r.hz.items.find((x) => x.no === 'YH-W1');
+  eq(w1 && w1.unit, '储运车间', '22.5 责任单位列照常取值、不被车间列顶替，也不参与核对（责任单位写储运车间仍保留）');
+  eq(sc(0).column, '车间', '22.6 真正的「车间」列归车间字段');
+  ok(r.hz.warnings.some((w) => /剔除其他车间 2 行/.test(w) && w.includes('催化车间 2 行')), '22.7 warning 写明剔除行数与车间名');
+  ok(r.hz.warnings.some((w) => /车间列为空 1 行/.test(w)), '22.8 warning 写明车间为空行数');
+  eq(sc(0).status, 'checked', '22.9 meta.workshopScope 记录已核对');
+  eq(sc(0).droppedRows, 2, '22.10 meta.workshopScope 记录剔除行数');
+  eq((sc(0).dropped || {})['催化车间'], 2, '22.11 meta.workshopScope 按车间记录剔除');
+  ok(/车间范围：已按车间列核对「测试车间」/.test(r.md || ''), '22.12 md 口径处写明按车间核对与剔除');
+  // 22.13~22.17 车间列全不一致：不筛，warning 与 md、督办清单开头【注意】
+  const wsBad = mk('ws-bad.xlsx', { '隐患台账': [[...H, '车间'], row('YH-B1', '测试车间', D(-10), '未整改', '催化车间'), row('YH-B2', '测试车间', D(20), '整改中', '焦化车间')] });
+  r = run(wsBad, [], 'ws-bad');
+  eq(r.summary.counts.total, 2, '22.13 车间列全不一致时不筛');
+  ok(r.hz.warnings.some((w) => w.startsWith('【注意】') && /未按车间筛选/.test(w)), '22.14 warning 以【注意】开头');
+  eq(sc(0).status, 'mismatch', '22.15 meta.workshopScope 记录不一致');
+  const ai = (r.md || '').indexOf('【注意】工作表「隐患台账」的车间列取值与 --workshop「测试车间」不一致');
+  ok(ai > 0 && ai < r.md.indexOf('## 一、总体概览'), '22.16 md 开头（第一节之前）有【注意】提示');
+  ok((r.push || '').includes('【注意】工作表「隐患台账」的车间列取值'), '22.17 督办清单开头同样提示');
+  // 22.18~22.19 无车间列（只有责任单位，且写的是别的车间）：不筛、不当车间列
+  const unitOnly = mk('ws-unit-only.xlsx', { '隐患台账': [H,
+    ['YH-U1', '法兰渗漏', '一般隐患', '自查', D(-40), '王', '催化车间', D(-10), '换垫片', '未整改', '', '', ''],
+    ['YH-U2', '护栏锈蚀', '一般隐患', '自查', D(-40), '王', '焦化车间', D(20), '补焊', '整改中', '', '', ''],
+  ] });
+  r = run(unitOnly, [], 'ws-unit-only');
+  eq(sc(0).status, 'noColumn', '22.18 只有责任单位列时不核对（status 为 noColumn）');
+  ok(r.summary.counts.total === 2 && (r.md || '').includes('输入未含车间列，车间范围以取数条件为准'), '22.19 责任单位不当车间列，不筛，md 口径说明无车间列');
+  // 22.20~22.21 「维护工厂」列不当车间列
+  const wsPlant = mk('ws-plant.xlsx', { '隐患台账': [[...H, '维护工厂'], row('YH-P1', '测试车间', D(20), '整改中', '1100'), row('YH-P2', '测试车间', D(20), '整改中', '1200')] });
+  r = run(wsPlant, [], 'ws-plant');
+  eq(sc(0).status, 'noColumn', '22.20 「维护工厂」列不当车间列（noColumn）');
+  eq(r.summary.counts.total, 2, '22.21 「维护工厂」列不触发筛选');
+  // 22.22~22.24 只有车间列、没有责任单位列：按车间核对，责任单位沿用车间列的值（与改动前一致）
+  const H3 = H.map((h) => (h === '责任单位' ? '车间' : h));
+  const wsOnly = mk('ws-only.xlsx', { '隐患台账': [H3,
+    ['YH-O1', '法兰渗漏', '一般隐患', '自查', D(-40), '王', '测试车间', D(-10), '换垫片', '未整改', '', '', ''],
+    ['YH-O2', '护栏锈蚀', '一般隐患', '自查', D(-40), '王', '催化车间', D(20), '补焊', '整改中', '', '', ''],
+  ] });
+  r = run(wsOnly, [], 'ws-only');
+  eq(sc(0).status, 'checked', '22.22 只有车间列时按车间列核对');
+  eq(r.summary.counts.total, 1, '22.23 只有车间列时剔除其他车间 1 行');
+  eq(r.hz.items[0] && r.hz.items[0].unit, '测试车间', '22.24 无责任单位列时责任单位沿用车间列的值，不丢列');
+  // 22.25~22.26 只有属地单位列：属地单位仍归责任单位，不当车间列
+  const H4 = H.map((h) => (h === '责任单位' ? '属地单位' : h));
+  const wsLocal = mk('ws-local.xlsx', { '隐患台账': [H4,
+    ['YH-L1', '法兰渗漏', '一般隐患', '自查', D(-40), '王', '催化车间', D(-10), '换垫片', '未整改', '', '', ''],
+  ] });
+  r = run(wsLocal, [], 'ws-local');
+  eq(sc(0).status, 'noColumn', '22.25 属地单位不当车间列（noColumn）');
+  eq(r.hz.items[0] && r.hz.items[0].unit, '催化车间', '22.26 属地单位仍归责任单位，不被车间抢走');
+  // 22.27~22.29 属地单位 + 车间名称两列：属地单位归责任单位，车间名称归车间并参与核对
+  const wsBoth = mk('ws-both.xlsx', { '隐患台账': [[...H4, '车间名称'],
+    ['YH-N1', '法兰渗漏', '一般隐患', '自查', D(-40), '王', '维修班', D(-10), '换垫片', '未整改', '', '', '', '测试车间'],
+    ['YH-N2', '护栏锈蚀', '一般隐患', '自查', D(-40), '王', '测试车间', D(20), '补焊', '整改中', '', '', '', '催化车间'],
+  ] });
+  r = run(wsBoth, [], 'ws-both');
+  eq(sc(0).column, '车间名称', '22.27 「车间名称」列归车间字段');
+  eq(r.summary.counts.total, 1, '22.28 按车间名称剔除其他车间 1 行（属地单位写本车间也不保留）');
+  eq(r.hz.items[0] && r.hz.items[0].unit, '维修班', '22.29 属地单位仍归责任单位');
+}
+
 // ================= 输出 =================
 console.log(`\n${'='.repeat(56)}`);
 console.log(`hazard-closure-tracker 自测：${pass} 通过，${fail} 失败`);

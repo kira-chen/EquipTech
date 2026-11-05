@@ -15,7 +15,7 @@ node "<技能目录>/scripts/facility.js" \
 | 参数 | 必需 | 说明 |
 |---|---|---|
 | `--input` | 是 | 安全环保设施台账 xlsx 路径，或同结构 CSV 目录 |
-| `--workshop` | 是 | 车间名称 |
+| `--workshop` | 是 | 车间名称；设施台账带车间列时按它核对车间范围 |
 | `--date` | 是 | 基准日期 YYYY-MM-DD，用于计算超期与临期 |
 | `--out` | 否 | 输出目录，默认系统临时目录 `<os.tmpdir()>/sedc-out`，建议始终传 `--out` |
 | `--lead-days` | 否 | 提前提醒天数，默认 15；非负整数 |
@@ -27,8 +27,8 @@ node "<技能目录>/scripts/facility.js" \
 
 | 文件 | 内容 |
 |---|---|
-| `facility.json` | overdue / dueSoon / outOfService / unresolvedFail / normal / undetermined / byCategory / metrics / counts / plan；meta 含 statement / scopeNote / periodRule；每条记录带 periodUnit / calcMode / periodMonths |
-| `facility.md` | 九节报告；存在失效或超期时开头醒目写入「【注意】」提示；头部归口说明；末尾声明行；说明段留 `<!-- ANALYSIS_START/END -->` 占位 |
+| `facility.json` | overdue / dueSoon / outOfService / unresolvedFail / normal / undetermined / byCategory / metrics / counts / plan；meta 含 statement / scopeNote / periodRule / workshopScope（车间范围核对结果）；每条记录带 periodUnit / calcMode / periodMonths |
+| `facility.md` | 九节报告；存在失效或超期时开头醒目写入「【注意】」提示；头部归口说明；开头信息区写车间范围口径，车间列取值与 `--workshop` 全不一致时标题下写【注意】提示；末尾声明行；说明段留 `<!-- ANALYSIS_START/END -->` 占位 |
 | `检测计划.xlsx` | 「检测计划」明细 +「类别汇总」两张表，按设施类别与应检测日期排布 |
 | `summary.json` | 末行摘要落盘（Windows 控制台乱码兜底） |
 
@@ -43,6 +43,7 @@ node "<技能目录>/scripts/facility.js" \
 - **完好率 = 完好台数 ÷ 设施总台数**，完好 = 在用 + 结果未否定 + 未超期（含临期）；分母为 0 或范围内存在状态无法判定的设施时为 `null`，md 显示「—」，**绝不写 0%**。
 - 归档优先级：`outOfService` > `unresolvedFail` > `undetermined` > `overdue` / `dueSoon` / `normal`。
 - 存在失效设施或超期未检时（`meta.alertNeeded` 为 true），md 开头写入：「【注意】存在失效或超期未检的安全环保设施，可能影响安全保护功能有效性，应立即整改并评估风险」。
+- **车间范围核对**：设施台账带车间列（车间/所属车间/属地车间/运行部，或其后加「名称」；「车间负责人」等人员列不算）时按 `--workshop` 核对：剔除其他车间的行并 warning，车间为空的行保留；没有一行是本车间时不筛，warning 与报告开头写【注意】；无车间列不筛，口径写「以取数条件为准」；「维护工厂」不当车间列。`meta.workshopScope` 为数组，每张表一项：`sheet`、`status`（`noWorkshop`/`noColumn`/`checked`/`mismatch`）、`column`、`total`、`kept`、`droppedRows`、`dropped`（按车间的剔除行数）、`blank`。
 - md 末尾固定声明行：「本材料由脚本汇总、模型成文，仅供设备员复核参考，不替代审批、定性、验收与签字；厂内制度与系统数据为准。」（`meta.statement`）。
 - 状态与检测结果矛盾、台账下次检测日期与计算值不一致、设施编号重复 → 附节并列 + warning，不擅自采信其一。
 - 详细口径见 `references/facility-rules.md`。
@@ -66,4 +67,4 @@ seed 改变责任人与上次检测日期的小幅偏移，但结论不变：主
 node scripts/selftest.js
 ```
 
-199 条断言，覆盖：到期三分与天数、醒目提示出现与不出现两个方向、失效设施无论是否在周期内一律单列、失效优先级高于不合格、周期/日期/类别/状态缺失不按默认处理、不合格未整改不计入完好、整改闭环与「整改中」区分、完好率分母为 0 与状态不明两种 null 场景（不写 0%）、分类完好率、五类设施识别、lead-days 可调、检测计划 xlsx 结构与处置要求、状态与结果矛盾、下次日期不一致、编号重复、合计行与空编号跳过、别名列头与标题行表头识别、周期与结果无法解析、缺列不中断、缺唯一数据源报错、参数校验、产出结构与分析段占位、自然月折算（月末钳制、季/半年/年）、新增两类设施识别与过滤、SAP/EM 列名、声明行与归口说明、无 emoji、默认输出目录为临时目录、SKILL 同步项（旧名不出现、功能位置优先于 SAP 设备编号）、整改记录跨表配对（整改完成日期早于检测日期不闭环、多条取最近）。全绿退出 0。
+217 条断言，覆盖：到期三分与天数、醒目提示出现与不出现两个方向、失效设施无论是否在周期内一律单列、失效优先级高于不合格、周期/日期/类别/状态缺失不按默认处理、不合格未整改不计入完好、整改闭环与「整改中」区分、完好率分母为 0 与状态不明两种 null 场景（不写 0%）、分类完好率、五类设施识别、lead-days 可调、检测计划 xlsx 结构与处置要求、状态与结果矛盾、下次日期不一致、编号重复、合计行与空编号跳过、别名列头与标题行表头识别、周期与结果无法解析、缺列不中断、缺唯一数据源报错、参数校验、产出结构与分析段占位、自然月折算（月末钳制、季/半年/年）、新增两类设施识别与过滤、SAP/EM 列名、声明行与归口说明、无 emoji、默认输出目录为临时目录、SKILL 同步项（旧名不出现、功能位置优先于 SAP 设备编号）、整改记录跨表配对（整改完成日期早于检测日期不闭环、多条取最近）；P002 车间范围核对：两车间混合只留本车间、车间为空保留、全不一致不筛并【注意】、无车间列口径说明、「维护工厂」不当车间列。全绿退出 0。

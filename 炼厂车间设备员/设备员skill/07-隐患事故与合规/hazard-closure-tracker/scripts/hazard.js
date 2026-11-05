@@ -34,7 +34,8 @@ const ALIASES = C.mergeAliases({
   '来源': ['来源', '隐患来源', '发现方式', '来源方式', '排查方式', '检查类型', '检查来源'],
   '发现日期': ['发现日期', '发现时间', '排查日期', '登记日期', '上报日期', '检查日期'],
   '责任人': ['责任人', '整改责任人', '负责人', '责任者'],
-  '责任单位': ['责任单位', '责任部门', '整改单位', '单位', '部门', '车间', '属地单位'],
+  // 「车间」不再作责任单位别名：真正的车间列归「车间」做车间范围核对；台账没有责任单位列时，责任单位取车间列的值（见读取处）
+  '责任单位': ['责任单位', '责任部门', '整改单位', '单位', '部门', '属地单位'],
   '要求整改期限': ['要求整改期限', '整改期限', '要求完成时间', '计划完成时间', '整改完成期限', '期限', '整改时限'],
   '整改措施': ['整改措施', '措施', '整改方案', '整改内容'],
   '整改资金': ['整改资金', '资金', '整改费用', '资金落实', '经费', '预算', '资金来源'],
@@ -51,6 +52,8 @@ const ALIASES = C.mergeAliases({
   '原始等级': ['原始等级', '厂内等级', '台账等级', '等级写法', '原等级'],
   '归类': ['归类', '对应等级', '映射为', '严重度', '统一等级'],
 });
+// 车间范围核对（D007）：「车间」只认真正的车间列（车间/所属车间/属地车间/运行部及其后加「名称」），共享别名里的维护工厂、属地单位、使用单位、作业部不占用车间字段；属地单位仍归责任单位
+ALIASES['车间'] = [...C.WORKSHOP_COLS, ...C.WORKSHOP_COLS.map((c) => c + '名称')];
 
 // ---- 等级归一：只认「重大 / 一般」字样。「一级/二级/三级/A 级/B 级/C 级」在多数厂是管理层级
 //      （公司级/厂级/车间级），不是严重度，不直接映射 → unknown（进 undetermined）；
@@ -175,9 +178,17 @@ function main() {
   try { book = loadBook(a.input); } catch (e) { throw new Error(`读取失败 ${a.input}: ${e.message}`); }
   const rows = C.pickSheet(book, '隐患台账', '隐患排查治理台账', '隐患清单', '隐患');
   if (!rows) throw new Error('未在输入中找到「隐患台账」工作表');
-  const recs = C.toRecords(rows, ['隐患编号', '隐患描述', '整改状态'], '隐患台账',
-    ['等级', '来源', '发现日期', '责任人', '责任单位', '要求整改期限', '整改措施', '整改资金', '应急措施', '验收情况', '验收人', '验收日期', '整改完成日期'],
+  const allRecs = C.toRecords(rows, ['隐患编号', '隐患描述', '整改状态'], '隐患台账',
+    ['等级', '来源', '发现日期', '责任人', '责任单位', '要求整改期限', '整改措施', '整改资金', '应急措施', '验收情况', '验收人', '验收日期', '整改完成日期', '车间'],
     warnings, ALIASES);
+  // 台账只有车间列、没有责任单位类列时，责任单位沿用车间列的值（与改动前「车间」作责任单位别名的结果一致）
+  const unitFromWorkshop = !allRecs.hasCol('责任单位') && allRecs.hasCol('车间');
+  if (unitFromWorkshop) for (const r of allRecs) r['责任单位'] = r['车间'];
+  // 车间范围核对（D007）：按「车间」列核对，责任单位/属地单位不核对；有本车间行时剔除其他车间的行，列全不一致时不筛并【注意】提示
+  const wsLedger = C.workshopScope(allRecs, a.workshop, '隐患台账', warnings);
+  const scopes = [wsLedger.scope];
+  const wsNote = C.workshopScopeNote(scopes, a.workshop);
+  const recs = wsLedger.records;
   const FIVE_COLS = { '整改措施': '整改方案', '整改资金': '资金', '责任人': '责任人', '要求整改期限': '期限', '应急措施': '应急措施' };
   for (const c of Object.keys(FIVE_COLS)) if (!recs.hasCol(c)) warnings.push(`工作表「隐患台账」无「${c}」列，五定核对中「定${FIVE_COLS[c]}」按未落实处理，请补列或在台账中补填`);
 
@@ -377,6 +388,7 @@ function main() {
     meta: {
       workshop: a.workshop, date, from: from || null, generatedAt: C.localDateTime(),
       input: path.basename(a.input), rulesSource, levelFilter: a.level || null, ownerFilter: a.owner || null,
+      workshopScope: scopes,
     },
     counts, metrics,
     overdue: overdue.map(slim), dueSoon: dueSoon.map(slim), inProgress: inProgress.map(slim),
@@ -391,6 +403,7 @@ function main() {
   const L = [];
   L.push(`# ${a.workshop} 隐患整改闭环跟踪（截至 ${date}）`);
   L.push('');
+  if (wsNote.alert) { L.push(`> **${wsNote.alert}**`); L.push(''); }
   // 开头醒目提示：脚本直接写入，非占位符
   const alerts = [];
   if (majorHazards.length) {
@@ -412,6 +425,7 @@ function main() {
   L.push(`统计范围：${from ? `${from} 至 ${date}（按发现日期）` : `截至 ${date} 的全部在册隐患`}${a.level ? ` ｜ 等级筛选：${a.level}` : ''}${a.owner ? ` ｜ 责任人筛选：${a.owner}` : ''}`);
   L.push(`时限口径：${rulesSource}（重大隐患：${rules.major === null ? '按整改方案期限' : rules.major + ' 天'}；一般隐患：${rules.general === null ? '无统一天数，以整改方案/台账期限为准' : rules.general + ' 天'}）`);
   L.push(`数据来源：${path.basename(a.input)} ｜ 生成时间：${C.localDateTime()}（北京时间）`);
+  if (wsNote.note) L.push(wsNote.note);
   L.push('');
   L.push('**隐患认定、等级与整改验收以安全部门意见为准。** 本材料由脚本汇总、模型成文，仅供设备员复核参考，不替代审批、定性、验收与签字；厂内制度与系统数据为准。');
   L.push('');
@@ -534,6 +548,7 @@ function main() {
   const S = [];
   S.push(`# ${a.workshop} 隐患整改督办清单（截至 ${date}）`);
   S.push('');
+  if (wsNote.alert) { S.push(`> **${wsNote.alert}**`); S.push(''); }
   S.push('**隐患认定、等级与整改验收以安全部门意见为准。** 本材料由脚本汇总、模型成文，仅供设备员复核参考，不替代审批、定性、验收与签字；厂内制度与系统数据为准。');
   S.push('');
   if (alerts.length) {

@@ -45,6 +45,8 @@ const ALIASES = C.mergeAliases({
   '整改完成日期': ['整改完成日期', '整改日期', '完成日期', '处理日期'],
   '整改措施': ['整改措施', '措施', '整改内容', '处理措施'],
 });
+// 车间范围核对（D007）：「车间」只认真正的车间列（车间/所属车间/属地车间/运行部及其后加「名称」），共享别名里的维护工厂、属地单位、使用单位、作业部不占用车间字段
+ALIASES['车间'] = [...C.WORKSHOP_COLS, ...C.WORKSHOP_COLS.map((c) => c + '名称')];
 
 /** 设施类别归一：无法识别时返回 null，单列不猜测 */
 const CATEGORY_RULES = [
@@ -145,8 +147,13 @@ function main() {
   const rows = C.pickSheet(book, '安全环保设施台账', '安全环保设施', '设施台账', '安全设施', '环保设施');
   if (!rows) throw new Error('未在输入中找到「安全环保设施台账」工作表');
   const sheetName = `${path.basename(a.input)}/安全环保设施台账`;
-  const recs = C.toRecords(rows, ['设施编号', '检测周期', '上次检测日期'], sheetName,
-    ['设施类别', '设施名称', '安装位置', '检测项目', '检测结果', '当前状态', '责任人', '下次检测日期'], warnings, ALIASES);
+  const allRecs = C.toRecords(rows, ['设施编号', '检测周期', '上次检测日期'], sheetName,
+    ['设施类别', '设施名称', '安装位置', '检测项目', '检测结果', '当前状态', '责任人', '下次检测日期', '车间'], warnings, ALIASES);
+  // 车间范围核对（D007）：台账带车间列时按 --workshop 剔除其他车间的行；列全不一致时不筛并【注意】提示
+  const wsLedger = C.workshopScope(allRecs, a.workshop, sheetName, warnings);
+  const scopes = [wsLedger.scope];
+  const wsNote = C.workshopScopeNote(scopes, a.workshop);
+  const recs = wsLedger.records;
 
   // ---- 失效整改记录（可选）
   const resolvedIds = new Map();
@@ -385,6 +392,7 @@ function main() {
       generatedAt: C.localDateTime(), alert: ALERT, alertNeeded,
       statement: STATEMENT, scopeNote: SCOPE_NOTE,
       periodRule: '月/季/年/半年按自然月折算（C.addMonths），天/周/小时按天折算',
+      workshopScope: scopes,
     },
     counts, metrics,
     outOfService, unresolvedFail, overdue, dueSoon, normal, undetermined,
@@ -418,6 +426,7 @@ function main() {
   const L = [];
   L.push(`# ${a.workshop} 安全环保设施状态检查（基准日 ${date}）`);
   L.push('');
+  if (wsNote.alert) { L.push(`> **${wsNote.alert}**`); L.push(''); }
   if (alertNeeded) {
     L.push(`> **${ALERT}**`);
     L.push('');
@@ -426,6 +435,7 @@ function main() {
   }
   L.push(`数据来源：${path.basename(a.input)}／安全环保设施台账${a.category ? ` ｜ 筛选类别：${a.category}` : ''} ｜ 提前提醒：${leadDays} 天`);
   L.push(`生成时间：${C.localDateTime()}（北京时间）`);
+  if (wsNote.note) L.push(wsNote.note);
   L.push('');
   L.push(`> ${SCOPE_NOTE}`);
   L.push('');
