@@ -405,7 +405,83 @@ function toRecords(rows, required, sheetName, optional = [], warnings = [], alia
     recs.push(o);
   }
   recs.hasCol = (name) => cols[name] >= 0;
+  recs.colName = (name) => (cols[name] >= 0 ? header[cols[name]] : null);   // 实际命中的表头（别名）
   return recs;
+}
+
+// ---------------------------------------------------------------- 车间范围核对（D007）
+/** 认作车间的列名（表头以这些开头）；维护工厂/计划工厂是 SAP 工厂代码，责任单位/作业单位可能是部门或承包商，都不认 */
+const WORKSHOP_COLS = ['车间', '所属车间', '属地车间', '运行部'];
+const normWorkshop = (v) => str(v).replace(/\s+/g, '').replace(/(车间|运行部)$/, '');
+/** 两个车间名是否同一车间（去空白，忽略末尾「车间/运行部」）；任一为空返回 false */
+function sameWorkshop(a, b) {
+  const x = normWorkshop(a), y = normWorkshop(b);
+  return !!x && !!y && x === y;
+}
+/**
+ * 按 --workshop 核对一张表的车间列。recs 为 toRecords 结果，optional 里须含「车间」。
+ * - 未给 workshop：不核对（noWorkshop）
+ * - 没有车间列（或命中的是维护工厂等非车间列）：不筛（noColumn）
+ * - 有车间列且至少一行是本车间：剔除其他车间的行（checked）；车间为空的行按本车间保留
+ * - 有车间列但没有一行是本车间：不筛，warning 带【注意】（mismatch），多半是传错了文件
+ * 返回 { records, scope }；records 保留 hasCol / colName
+ */
+function workshopScope(recs, workshop, sheetName, warnings = []) {
+  const scope = { sheet: sheetName, status: 'noColumn', column: null, total: recs.length, kept: recs.length, dropped: {}, droppedRows: 0, blank: 0 };
+  const keep = (list) => { list.hasCol = recs.hasCol; list.colName = recs.colName; return list; };
+  if (!str(workshop)) { scope.status = 'noWorkshop'; return { records: recs, scope }; }
+  const col = recs.hasCol && recs.hasCol('车间') && recs.colName ? recs.colName('车间') : null;
+  if (!col || !WORKSHOP_COLS.some((c) => col.startsWith(c))) {
+    if (col) scope.ignoredColumn = col;
+    return { records: recs, scope };
+  }
+  scope.column = col;
+  const mine = [], blank = [], other = new Map();
+  for (const r of recs) {
+    const v = str(r['车间']);
+    if (!v) blank.push(r);
+    else if (sameWorkshop(v, workshop)) mine.push(r);
+    else other.set(v, (other.get(v) || 0) + 1);
+  }
+  scope.blank = blank.length;
+  if (!mine.length && other.size) {
+    scope.status = 'mismatch';
+    scope.values = [...other.keys()].slice(0, 5);
+    warnings.push(`【注意】工作表「${sheetName}」车间列「${col}」的取值（${scope.values.join('、')}${other.size > 5 ? ' 等' : ''}）与 --workshop「${workshop}」都不一致，未按车间筛选，请核对输入（多半是传错了文件）`);
+    return { records: recs, scope };
+  }
+  scope.status = 'checked';
+  const out = recs.filter((r) => !str(r['车间']) || sameWorkshop(r['车间'], workshop));
+  scope.kept = out.length;
+  scope.dropped = Object.fromEntries(other);
+  scope.droppedRows = recs.length - out.length;
+  if (scope.droppedRows) warnings.push(`工作表「${sheetName}」按 --workshop「${workshop}」剔除其他车间 ${scope.droppedRows} 行（${[...other].map(([k, n]) => `${k} ${n} 行`).join('、')}），不计入本车间`);
+  if (blank.length) warnings.push(`工作表「${sheetName}」车间列为空 ${blank.length} 行，按本车间保留`);
+  return { records: keep(out), scope };
+}
+/**
+ * 多张表的核对结果合成报告口径行与开头提示：{ note, alert }
+ * note 写在报告口径处；alert 非空时写在报告开头（【注意】）
+ */
+function workshopScopeNote(scopes, workshop) {
+  const list = (scopes || []).filter((s) => s && s.status !== 'noWorkshop');
+  if (!str(workshop) || !list.length) return { note: null, alert: null };
+  const mis = list.filter((s) => s.status === 'mismatch');
+  const chk = list.filter((s) => s.status === 'checked');
+  const none = list.filter((s) => s.status === 'noColumn');
+  const parts = [];
+  if (chk.length) {
+    const dropped = chk.filter((s) => s.droppedRows);
+    parts.push(dropped.length
+      ? `已按车间列核对「${workshop}」，剔除其他车间的行：${dropped.map((s) => `「${s.sheet}」${s.droppedRows} 行（${Object.entries(s.dropped).map(([k, n]) => `${k} ${n} 行`).join('、')}）`).join('；')}`
+      : `已按车间列核对「${workshop}」（${chk.map((s) => `「${s.sheet}」`).join('、')}），未发现其他车间的行`);
+  }
+  if (mis.length) parts.push(`${mis.map((s) => `「${s.sheet}」`).join('、')}的车间列取值与 --workshop 不一致，未按车间筛选`);
+  if (none.length) parts.push(`${chk.length || mis.length ? `${none.map((s) => `「${s.sheet}」`).join('、')}` : '输入'}未含车间列，车间范围以取数条件为准`);
+  return {
+    note: `车间范围：${parts.join('；')}。`,
+    alert: mis.length ? `【注意】${mis.map((s) => `工作表「${s.sheet}」`).join('、')}的车间列取值与 --workshop「${workshop}」不一致，未按车间筛选，请核对输入。` : null,
+  };
 }
 /** sheet 名匹配：去空白与"表"字后包含匹配 */
 function pickSheet(book, ...names) {
@@ -450,5 +526,6 @@ module.exports = {
   SYSTEM_ALIASES, mergeAliases, SAP_STATUS, normSapStatus,
   RESULT_NORMAL, RESULT_ABNORMAL, classifyResult,
   findCol, toRecords, pickSheet,
+  WORKSHOP_COLS, sameWorkshop, workshopScope, workshopScopeNote,
   ensureDir, emitOk, fail, mdTable,
 };
