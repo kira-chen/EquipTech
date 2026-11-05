@@ -15,7 +15,7 @@ node "<技能目录>/scripts/inspection.js" \
 | 参数 | 必需 | 说明 |
 |---|---|---|
 | `--input` | 是 | 特种设备台账 xlsx 路径，或同结构 CSV 目录 |
-| `--workshop` | 是 | 车间名称 |
+| `--workshop` | 是 | 车间名称；台账或整改项清单带车间列时按它核对车间范围 |
 | `--date` | 是 | 基准日期 YYYY-MM-DD，到期与超期均相对此日计算；不存在的日历日期（如 2026-02-30）报错 |
 | `--out` | 否 | 输出目录，默认系统临时目录 `<os.tmpdir()>/seid-out`，**建议始终传 `--out`** |
 | `--lead-days` | 否 | 临期提前提醒天数，默认 90；非负整数，非法取值报错。年度检查临期也用此窗口 |
@@ -27,8 +27,8 @@ node "<技能目录>/scripts/inspection.js" \
 
 | 文件 | 内容 |
 |---|---|
-| `inspection.json` | `overdue`、`dueSoon`、`normal`、`undetermined`、`dateConflict`、`monitored`、`stopped`、`annualCheck`、`prepMaterials`、`openIssues`、`reports`、`counts`、`byCategory`、`meta`（含 `basisNote` 口径与 `ownership` 归口说明） |
-| `inspection.md` | 十节报告，存在超期时开头与超期节各写一次「【注意】存在超期未检特种设备……」；分析段留 `<!-- ANALYSIS_START/END -->` 占位 |
+| `inspection.json` | `overdue`、`dueSoon`、`normal`、`undetermined`、`dateConflict`、`monitored`、`stopped`、`annualCheck`、`prepMaterials`、`openIssues`、`reports`、`counts`、`byCategory`、`meta`（含 `basisNote` 口径、`ownership` 归口说明、`workshopScope` 车间范围核对结果） |
+| `inspection.md` | 十节报告，开头信息区写车间范围口径；车间列取值与 `--workshop` 全不一致时标题下写【注意】提示；存在超期时开头与超期节各写一次「【注意】存在超期未检特种设备……」；分析段留 `<!-- ANALYSIS_START/END -->` 占位 |
 | `报检准备清单.md` | 按设备类别列出需近期报检设备与应备资料勾选清单 |
 | `summary.json` | 末行摘要落盘（Windows 控制台乱码兜底） |
 
@@ -36,6 +36,7 @@ node "<技能目录>/scripts/inspection.js" \
 
 ### 关键口径
 
+- **车间范围核对**：台账、整改项清单带车间列（车间/所属车间/属地车间/运行部，或其后加「名称」；「车间负责人」等人员列不算）时按 `--workshop` 核对：剔除其他车间的行并 warning，车间为空的行保留；没有一行是本车间时不筛，warning 与报告开头写【注意】；无车间列不筛，口径写「以取数条件为准」；「维护工厂」不当车间列。`meta.workshopScope` 为数组，每张表一项：`sheet`、`status`（`noWorkshop`/`noColumn`/`checked`/`mismatch`）、`column`、`total`、`kept`、`droppedRows`、`dropped`（按车间的剔除行数）、`blank`。
 - **到期日以台账「下次检验日期」为准**，脚本按规则计算值仅作校验；两者不一致时列入 `dateConflict` 并出 warning，分组仍按台账日期。到期日按自然月推（`C.addMonths`）。
 - **压力容器 / 压力管道周期由安全状况等级决定**，规格型号里的 GC1/GC2 只是管道分级，不决定周期；等级缺失 → `undetermined`，**绝不按最长周期默认**。
 - **锅炉检验类型**先看独立「检验类型」列，再从规格型号/名称找「外部检验/内部检验/水压试验」；都没有 → `undetermined` 并标缺「检验类型」。
@@ -65,4 +66,4 @@ seed 改变设备代码与组内日期抖动，不改变结论：主样例恒为
 node scripts/selftest.js
 ```
 
-165 条断言，覆盖：分组与天数计算、超期醒目提示的出现与不出现、各类周期查表、等级缺失/类别不识别/锅炉类型不明/日期缺失四类未判定、4 级监控与 5 级停用、日期不一致并列与以台账为准、`--lead-days` 与 `--category`、遗留整改项、报检准备清单、导出风格（标题行/别名列头/合计行/中文等级/中文日期）、缺表缺列、参数校验、报告归档核对、产出结构与声明行、压力管道 GC 级别不决定周期；本轮新增：安全阀不代入周期并互指 valve-instrument-calibration-ledger、「储罐」待核实、字母码不再识别、md 无 emoji、特种设备平台/SAP 列名（功能位置为位号、「设备」不作位号、设备代码、使用登记证编号、检验机构、工厂区段）、锅炉独立「检验类型」列、年度检查到期（addMonths 12 个月、临期/缺失、无列时为 null）、口径声明；2026-11-04 核查补充：`--category` 与 `--issues` 同用时被排除类别的整改项不计入且不误报「不在台账」、`--date` 不存在的日历日期报错、4 级有台账日期时按台账日期分组。全绿退出 0。
+189 条断言，覆盖：分组与天数计算、超期醒目提示的出现与不出现、各类周期查表、等级缺失/类别不识别/锅炉类型不明/日期缺失四类未判定、4 级监控与 5 级停用、日期不一致并列与以台账为准、`--lead-days` 与 `--category`、遗留整改项、报检准备清单、导出风格（标题行/别名列头/合计行/中文等级/中文日期）、缺表缺列、参数校验、报告归档核对、产出结构与声明行、压力管道 GC 级别不决定周期；本轮新增：安全阀不代入周期并互指 valve-instrument-calibration-ledger、「储罐」待核实、字母码不再识别、md 无 emoji、特种设备平台/SAP 列名（功能位置为位号、「设备」不作位号、设备代码、使用登记证编号、检验机构、工厂区段）、锅炉独立「检验类型」列、年度检查到期（addMonths 12 个月、临期/缺失、无列时为 null）、口径声明；2026-11-04 核查补充：`--category` 与 `--issues` 同用时被排除类别的整改项不计入且不误报「不在台账」、`--date` 不存在的日历日期报错、4 级有台账日期时按台账日期分组；P002 车间范围核对：两车间混合只留本车间、车间为空保留、全不一致不筛并【注意】、无车间列口径说明、「维护工厂」与「车间负责人」不当车间列、「所属车间」可识别、整改项清单剔除其他车间。全绿退出 0。

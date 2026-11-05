@@ -471,6 +471,40 @@ eq(r.summary.counts.undetermined, 0, '28.4 默认范围外的 XX-30 不计入待
 r = run(badcat, [], 'badcat-all');
 ok(r.data.warnings.some((w) => w.includes('XX-30') && w.includes('已归入待确认')), '28.5 --category 全部时 XX-30 仍写「已归入待确认」');
 
+// ---- 29. 车间范围核对（D007）：校验台账带车间列时按 --workshop 核对
+{
+  const sc = (i) => ((r.data && r.data.meta.workshopScope) || [])[i] || {};
+  const row = (tag, last, ws) => ['安全阀', tag, '安全阀' + tag, 'A42Y', '1.0MPa', '—', '1年', last, '合格', 'AQ-' + tag, '', ws];
+  const wsMix = mk('ws-mix.xlsx', { '校验台账': [[...HEAD, '车间'],
+    row('PSV-A1', ago(400), '测试车间'), row('PSV-A2', ago(100), '测试'), row('PSV-B1', ago(400), '焦化车间'), row('PSV-B2', ago(500), '焦化车间'), row('PSV-C1', ago(100), ''),
+  ] });
+  r = run(wsMix, [], 'ws-mix');
+  eq(r.summary.counts.total, 3, '29.1 混合输入只统计本车间与车间为空的行（剔除焦化车间 2 行）');
+  eq(r.summary.counts.overdue, 1, '29.2 超期只含本车间（焦化车间 2 台超期不计）');
+  ok(!(r.data.overdue || []).some((x) => /^PSV-B/.test(x.tag)), '29.3 其他车间安全阀不进超期清单');
+  ok((r.data.normal || []).some((x) => x.tag === 'PSV-C1'), '29.4 车间列为空的行按本车间保留');
+  ok(r.data.warnings.some((w) => /剔除其他车间 2 行/.test(w) && w.includes('焦化车间 2 行')), '29.5 warning 写明剔除行数与车间名');
+  ok(r.data.warnings.some((w) => /车间列为空 1 行/.test(w)), '29.6 warning 写明车间为空行数');
+  eq(sc(0).status, 'checked', '29.7 meta.workshopScope 记录已核对');
+  eq(sc(0).droppedRows, 2, '29.8 meta.workshopScope 记录剔除行数');
+  eq((sc(0).dropped || {})['焦化车间'], 2, '29.9 meta.workshopScope 按车间记录剔除');
+  ok(/车间范围：已按车间列核对「测试车间」/.test(r.md || ''), '29.10 md 口径处写明按车间核对与剔除');
+  const wsBad = mk('ws-bad.xlsx', { '校验台账': [[...HEAD, '车间'], row('PSV-D1', ago(400), '焦化车间'), row('PSV-D2', ago(100), '催化车间')] });
+  r = run(wsBad, [], 'ws-bad');
+  eq(r.summary.counts.total, 2, '29.11 车间列全不一致时不筛');
+  ok(r.data.warnings.some((w) => w.startsWith('【注意】') && /未按车间筛选/.test(w)), '29.12 warning 以【注意】开头');
+  eq(sc(0).status, 'mismatch', '29.13 meta.workshopScope 记录不一致');
+  const ai = (r.md || '').indexOf('的车间列取值与 --workshop「测试车间」不一致，未按车间筛选');
+  ok(ai > 0 && ai < r.md.indexOf('## 一、到期概览') && r.md.slice(0, ai).includes('【注意】'), '29.14 md 开头（第一节之前）有【注意】提示');
+  r = run(base, [], 'ws-none');
+  eq(sc(0).status, 'noColumn', '29.15 无车间列 status 为 noColumn');
+  ok((r.md || '').includes('输入未含车间列，车间范围以取数条件为准'), '29.16 md 口径处说明无车间列');
+  const wsPlant = mk('ws-plant.xlsx', { '校验台账': [[...HEAD, '维护工厂'], row('PSV-E1', ago(100), '1100'), row('PSV-E2', ago(100), '1200')] });
+  r = run(wsPlant, [], 'ws-plant');
+  eq(sc(0).status, 'noColumn', '29.17 「维护工厂」列不当车间列（noColumn）');
+  eq(r.summary.counts.total, 2, '29.18 「维护工厂」列不触发筛选');
+}
+
 // ---- 输出
 console.log(`\n${'='.repeat(56)}`);
 console.log(`valve-instrument-calibration-ledger 自测：${pass} 通过，${fail} 失败`);

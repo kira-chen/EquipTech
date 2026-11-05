@@ -51,6 +51,8 @@ const ALIASES = C.mergeAliases({
   '整改状态': ['整改状态', '完成情况', '状态', '是否完成'],
   '责任人': ['责任人', '负责人', '整改责任人'],
 });
+// 车间范围核对（D007）：「车间」只认真正的车间列（车间/所属车间/属地车间/运行部及其后加「名称」），共享别名里的维护工厂、属地单位、使用单位、作业部不占用车间字段
+ALIASES['车间'] = [...C.WORKSHOP_COLS, ...C.WORKSHOP_COLS.map((c) => c + '名称')];
 
 /** 设备类别归一：按设备品种中文写法（不用自造字母码）；无法归类返回 null（不猜测） */
 const CATEGORY_KEYS = [
@@ -225,10 +227,15 @@ function main() {
   try { book = loadBook(a.input); } catch (e) { throw new Error(`读取失败 ${a.input}: ${e.message}`); }
   const rows = C.pickSheet(book, '特种设备台账', '特种设备', '设备台账', '台账');
   if (!rows) throw new Error('未在输入中找到「特种设备台账」工作表');
-  const recs = C.toRecords(rows, ['设备类别', '位号', '上次检验日期'], '特种设备台账',
+  const allRecs = C.toRecords(rows, ['设备类别', '位号', '上次检验日期'], '特种设备台账',
     ['设备名称', '设备编号', '设备代码', '使用登记证编号', '检验机构', '检验类型', '检验结论', '下次检验日期', '安全状况等级',
-      '上次年度检查日期', '使用状态', '装置', '规格型号'],
+      '上次年度检查日期', '使用状态', '装置', '规格型号', '车间'],
     warnings, ALIASES);
+  // 车间范围核对（D007）：输入带车间列时按 --workshop 剔除其他车间的行；列全不一致时不筛并【注意】提示
+  const scopes = [];
+  const wsLedger = C.workshopScope(allRecs, a.workshop, '特种设备台账', warnings);
+  scopes.push(wsLedger.scope);
+  const recs = wsLedger.records;
   const hasAnnualCol = recs.hasCol('上次年度检查日期');
   if (!hasAnnualCol) warnings.push('台账无「上次年度检查日期」列，年度检查到期一节不出数（使用单位年度检查是车间设备员主责，建议在台账补此列）');
 
@@ -402,7 +409,10 @@ function main() {
     const irows = C.pickSheet(ib, '整改项', '遗留整改项', '整改清单', '问题清单');
     if (!irows) { warnings.push('整改项文件中未找到「整改项」工作表，无法统计遗留整改项'); }
     else {
-      const ir = C.toRecords(irows, ['位号', '整改项'], '整改项', ['设备名称', '要求完成日期', '整改状态', '责任人', '设备类别'], warnings, ALIASES);
+      const irAll = C.toRecords(irows, ['位号', '整改项'], '整改项', ['设备名称', '要求完成日期', '整改状态', '责任人', '设备类别', '车间'], warnings, ALIASES);
+      const wsIssues = C.workshopScope(irAll, a.workshop, '整改项', warnings);
+      scopes.push(wsIssues.scope);
+      const ir = wsIssues.records;
       openIssues = [];
       const known = new Set(items.map((x) => x.tag));
       let issuesFiltered = 0;
@@ -484,6 +494,8 @@ function main() {
     undetermined: undetermined.filter((x) => x.category === c).length,
   }));
 
+  const wsNote = C.workshopScopeNote(scopes, a.workshop);
+
   // ---- 产出
   C.ensureDir(outDir);
   const result = {
@@ -491,6 +503,7 @@ function main() {
       workshop: a.workshop, date, leadDays, categoryFilter: filterCat,
       input: path.basename(a.input), generatedAt: C.localDateTime(),
       issuesProvided: !!a.issues, reportsProvided: !!a.reports, annualColPresent: hasAnnualCol,
+      workshopScope: scopes,
       basisNote: '定期检验周期为默认参考口径（依据 TSG 21 / TSG D7005 及相应安全技术规范的常规周期），以现行有效法规、检验机构报告载明与厂内特种设备管理制度为准；台账与计算不一致时以检验报告为准；压力容器/压力管道周期由安全状况等级决定，不由 GC 级别决定；安全阀校验周期以厂内规定为准，脚本不代入',
       ownership: '车间设备员可做：台账到期提醒、年度检查组织与记录、报检资料准备、整改项跟踪；报检手续、检验结论与安全状况等级认定由特种设备管理员与检验机构归口',
     },
@@ -504,12 +517,14 @@ function main() {
   const L = [];
   L.push(`# ${a.workshop} 特种设备定检到期管理（基准日 ${date}）`);
   L.push('');
+  if (wsNote.alert) { L.push(`> **${wsNote.alert}**`); L.push(''); }
   if (overdue.length) {
     L.push(`> **${OVERDUE_BANNER}**`);
     L.push('');
   }
   L.push(`台账文件：${path.basename(a.input)} ｜ 提前提醒：${leadDays} 天${filterCat ? ` ｜ 仅统计：${filterCat}` : ''}`);
   L.push(`生成时间：${C.localDateTime()}（北京时间）　提交对象：车间设备主任 / 公司设备管理部门（特种设备管理员）`);
+  if (wsNote.note) L.push(wsNote.note);
   L.push('');
   L.push('## 一、到期概览');
   L.push('');
@@ -625,6 +640,7 @@ function main() {
   const P = [];
   P.push(`# ${a.workshop} 特种设备报检准备清单（基准日 ${date}）`);
   P.push('');
+  if (wsNote.alert) { P.push(`> **${wsNote.alert}**`); P.push(''); }
   if (overdue.length) {
     P.push(`> **${OVERDUE_BANNER}**`);
     P.push('');

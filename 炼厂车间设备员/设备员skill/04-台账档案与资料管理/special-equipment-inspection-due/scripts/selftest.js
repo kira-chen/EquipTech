@@ -436,6 +436,66 @@ ok(/不是有效日期/.test(x.s.error || ''), '25.6 非法日历日期错误信
   eq(r.json.overdue[0].calcNext, null, '25.10 4 级不按常规周期推算计算值');
 }
 
+// ---- 26. 车间范围核对（D007）：输入带车间列时按 --workshop 核对
+{
+  const H2 = [...HDR, '车间'];
+  const sc = (i) => ((r.json && r.json.meta.workshopScope) || [])[i] || {};
+  const mkWs = (name, rows, hdr = H2) => { const p = path.join(work, name); writeXlsx(p, { '特种设备台账': [hdr, ...rows] }); return p; };
+  const row = (tag, next, ws) => ['压力容器', tag, '罐' + tag, 'C' + tag, '', '2024-01-15', '符合要求', next, '2级', '一装置', 'φ2000', '在用', ws];
+  // 26.1~26.9 两车间混合 + 车间为空：只留本车间，空车间行保留
+  const wsMix = mkWs('ws-mix.xlsx', [
+    row('V-A1', d(-10), '测试车间'), row('V-A2', d(30), '测试'), row('V-B1', d(-20), '催化车间'), row('V-B2', d(-30), '催化车间'), row('V-C1', d(400), ''),
+  ]);
+  r = run(wsMix, [], 'ws-mix');
+  eq(r.summary.counts.total, 3, '26.1 混合输入只统计本车间与车间为空的行（剔除催化车间 2 行）');
+  eq(r.summary.counts.overdue, 1, '26.2 超期只含本车间设备（催化车间 2 台超期不计）');
+  ok(!r.json.overdue.some((x) => /^V-B/.test(x.tag)), '26.3 剔除的其他车间设备不进超期清单');
+  ok(r.json.normal.some((x) => x.tag === 'V-C1'), '26.4 车间列为空的行按本车间保留');
+  ok(r.json.warnings.some((w) => /剔除其他车间 2 行/.test(w) && w.includes('催化车间 2 行')), '26.5 warning 写明剔除行数与车间名');
+  ok(r.json.warnings.some((w) => /车间列为空 1 行/.test(w)), '26.6 warning 写明车间为空行数');
+  const s0 = sc(0);
+  eq(s0.status, 'checked', '26.7 meta.workshopScope 记录已核对');
+  eq(s0.droppedRows, 2, '26.8 meta.workshopScope 记录剔除行数');
+  eq((s0.dropped || {})['催化车间'], 2, '26.9 meta.workshopScope 按车间记录剔除');
+  ok(/车间范围：已按车间列核对「测试车间」/.test(r.md), '26.10 md 口径处写明按车间核对与剔除');
+  // 26.11~26.15 车间列全不一致：不筛，warning 与 md 开头【注意】
+  const wsBad = mkWs('ws-bad.xlsx', [row('V-D1', d(-10), '催化车间'), row('V-D2', d(30), '焦化车间')]);
+  r = run(wsBad, [], 'ws-bad');
+  eq(r.summary.counts.total, 2, '26.11 车间列全不一致时不筛');
+  ok(r.json.warnings.some((w) => w.startsWith('【注意】') && /未按车间筛选/.test(w)), '26.12 warning 以【注意】开头');
+  eq(sc(0).status, 'mismatch', '26.13 meta.workshopScope 记录不一致');
+  const ai = r.md.indexOf('【注意】工作表「特种设备台账」的车间列取值与 --workshop「测试车间」不一致');
+  ok(ai > 0 && ai < r.md.indexOf('## 一、到期概览'), '26.14 md 开头（第一节之前）有【注意】提示');
+  ok(r.prep.includes('【注意】工作表「特种设备台账」的车间列取值'), '26.15 报检准备清单开头同样提示');
+  // 26.16~26.17 无车间列：不筛，口径写明以取数条件为准
+  r = run(base, [], 'ws-none');
+  eq(sc(0).status, 'noColumn', '26.16 无车间列 status 为 noColumn');
+  ok(r.md.includes('输入未含车间列，车间范围以取数条件为准'), '26.17 md 口径处说明无车间列');
+  // 26.18~26.19 「维护工厂」列不当车间列
+  const wsPlant = mkWs('ws-plant.xlsx', [row('V-E1', d(30), '1100'), row('V-E2', d(40), '1200')], [...HDR, '维护工厂']);
+  r = run(wsPlant, [], 'ws-plant');
+  eq(sc(0).status, 'noColumn', '26.18 「维护工厂」列不当车间列（noColumn）');
+  eq(r.summary.counts.total, 2, '26.19 「维护工厂」列不触发筛选');
+  // 26.20~26.22 整改项清单带车间列：其他车间的整改项剔除
+  const wsIss = path.join(work, 'ws-issues.xlsx');
+  writeXlsx(wsIss, { '整改项': [
+    ['位号', '设备名称', '整改项', '要求完成日期', '整改状态', '责任人', '车间'],
+    ['V-91', '罐91', '筒体腐蚀减薄需补焊', d(-30), '整改中', '张工', '测试车间'],
+    ['V-X9', '外车间罐', '外车间问题', d(-30), '整改中', '钱工', '催化车间'],
+  ] });
+  r = run(mixed, ['--issues', wsIss], 'ws-issues');
+  eq(r.summary.counts.openIssues, 1, '26.20 整改项剔除其他车间行');
+  eq(sc(1).droppedRows, 1, '26.21 整改项 workshopScope 记录剔除 1 行');
+  ok(!r.json.warnings.some((w) => w.includes('V-X9')), '26.22 剔除的外车间整改项不再报「不在台账」');
+  // 26.23~26.24 「所属车间」列可识别；「车间负责人」人员列不当车间列
+  const wsOwn = mkWs('ws-own.xlsx', [row('V-F1', d(30), '测试车间'), row('V-F2', d(40), '催化车间')], [...HDR, '所属车间']);
+  r = run(wsOwn, [], 'ws-own');
+  ok(sc(0).status === 'checked' && r.summary.counts.total === 1, '26.23 「所属车间」列按车间核对');
+  const wsMgr = mkWs('ws-mgr.xlsx', [row('V-G1', d(30), '张三'), row('V-G2', d(40), '李四')], [...HDR, '车间负责人']);
+  r = run(wsMgr, [], 'ws-mgr');
+  ok(sc(0).status === 'noColumn' && r.summary.counts.total === 2, '26.24 「车间负责人」人员列不当车间列，不筛');
+}
+
 // ---- 输出
 console.log(`\n${'='.repeat(56)}`);
 console.log(`special-equipment-inspection-due 自测：${pass} 通过，${fail} 失败`);

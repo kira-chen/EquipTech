@@ -45,6 +45,8 @@ const ALIASES = C.mergeAliases({
   '整改状态': ['整改状态', '整改情况', '处理状态', '状态'],
   '整改完成日期': ['整改完成日期', '整改日期', '完成日期', '处理日期'],
 });
+// 车间范围核对（D007）：「车间」只认真正的车间列（车间/所属车间/属地车间/运行部及其后加「名称」），共享别名里的维护工厂、属地单位、使用单位、作业部不占用车间字段
+ALIASES['车间'] = [...C.WORKSHOP_COLS, ...C.WORKSHOP_COLS.map((c) => c + '名称')];
 
 /** 对象类别归一：无法识别时返回 null，单列不猜测 */
 const CATEGORY_RULES = [
@@ -140,8 +142,13 @@ function main() {
   const rows = C.pickSheet(book, '校验台账', '校验', '检定台账', '仪表台账', '计量台账', '安全阀台账', '安全附件');
   if (!rows) throw new Error('未在输入中找到「校验台账」工作表（可识别：校验台账/检定台账/仪表台账/计量台账/安全阀台账/安全附件台账）');
   const sheetName = `${path.basename(a.input)}/校验台账`;
-  const recs = C.toRecords(rows, ['位号', '校验周期', '上次校验日期'], sheetName,
-    ['对象类别', '名称', '型号', '量程', '精度等级', '校验结论', '证书编号', '下次校验日期', '安装位置', '设备编号', '检验机构'], warnings, ALIASES);
+  const allRecs = C.toRecords(rows, ['位号', '校验周期', '上次校验日期'], sheetName,
+    ['对象类别', '名称', '型号', '量程', '精度等级', '校验结论', '证书编号', '下次校验日期', '安装位置', '设备编号', '检验机构', '车间'], warnings, ALIASES);
+  // 车间范围核对（D007）：台账带车间列时按 --workshop 剔除其他车间的行；列全不一致时不筛并【注意】提示
+  const wsLedger = C.workshopScope(allRecs, a.workshop, sheetName, warnings);
+  const scopes = [wsLedger.scope];
+  const wsNote = C.workshopScopeNote(scopes, a.workshop);
+  const recs = wsLedger.records;
 
   // ---- 不合格整改清单（可选）
   const resolvedTags = new Map();   // 位号 → [闭环整改记录]（同一位号可有多行，判定时在全部记录里配对本次不合格）
@@ -375,7 +382,7 @@ function main() {
     meta: {
       workshop: a.workshop, date, leadDays, category: categoryArg, categoryDefaulted,
       source: path.basename(a.input), issuesProvided, certsProvided: !!a.certs,
-      generatedAt: C.localDateTime(), statement: STATEMENT, ownershipNote: OWNERSHIP_NOTE,
+      generatedAt: C.localDateTime(), statement: STATEMENT, ownershipNote: OWNERSHIP_NOTE, workshopScope: scopes,
       periodNote: '月/季/年周期按自然月推算下次校验日期（1 年 = 12 个月）；安全阀校验周期以厂内规定与校验报告为准，脚本不代入默认周期',
     },
     counts, overdue, dueSoon, normal, undetermined, unresolvedFail,
@@ -401,8 +408,10 @@ function main() {
   const L = [];
   L.push(`# ${a.workshop} 安全阀校验台账到期管理（基准日 ${date}）`);
   L.push('');
+  if (wsNote.alert) { L.push(`> **${wsNote.alert}**`); L.push(''); }
   L.push(`数据来源：${path.basename(a.input)}／校验台账 ｜ 统计类别：${categoryArg}${categoryDefaulted ? '（默认，车间设备员归口）' : ''} ｜ 提前提醒：${leadDays} 天`);
   L.push(`生成时间：${C.localDateTime()}（北京时间）　提交对象：车间设备主任 / 公司设备管理部门`);
+  if (wsNote.note) L.push(wsNote.note);
   L.push('');
   L.push(`> ${STATEMENT}`);
   L.push('');
