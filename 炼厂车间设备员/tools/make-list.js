@@ -29,7 +29,7 @@ function checkZip(name, zip) {
   if (!fs.existsSync(zip)) throw new Error(`缺少发布包 ${zip}`);
   const list = execFileSync('unzip', ['-Z1', zip]).toString('latin1').split('\n').filter(Boolean);
   if (!list.includes(`${name}/SKILL.md`)) throw new Error(`${name}.zip 根目录不是 ${name}/ 或缺 SKILL.md`);
-  const bad = list.filter((f) => /\/examples\/|\/(selftest|make-sample|make-demo)\.js$|[^\x20-\x7e]/.test(f));
+  const bad = list.filter((f) => /\/examples\/|\/(selftest|make-sample|make-demo|run-examples|make-sample-docx)\.js$|[^\x20-\x7e]/.test(f));
   if (bad.length) throw new Error(`${name}.zip 含不应发布的文件：${bad[0]}`);
 }
 

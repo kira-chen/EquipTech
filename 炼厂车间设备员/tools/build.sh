@@ -19,9 +19,10 @@ grep -q '^name:' "$SKILL_DIR/SKILL.md" && grep -q '^description:' "$SKILL_DIR/SK
 find "$SKILL_DIR" -name '.DS_Store' -delete
 EXCL=('*/node_modules/*' '*/.git/*' '*/.DS_Store' '*-out/*' '*/*-out/*')   # *-out/ 为脚本默认运行产物目录，不打包
 if [ "$DEV" = 0 ]; then
-  # 发布包排除开发与上架用文件：回归样例、上架文案、样例生成与自测脚本
+  # 发布包排除开发与上架用文件：回归样例、上架文案、样例生成与自测脚本（run-examples、make-sample-docx 是两个依赖技能的回归与样例再生脚本）
   EXCL+=("$NAME/examples/*" "$NAME/上架信息.md" "$NAME/样例问题.md" "$NAME/演示附件/*" \
-         "$NAME/scripts/make-sample.js" "$NAME/scripts/make-demo.js" "$NAME/scripts/selftest.js")
+         "$NAME/scripts/make-sample.js" "$NAME/scripts/make-demo.js" "$NAME/scripts/selftest.js" \
+         "$NAME/scripts/run-examples.js" "$NAME/scripts/make-sample-docx.js")
 fi
 rm -f "$ZIP"
 SRC_PARENT="$(dirname "$SKILL_DIR")"
