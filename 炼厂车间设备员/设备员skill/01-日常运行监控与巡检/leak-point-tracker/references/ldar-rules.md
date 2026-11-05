@@ -159,6 +159,6 @@ LDAR 系统标记「是否不可达 = 是」的密封点，本期无检测值、
 
 ## 十二、下游衔接
 
-- 漏点需安排用火、受限空间等特殊作业 → `permit-precheck-bridge` / `work-permit-precheck`
+- 漏点需安排用火、受限空间等特殊作业 → `permit-precheck-bridge`（车间作业票预检）
 - 本期漏点情况与泄漏率进车间月报 → `equipment-weekly-monthly-report` 直接读 leaks.json
 - 更新后的 `ledger.xlsx` 作为下一期的 `--ledger` 输入，实现跨期续跟踪

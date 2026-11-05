@@ -4,7 +4,7 @@
 
 **口径与改造文件**：`../文档/规范/中石化口径对照.md`（术语、系统列名、分级、层级、指标、制度引用的唯一依据）、`../文档/过程记录/核验报告-2026-10-26.md`（问题清单）、`../文档/过程记录/改造任务书-2026-10-26.md`（改造执行说明与断点续做规则）。目录结构为「设备员skill / 二级分类 / 技能英文名 / SKILL.md」。
 
-> **当前状态（2026-11-05）：50 / 50 个技能全部完成中石化口径改造（第二轮）、MCP 核验缺陷修复及 MCP 取数接入，合计 11394 条 selftest 断言全绿，每个技能目录含上架信息.md 与样例问题.md。**
+> **当前状态（2026-11-05）：50 / 50 个技能全部完成中石化口径改造（第二轮）、MCP 核验缺陷修复及 MCP 取数接入，合计 11789 条 selftest 断言全绿，每个技能目录含上架信息.md 与样例问题.md。**
 >
 > 每个技能含：SKILL.md + Node 主脚本 + make-sample + selftest + references + 模板；演示与回归样例（含对照表）在 `../演示case/<分类>/<技能>/`。
 > 全部遵守 `../文档/规范/技能实现规范.md` 的九条硬约束，仅用 Node.js 内置模块，无 npm 依赖。
@@ -38,7 +38,7 @@
 
 ## 实现进度
 
-全部 50 个技能按 `../文档/规范/技能实现规范.md` 建设，逐一通过三步验证（样例再生 / 自测全绿 / 真实参数跑通），合计 **11394 条断言**。
+全部 50 个技能按 `../文档/规范/技能实现规范.md` 建设，逐一通过三步验证（样例再生 / 自测全绿 / 真实参数跑通），合计 **11789 条断言**。
 
 | 技能 | 分类 | 断言 |
 |---|---|---|
@@ -55,8 +55,8 @@
 | `equipment-handover-check` | 02 | ✅ 201 条 |
 | `maintenance-demand-rollup` | 02 | ✅ 271 条 |
 | `maintenance-record-archive` | 02 | ✅ 146 条 |
-| `overhaul-process-check-bridge` | 02 | ✅ 163 条 |
-| `permit-precheck-bridge` | 02 | ✅ 133 条 |
+| `overhaul-process-check-bridge` | 02 | ✅ 394 条 |
+| `permit-precheck-bridge` | 02 | ✅ 297 条 |
 | `repair-plan-assistant` | 02 | ✅ 334 条 |
 | `repeat-failure-detector` | 02 | ✅ 232 条 |
 | `turnaround-workshop-tracker` | 02 | ✅ 340 条 |
@@ -118,14 +118,14 @@ node scripts/<主脚本>.js <参数>               # 真实跑一次
 
 | 已有技能 | 关系 |
 |---|---|
-| `work-permit-precheck` | **被复用**。`permit-precheck-bridge` 调用它，不重复实现 GB 30871 规则引擎。 |
-| `overhaul-safety-check` | **被复用**。`overhaul-process-check-bridge` 调用它，不重复实现 70 条规则。 |
+| `work-permit-precheck` | **已并入** `permit-precheck-bridge`，规则引擎与规则库随之迁入，不再单独安装。 |
+| `overhaul-safety-check` | **已并入** `overhaul-process-check-bridge`，70 条规则随之迁入，不再单独安装。 |
 | `unit-daily-report` | **并行不重叠**。工艺口径装置日报 vs 设备口径 `equipment-daily-report`。 |
 | `incident-flash-report` | **并行不重叠**。法定事故快报 vs 内部通报 `equipment-event-notice`。 |
 | `energy-weekly-report` | **并行不重叠**。装置综合能耗 vs 单机能效 `equipment-energy-analysis`。 |
 | `emission-daily-check` | **并行不重叠**。排放浓度日检 vs 泄漏点跟踪 `leak-point-tracker`。 |
 
-安装 bridge 技能时必须同时安装被依赖技能，否则 bridge 须终止并告知用户，不得降级为自行判断。
+平台上装过这两个旧技能的，上架新包前先卸载。
 
 ## 共享数据约定
 

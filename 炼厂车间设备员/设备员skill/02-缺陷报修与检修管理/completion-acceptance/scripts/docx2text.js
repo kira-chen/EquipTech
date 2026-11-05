@@ -22,7 +22,7 @@ function parseArgs(argv) {
   return a;
 }
 
-/** 出错约定：末行 stdout 输出 {"ok":false,"error":"…"} 并退出码 1（与 work-permit-precheck 的同名脚本不同，那份用 stderr 文本，见 scripts/README.md） */
+/** 出错约定：末行 stdout 输出 {"ok":false,"error":"…"} 并退出码 1 */
 function fail(msg) { console.log(JSON.stringify({ ok: false, error: msg })); process.exit(1); }
 
 function main() {

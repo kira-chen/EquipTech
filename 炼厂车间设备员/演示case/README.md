@@ -29,8 +29,8 @@
 | [equipment-handover-check](02-缺陷报修与检修管理/equipment-handover-check/README.md) | 检修前设备交出确认 | 4 |
 | [maintenance-demand-rollup](02-缺陷报修与检修管理/maintenance-demand-rollup/README.md) | 检修需求汇总上报 | 7 |
 | [maintenance-record-archive](02-缺陷报修与检修管理/maintenance-record-archive/README.md) | 检修记录归档 | 6 |
-| [overhaul-process-check-bridge](02-缺陷报修与检修管理/overhaul-process-check-bridge/README.md) | 车间检修方案安全措施核查入口 | 7 |
-| [permit-precheck-bridge](02-缺陷报修与检修管理/permit-precheck-bridge/README.md) | 车间作业票预检入口 | 7 |
+| [overhaul-process-check-bridge](02-缺陷报修与检修管理/overhaul-process-check-bridge/README.md) | 车间检修方案安全措施核查 | 15 |
+| [permit-precheck-bridge](02-缺陷报修与检修管理/permit-precheck-bridge/README.md) | 车间作业票预检 | 43 |
 | [repair-plan-assistant](02-缺陷报修与检修管理/repair-plan-assistant/README.md) | 检修方案辅助编制 | 6 |
 | [repeat-failure-detector](02-缺陷报修与检修管理/repeat-failure-detector/README.md) | 重复故障识别 | 7 |
 | [turnaround-workshop-tracker](02-缺陷报修与检修管理/turnaround-workshop-tracker/README.md) | 大检修车间侧跟踪 | 6 |

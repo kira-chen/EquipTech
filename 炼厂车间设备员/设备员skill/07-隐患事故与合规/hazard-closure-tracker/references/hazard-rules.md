@@ -131,7 +131,7 @@
 ## 七、下游衔接
 
 - 隐患涉及设备缺陷需登记（维修通知单）→ `defect-intake-grading`
-- 整改涉及用火/受限空间等作业 → `work-permit-precheck`（作业许可预检）
+- 整改涉及用火/受限空间等作业 → `permit-precheck-bridge`（车间作业票预检）
 - 整改工单超期催办 → `work-order-tracker`
 - 日报：`equipment-daily-report` 读本技能 `hazard.json`（`counts`、`majorHazards`、`overdue`、`unverified`）生成日报的「隐患」一节，由日报侧实现，本技能不另出日报片段
 - 个人待办：`worklog-todo-manager` 读 `hazard.json` 的 `overdue[]`、`dueSoon[]`、`unverified[]`

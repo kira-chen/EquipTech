@@ -61,7 +61,7 @@ node "<技能目录>/scripts/acceptance.js" \
 node scripts/docx2text.js --input <检修方案.docx> [--out <txt>]
 ```
 
-复制自 overhaul-safety-check（与 work-permit-precheck 同源），仅用内置模块；主脚本内部已直接读 docx，本工具供人工查看方案全文或排查抽取问题。出错时末行 `{"ok":false,"error":"…"}` 退出码 1。
+与 permit-precheck-bridge、overhaul-process-check-bridge 中的同名脚本相同，仅用内置模块；主脚本内部已直接读 docx，本工具供人工查看方案全文或排查抽取问题。出错时末行 `{"ok":false,"error":"…"}` 退出码 1。
 
 ## make-sample.js —— 样例生成
 
