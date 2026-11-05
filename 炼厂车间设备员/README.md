@@ -36,4 +36,14 @@ node 炼厂车间设备员/tools/selftest.js --level BVT          # 只跑自测
 
 ## 外部依赖
 
-`permit-precheck-bridge` 依赖 `work-permit-precheck`，`overhaul-process-check-bridge` 依赖 `overhaul-safety-check`。这两个技能不在本仓库内，部署时需要另外安装，与 bridge 并排装在同一个技能目录下即可；装在别处时用环境变量 `SKILL_PACK_ROOT` 指向它们所在的目录。
+`permit-precheck-bridge` 依赖 `work-permit-precheck`（特殊作业票预检），`overhaul-process-check-bridge` 依赖 `overhaul-safety-check`（检修方案安全措施核查）。这两个技能不在本仓库内。
+
+- **上架：** 两个依赖技能的发布包要和 50 个技能包一起上传，装在同一个技能目录下，bridge 不需要额外配置就能找到它们。技能清单的「随包上传的依赖技能」一节和两个 bridge 行的「上传说明」会写明。
+- **打包：** 全量打包时用环境变量 `SKILL_PACK_ROOT` 指向依赖技能所在的目录，依赖技能放在它的直接子目录或下一级子目录都可以：
+
+  ```bash
+  SKILL_PACK_ROOT=<依赖技能所在目录> bash 炼厂车间设备员/tools/package.sh
+  ```
+
+  脚本会先跑依赖技能自带的自测，再把它们按发布包规则打进 `dist/设备员-发布包/`，共 52 个 zip。没有设置或找不到时，打包照常完成，但结尾提示“依赖技能未打包，上架包不完整”，技能清单相应位置标“未打包”。打包只认 `SKILL_PACK_ROOT`，不会去平台默认技能目录里找。
+- **其他部署方式：** 依赖技能没有和 bridge 装在同一目录时，运行时也可以用 `SKILL_PACK_ROOT` 指向它们所在的目录。
