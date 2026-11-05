@@ -29,7 +29,10 @@
 bash 炼厂车间设备员/tools/package.sh                       # 全部发布包和技能清单
 bash 炼厂车间设备员/tools/package.sh --skill leak-point-tracker   # 单个技能
 bash 炼厂车间设备员/tools/package.sh --with-examples       # 开发包
+node 炼厂车间设备员/tools/selftest.js --level BVT          # 只跑自测，按级别并行运行
 ```
+
+自测用例分为 BVT、A、B、C 四级，定级方法和运行方式见[自测用例分级规范](文档/规范/自测用例分级规范.md)。
 
 ## 外部依赖
 
