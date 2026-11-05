@@ -21,12 +21,11 @@ node "<技能目录>/scripts/check-dependency.js" [--skill-root "<被依赖技�
 
 未指定 `--skill-root` 时按以下顺序查找 `scripts/precheck.js`：
 
-1. 环境变量 `SKILL_PACK_ROOT`（技能包根目录，三个平台通用）下的 `【炼化】特殊作业票预检/work-permit-precheck/`、`work-permit-precheck/`，以及其一级子目录中的 `work-permit-precheck/`（目录名被平台改名或转码时兜底）
+1. 环境变量 `SKILL_PACK_ROOT`（技能包根目录，三个平台通用）下的 `work-permit-precheck/`，以及其一级子目录中的 `work-permit-precheck/`
 2. 与本技能同级的 `../work-permit-precheck/`，以及同级一级子目录中的 `work-permit-precheck/`（第三方平台把技能并排装在同一个技能目录下时命中）
 3. `~/.workbuddy/skills/work-permit-precheck/`（WorkBuddy）
 4. `~/.claude/skills/work-permit-precheck/`（Claude Code）
 5. `~/.doubao/skills/work-permit-precheck/`（豆包，以平台实际加载目录为准）
-6. 开发仓库 `skill-pack-local/` 下的同名位置与一级子目录扫描
 
 ### 产出（末行 JSON）
 

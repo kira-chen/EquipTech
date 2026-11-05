@@ -1,6 +1,6 @@
 ---
 name: failure-investigation-assistant
-description: 设备故障调查资料归集与调查报告框架搭建。当用户提到"故障调查""设备事故调查""调查报告框架""时间线梳理""调查材料准备""把 DCS 和记录对一下时间"并提供相关记录（DCS 导出、报警/SOE、操作与巡检记录、值班记录、SAP PM 工单导出）时使用；按中石化设备事故调查报告常规章节搭框架，归集时间线、参数、报警与检修历史，列待查材料清单，原因分析/责任分析/防范措施三节留空由调查组填写。不做事故定性、分级、原因认定与责任划分；不编报事故快报（用【炼化】事故事件快报 incident-flash-report）、不写内部情况通报（用 equipment-event-notice）、不做日常异常初判（用 anomaly-triage-advisor）、不查同一台设备的历史重复故障（用 repeat-failure-detector）、不检索案例库（用 failure-case-retrieval）。
+description: 设备故障调查资料归集与调查报告框架搭建。当用户提到"故障调查""设备事故调查""调查报告框架""时间线梳理""调查材料准备""把 DCS 和记录对一下时间"并提供相关记录（DCS 导出、报警/SOE、操作与巡检记录、值班记录、SAP PM 工单导出）时使用；按中石化设备事故调查报告常规章节搭框架，归集时间线、参数、报警与检修历史，列待查材料清单，原因分析/责任分析/防范措施三节留空由调查组填写。不做事故定性、分级、原因认定与责任划分；不编报事故快报（用事故事件快报 incident-flash-report）、不写内部情况通报（用 equipment-event-notice）、不做日常异常初判（用 anomaly-triage-advisor）、不查同一台设备的历史重复故障（用 repeat-failure-detector）、不检索案例库（用 failure-case-retrieval）。
 allowed-tools: Read,Write,Bash
 agent_created: true
 metadata:
@@ -71,7 +71,7 @@ metadata:
 - 不在时间线中添加因果推断。
 - 不替代法定事故调查程序与调查组职责。
 - 不涉及人员姓名与追责性内容。
-- 不编报事故快报（用【炼化】事故事件快报 incident-flash-report）、不写内部通报（用 equipment-event-notice）。
+- 不编报事故快报（用事故事件快报 incident-flash-report）、不写内部通报（用 equipment-event-notice）。
 
 ## 参考资料（按需读取，路径相对技能根目录）
 | 文件 | 内容 | 何时读取 |

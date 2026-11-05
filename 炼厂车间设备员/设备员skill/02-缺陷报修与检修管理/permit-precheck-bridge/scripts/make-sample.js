@@ -13,6 +13,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const C = require('./lib/common');
 
 const a = C.parseArgs(process.argv.slice(2), ['out', 'seed'], []);
@@ -80,8 +81,11 @@ fs.writeFileSync(path.join(out, 'sample-workshop-notes-bad.json'), JSON.stringif
 // 依赖技能的用火（动火）票样例副本：找得到才复制，找不到只提示
 const depDocx = 'hotwork-level1-with-issues.docx';
 const cands = [];
-if (process.env.SKILL_PACK_ROOT) cands.push(path.join(process.env.SKILL_PACK_ROOT, '【炼化】特殊作业票预检', 'work-permit-precheck', 'examples', depDocx));
-cands.push(path.resolve(__dirname, '..', '..', '..', '..', '..', 'skill-pack-local', '【炼化】特殊作业票预检', 'work-permit-precheck', 'examples', depDocx));
+// 依赖技能位置与 check-dependency.js 同一套查找规则
+const dep = spawnSync(process.execPath, [path.join(__dirname, 'check-dependency.js')], { encoding: 'utf8' });
+let depRoot = null;
+try { const j = JSON.parse(dep.stdout.trim().split('\n').pop()); if (j.available) depRoot = j.root; } catch (e) { /* 找不到依赖时只提示 */ }
+if (depRoot) cands.push(path.join(depRoot, 'examples', depDocx));
 const hit = cands.find((p) => fs.existsSync(p));
 if (hit) fs.copyFileSync(hit, path.join(out, 'sample-hotwork-permit.docx'));
 else warnings.push(`未找到依赖技能样例 ${depDocx}，未生成 sample-hotwork-permit.docx（不影响其它样例）`);

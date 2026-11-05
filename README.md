@@ -12,7 +12,6 @@
 ├── tools/                 # 打包与图标脚本
 └── dist/                  # 打包产物，不入库
 
-skill-pack-local/          # 仅本地保留，不入库：6 个【炼化】技能及其打包产物
 .claude/skills/package-skills/  # 打包技能，运行 /package-skills
 ```
 

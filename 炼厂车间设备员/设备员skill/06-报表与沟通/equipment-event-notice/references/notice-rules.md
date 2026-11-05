@@ -98,7 +98,7 @@
 
 这两个技能都写"事件"，但是两回事，不要混用。
 
-| | `equipment-event-notice`（本技能） | `incident-flash-report`（`skill-pack/【炼化】事故事件快报/`） |
+| | `equipment-event-notice`（本技能） | `incident-flash-report`（事故事件快报） |
 |---|---|---|
 | 性质 | **内部情况通报**，信息共享 | **法定事故快报**，向上级与监管部门报送 |
 | 依据 | 厂内信息通报惯例 | 法规与厂内事故管理制度，有法定格式与**时限要求** |

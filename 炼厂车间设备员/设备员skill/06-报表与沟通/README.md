@@ -13,7 +13,7 @@
 | 7 | `equipment-event-notice` | 事件通报起草 | 内部情况通报，只陈述事实不做定性与追责 | 低 | 二 | ✅ 172 条断言 |
 
 ## 与已有技能的边界
-- `equipment-daily-report` 是**设备口径**（状态、缺陷、工单、检修）；skill-pack 中已有的 `unit-daily-report` 是**工艺口径**（物料平衡、收率、能耗、质量）。用户说"装置日报"时应走后者。
+- `equipment-daily-report` 是**设备口径**（状态、缺陷、工单、检修）；已有技能 `unit-daily-report` 是**工艺口径**（物料平衡、收率、能耗、质量）。用户说"装置日报"时应走后者。
 - `equipment-event-notice` 是**内部情况通报**；已有的 `incident-flash-report` 是**法定事故快报**，有格式与时限要求。可能构成需上报事故时必须提示走后者。
 - `equipment-energy-analysis`（08 类）是**单机能效**；已有的 `energy-weekly-report` 是**装置综合能耗**。
 

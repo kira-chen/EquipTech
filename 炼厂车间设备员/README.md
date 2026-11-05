@@ -33,4 +33,4 @@ bash 炼厂车间设备员/tools/package.sh --with-examples       # 开发包
 
 ## 外部依赖
 
-`permit-precheck-bridge` 依赖 `work-permit-precheck`，`overhaul-process-check-bridge` 依赖 `overhaul-safety-check`。这两个【炼化】技能不在本仓库内，部署时需要另外安装，或用环境变量 `SKILL_PACK_ROOT` 指向它们所在的目录。
+`permit-precheck-bridge` 依赖 `work-permit-precheck`，`overhaul-process-check-bridge` 依赖 `overhaul-safety-check`。这两个技能不在本仓库内，部署时需要另外安装，与 bridge 并排装在同一个技能目录下即可；装在别处时用环境变量 `SKILL_PACK_ROOT` 指向它们所在的目录。

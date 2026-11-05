@@ -21,12 +21,11 @@ node "<技能目录>/scripts/check-dependency.js" [--skill-root "<被依赖技�
 
 未指定 `--skill-root` 时按以下顺序查找 `scripts/check.js`：
 
-1. 环境变量 `SKILL_PACK_ROOT`（技能包根目录，三个平台通用）下的 `【炼化】检修方案安全措施核查/overhaul-safety-check/`、`overhaul-safety-check/`，以及其一级子目录中的 `overhaul-safety-check/`（目录名被平台改名或转码时兜底）
+1. 环境变量 `SKILL_PACK_ROOT`（技能包根目录，三个平台通用）下的 `overhaul-safety-check/`，以及其一级子目录中的 `overhaul-safety-check/`
 2. 与本技能同级的 `../overhaul-safety-check/`，以及同级一级子目录中的 `overhaul-safety-check/`（第三方平台把技能并排装在同一个技能目录下时命中）
 3. `~/.workbuddy/skills/overhaul-safety-check/`（WorkBuddy）
 4. `~/.claude/skills/overhaul-safety-check/`（Claude Code）
 5. `~/.doubao/skills/overhaul-safety-check/`（豆包，以平台实际加载目录为准）
-6. 开发仓库 `skill-pack-local/` 下的同名位置与一级子目录扫描
 
 ### 产出（末行 JSON）
 
@@ -109,4 +108,4 @@ node scripts/make-sample.js [--seed <n>]
 node scripts/selftest.js
 ```
 
-180 条断言，覆盖：依赖存在 / 不存在两条路径、`--skill-root` 只查指定路径、`SKILL_PACK_ROOT` 与一级子目录兜底、与依赖技能并排安装的同级目录、三平台默认目录、docx2text 探测、结果落盘；make-sample 可再生；**源技能 JSON → 合并报告逐条深拷贝不改写**（findings 全等含 name/advice/jobs、标签原词保留、八大类加注、未判定不改写、双重声明行顺序、六节结构、无 emoji、作业票为准提示）；检修分级映射（旧值 warning、非法值报错、不传不默认）；车间侧提示状态校验与不替用户推测；summary 不一致只 warning；未知级别、缺声明行与无 job_types；样例 result.json 与依赖技能真实输出逐字一致（顶层字段、规则号与规则名）；真实链路 check.js → merge-report 下 `--plan` 补出方案编号与作业类型、不传时留空并 warning、plan 与 result 不一致 warning、`--plan` 文件校验；无未判定时不出现【注意】；参数与输入校验；文档口径（触发词限定安全措施核查、PDF 前置、互指排除语、references 不与 permit bridge 重复）。全绿退出 0。
+装有依赖技能 overhaul-safety-check 时 180 条断言（未安装时跳过其中 17 条，163 条），覆盖：依赖存在 / 不存在两条路径、`--skill-root` 只查指定路径、`SKILL_PACK_ROOT` 与一级子目录兜底、与依赖技能并排安装的同级目录、三平台默认目录、docx2text 探测、结果落盘；make-sample 可再生；**源技能 JSON → 合并报告逐条深拷贝不改写**（findings 全等含 name/advice/jobs、标签原词保留、八大类加注、未判定不改写、双重声明行顺序、六节结构、无 emoji、作业票为准提示）；检修分级映射（旧值 warning、非法值报错、不传不默认）；车间侧提示状态校验与不替用户推测；summary 不一致只 warning；未知级别、缺声明行与无 job_types；样例 result.json 与依赖技能真实输出逐字一致（顶层字段、规则号与规则名）；真实链路 check.js → merge-report 下 `--plan` 补出方案编号与作业类型、不传时留空并 warning、plan 与 result 不一致 warning、`--plan` 文件校验；无未判定时不出现【注意】；参数与输入校验；文档口径（触发词限定安全措施核查、PDF 前置、互指排除语、references 不与 permit bridge 重复）。全绿退出 0。

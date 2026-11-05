@@ -8,11 +8,9 @@
  *
  * 路径来源（按优先级）：
  *   1. --skill-root（权威指定，只查这一个路径）
- *   2. 环境变量 SKILL_PACK_ROOT（技能包根目录，WorkBuddy / 豆包 / Claude Code 任一平台都可用它指定）
+ *   2. 环境变量 SKILL_PACK_ROOT（技能包根目录，WorkBuddy / 豆包 / Claude Code 任一平台都可用它指定）下的 <dep>，以及其一级子目录中的 <dep>
  *   3. 本技能所在技能目录的同级：<技能目录>/../<dep>（第三方平台把各技能并排装在同一目录时命中），以及同级一级子目录中的 <dep>
  *   4. 平台默认技能目录：~/.workbuddy/skills、~/.claude/skills、~/.doubao/skills（豆包路径以平台实际为准）
- *   5. 开发仓库 skill-pack-local 根目录下：<skill-pack>/【炼化】特殊作业票预检/<dep>、<skill-pack>/<dep>，
- *      以及 skill-pack 下任一一级子目录中的 <dep>（目录名带全角括号【】被改名/转码时仍能命中）
  */
 const fs = require('fs');
 const path = require('path');
@@ -22,12 +20,11 @@ const VALUE_OPTS = ['skill-root', 'out'];
 const FLAG_OPTS = ['help'];
 const DEP_NAME = 'work-permit-precheck';
 const DEP_SCRIPT = 'precheck.js';
-const DEP_PACK_DIR = '【炼化】特殊作业票预检';
 const DEP_CN = '特殊作业票预检';
 
 const PLATFORM_NOTE = '技能目录由平台决定：WorkBuddy 默认 ~/.workbuddy/skills，Claude Code 默认 ~/.claude/skills，豆包以平台实际加载目录为准；'
   + '任一平台都可用环境变量 SKILL_PACK_ROOT 指向技能包根目录，或用 --skill-root 直接指定依赖技能目录。'
-  + '目录名含全角括号【】时在 shell 里须加引号，路径被平台转码/改名时脚本会扫描 skill-pack 一级子目录兜底。';
+  + '目录名含全角括号等特殊字符时在 shell 里须加引号；依赖技能放在技能包根目录的下一级子目录里时也能找到。';
 
 /** 候选搜索路径；显式 --skill-root 时只查这一个路径，不回退 */
 function candidates(explicit) {
@@ -35,7 +32,6 @@ function candidates(explicit) {
   const list = [];
   const packRoot = process.env.SKILL_PACK_ROOT;
   if (packRoot) {
-    list.push(path.join(packRoot, DEP_PACK_DIR, DEP_NAME));
     list.push(path.join(packRoot, DEP_NAME));
     list.push(...scanOneLevel(packRoot));
   }
@@ -49,17 +45,12 @@ function candidates(explicit) {
     list.push(path.join(home, '.claude', 'skills', DEP_NAME));
     list.push(path.join(home, '.doubao', 'skills', DEP_NAME));
   }
-  // 本技能位于 <仓库根>/炼厂车间设备员/设备员skill/<二级>/<技能>/scripts，回溯到仓库根后进入 skill-pack-local
-  const skillPack = path.resolve(__dirname, '..', '..', '..', '..', '..', 'skill-pack-local');
-  list.push(path.join(skillPack, DEP_PACK_DIR, DEP_NAME));
-  list.push(path.join(skillPack, DEP_NAME));
-  list.push(...scanOneLevel(skillPack));
   // 去重
   const seen = new Set();
   return list.filter((p) => (seen.has(p) ? false : (seen.add(p), true)));
 }
 
-/** 扫描 root 下一级子目录中的 <dep>/（兼容全角括号目录被改名的情况），只返回实际存在的 */
+/** 扫描 root 下一级子目录中的 <dep>/，只返回实际存在的 */
 function scanOneLevel(root) {
   const out = [];
   let ents = [];

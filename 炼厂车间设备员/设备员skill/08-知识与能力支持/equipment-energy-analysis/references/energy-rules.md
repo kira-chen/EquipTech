@@ -2,7 +2,7 @@
 
 ## 〇、口径边界：本技能 vs energy-weekly-report
 
-| | 本技能 equipment-energy-analysis | energy-weekly-report（skill-pack/【炼化】能耗周报与对标/） |
+| | 本技能 equipment-energy-analysis | energy-weekly-report（能耗周报与对标） |
 |---|---|---|
 | 口径 | **单台设备的能效**（泵效率、炉热效率、电机效率…） | **装置综合能耗**（工艺口径，吨原料综合能耗、单位能耗指标） |
 | 对象 | 一台泵、一台风机、一台加热炉 | 一套常减压、一套加氢装置 |

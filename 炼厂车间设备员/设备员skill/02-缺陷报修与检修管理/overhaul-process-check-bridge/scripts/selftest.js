@@ -87,8 +87,8 @@ eq(r.s.ok, true, '5.1 无参数可运行');
 ok(Array.isArray(r.s.searched) && r.s.searched.length >= 4, '5.2 默认搜索多个候选路径');
 ok(r.s.searched.some((p) => p.includes('.workbuddy')) && r.s.searched.some((p) => p.includes('.claude')) && r.s.searched.some((p) => p.includes('.doubao')), '5.3 默认候选覆盖三个平台目录');
 const packRoot = path.join(work, 'pack');
-fs.mkdirSync(path.join(packRoot, '【炼化】检修方案安全措施核查', 'overhaul-safety-check', 'scripts'), { recursive: true });
-fs.writeFileSync(path.join(packRoot, '【炼化】检修方案安全措施核查', 'overhaul-safety-check', 'scripts', 'check.js'), '// stub');
+fs.mkdirSync(path.join(packRoot, 'sub-pack', 'overhaul-safety-check', 'scripts'), { recursive: true });
+fs.writeFileSync(path.join(packRoot, 'sub-pack', 'overhaul-safety-check', 'scripts', 'check.js'), '// stub');
 r = runChk([], { SKILL_PACK_ROOT: packRoot });
 eq(r.s.available, true, '5.4 SKILL_PACK_ROOT 指向技能包根目录时可命中');
 ok(r.s.root && r.s.root.startsWith(packRoot), '5.5 命中的是 SKILL_PACK_ROOT 下的依赖');
@@ -120,7 +120,7 @@ try { ps = JSON.parse(pr.stdout.trim().split('\n').pop()); } catch (e) { ps = {}
 eq(ps.available, false, '5.10 同级目录没有依赖技能时判不可用');
 
 // ============ 6. make-sample 可再生 ============
-// make-sample 要调用依赖技能 overhaul-safety-check 生成真实 result.json。依赖技能不在本仓库（skill-pack-local 不入库），
+// make-sample 要调用依赖技能 overhaul-safety-check 生成真实 result.json。依赖技能不在本仓库，
 // 找不到时改用已入库的演示样例（演示case/），跳过需要依赖技能的断言并在结尾说明，不让其他成员的自测和打包因此失败。
 const depInfo = runChk([]).s;
 const depRoot = depInfo.available ? depInfo.root : null;

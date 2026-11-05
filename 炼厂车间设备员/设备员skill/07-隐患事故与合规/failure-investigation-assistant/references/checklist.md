@@ -55,7 +55,7 @@
 ## 用户要求填原因结论时（硬约束七）
 - [ ] 已明确答复「**本技能不提供原因认定、事故定性与责任划分内容；该部分须由依规成立的调查组填写**」
 - [ ] **没有以任何名义变相给出原因判断**（「仅供参考」「私下说」「初步倾向」都不行）
-- [ ] 已引导：材料按待查清单调齐后交调查组；需对外通报用 `equipment-event-notice`；需编报快报用【炼化】事故事件快报 `incident-flash-report`；重复故障用 `repeat-failure-detector`；案例检索用 `failure-case-retrieval`
+- [ ] 已引导：材料按待查清单调齐后交调查组；需对外通报用 `equipment-event-notice`；需编报快报用事故事件快报 `incident-flash-report`；重复故障用 `repeat-failure-detector`；案例检索用 `failure-case-retrieval`
 
 ## 材料完整性
 - [ ] 时间窗口与缺口阈值已与用户确认（72 h / 24 h / 120 min 是经验默认，不是制度数值）；`meta.window.defaulted` 中为 true 的项已向用户说明

@@ -1,6 +1,6 @@
 ---
 name: package-skills
-description: 打包炼厂车间设备员的 50 个技能：先跑自测，再生成 zip 发布包和技能清单。当用户说打包、出包、重新打包、生成上传包、更新技能清单，或要打某一个技能的发布包、开发包时使用。不处理 skill-pack-local 里的【炼化】技能。
+description: 打包炼厂车间设备员的 50 个技能：先跑自测，再生成 zip 发布包和技能清单。当用户说打包、出包、重新打包、生成上传包、更新技能清单，或要打某一个技能的发布包、开发包时使用。只处理 `炼厂车间设备员/设备员skill/` 下的技能。
 ---
 
 # 设备员技能打包
@@ -35,4 +35,4 @@ description: 打包炼厂车间设备员的 50 个技能：先跑自测，再生
 
 ## 依赖提醒
 
-`permit-precheck-bridge` 和 `overhaul-process-check-bridge` 运行时依赖【炼化】技能，这两个依赖不在本仓库内。打包不受影响，部署时要同时安装对应的依赖技能。
+`permit-precheck-bridge` 和 `overhaul-process-check-bridge` 运行时分别依赖 `work-permit-precheck`、`overhaul-safety-check`，这两个技能不在本仓库内。打包不受影响，部署时要同时安装对应的依赖技能。

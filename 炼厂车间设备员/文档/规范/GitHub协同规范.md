@@ -19,7 +19,7 @@ git config core.quotepath false      # 让中文文件名正常显示
 git config pull.ff only              # 防止 pull 时产生意外合并
 ```
 
-`skill-pack-local/` 和 `炼厂车间设备员/dist/` 不入库，需要时在本地生成或单独获取。
+`炼厂车间设备员/dist/` 不入库，需要时在本地生成。
 
 ## 二、日常节奏
 
@@ -158,7 +158,7 @@ git branch -d work/<分支名>
 - 不要把工作分支推送到远端，也不要在远端保留 `main` 以外的分支。
 - 不要跳过冲突检测和验证，直接推送 `main`。
 - 不要使用 `git push --force`、`--force-with-lease`，也不要 rebase 或 `reset --hard` 已推送的内容后强推。
-- 不要提交 `dist/`、`skill-pack-local/`、临时文件、真实业务数据和密钥。
+- 不要提交 `dist/`、临时文件、真实业务数据和密钥。
 - 不要用 `--no-verify` 跳过检查，也不要为了通过验证修改自测。
 - 不要在未看清改动时使用 `git add .`。
 
