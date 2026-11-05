@@ -242,22 +242,26 @@ function main() {
         const toIdx = (m) => { const [y, mm] = m.split('-').map(Number); return y * 12 + mm - 1; };
         const toMon = (i) => `${Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}`;
         let lo = toIdx(sorted[0]), hi = toIdx(sorted[sorted.length - 1]);
-        // 窗口最后一个月是运行当月：未满月，不计入期数，该月领用也不计入月均（否则按整月摊会压低月均）
+        // 窗口最后一个月是运行当月：未满月，不计入期数，该月领用也不计入月均（否则按整月摊会压低月均）。
+        // 窗口只有当月时同样剔除，此时没有可用的历史月，按历史不足处理
         const cur = C.localDate().slice(0, 7);
-        if (toMon(hi) === cur && hi > lo) {
+        if (toMon(hi) === cur) {
           hi--;
           let dropped = 0;
           for (const g of histAgg.values()) if (g.mb51 && g.periods.has(cur)) { g.periods.delete(cur); dropped++; }
-          warnings.push(`物料凭证（MB51）最后一个月 ${cur} 为当月、未满月，不计入期数与月均${dropped ? `（涉及 ${dropped} 个物料的当月领用）` : ''}`);
+          if (hi >= lo) warnings.push(`物料凭证（MB51）最后一个月 ${cur} 为当月、未满月，不计入期数与月均${dropped ? `（涉及 ${dropped} 个物料的当月领用）` : ''}`);
+          else warnings.push(`物料凭证（MB51）只有当月 ${cur} 的数据，当月未满月，不计入期数与月均${dropped ? `（涉及 ${dropped} 个物料）` : ''}；没有可用的历史月份，无法按月均推算，请补充此前月份的物料凭证`);
         }
-        let filled = 0;
-        for (const g of histAgg.values()) {
-          if (!g.mb51) continue;
-          for (let i = lo; i <= hi; i++) { const m = toMon(i); if (!g.periods.has(m) && !g.badMonths.has(m)) { g.periods.set(m, 0); g.zeroMonths.add(m); } }
-          if (g.zeroMonths.size) filled++;
+        if (hi >= lo) {
+          let filled = 0;
+          for (const g of histAgg.values()) {
+            if (!g.mb51) continue;
+            for (let i = lo; i <= hi; i++) { const m = toMon(i); if (!g.periods.has(m) && !g.badMonths.has(m)) { g.periods.set(m, 0); g.zeroMonths.add(m); } }
+            if (g.zeroMonths.size) filled++;
+          }
+          mb51Window = { from: toMon(lo), to: toMon(hi), months: hi - lo + 1 };
+          if (filled) warnings.push(`物料凭证（MB51）导出窗口 ${toMon(lo)}~${toMon(hi)} 共 ${hi - lo + 1} 个月，${filled} 个物料窗口内无领用的月份按 0 计入期数（凭证表没有领用凭证即当月未领用）`);
         }
-        mb51Window = { from: toMon(lo), to: toMon(hi), months: hi - lo + 1 };
-        if (filled) warnings.push(`物料凭证（MB51）导出窗口 ${toMon(lo)}~${toMon(hi)} 共 ${hi - lo + 1} 个月，${filled} 个物料窗口内无领用的月份按 0 计入期数（凭证表没有领用凭证即当月未领用）`);
       }
       if (mvtReversed) warnings.push(`历史消耗含 ${mvtReversed} 行冲销（移动类型 262/202 等），已按负数抵减当月消耗`);
       if (mvtSkipped) warnings.push(`历史消耗含 ${mvtSkipped} 行非发料/非冲销移动类型（如 101 收货、311 转储），不计入消耗`);

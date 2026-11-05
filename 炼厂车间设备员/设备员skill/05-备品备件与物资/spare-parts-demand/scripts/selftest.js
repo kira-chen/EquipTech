@@ -397,6 +397,18 @@ const rc = [...rcur.j.items, ...rcur.j.lowConfidence].find((x) => x.code === 'R-
 eq(rc.periodsUsed, 6, 'Q8 MB51 当月未满月不计入期数');
 eq(rc.monthlyAvg, 2, 'Q9 当月未满月的领用不计入月均（不按整月摊）');
 ok(rcur.j.warnings.some((w) => /未满月/.test(w)), 'Q10 当月未满月 warning');
+// 只有当月的 MB51：当月同样不计入，按历史不足处理（ET-001：原来窗口只有一个月时没有排除当月）
+const ronly = run(['--input', mk('cur-only-mb51.xlsx', { '物料凭证': [['物料', '物料描述', '基本计量单位', '过账日期', '数量', '移动类型'],
+  ['R-02', '机械密封 R2', 'ST', `${curMon}-01`, -3, '261'], ['R-02', '机械密封 R2', 'ST', `${curMon}-02`, -1, '261']] }), ...BASE], 'cur-only');
+const ro = [...ronly.j.items, ...ronly.j.lowConfidence].find((x) => x.code === 'R-02') || {};
+ok(!ronly.j.items.some((x) => x.code === 'R-02'), 'Q10a 只有当月 MB51 数据时不进正式清单');
+eq(ro.periodsUsed, 0, 'Q10b 只有当月时当月不计入期数');
+eq(ro.monthlyAvg, null, 'Q10c 只有当月时不算月均');
+eq(ro.grossQty, null, 'Q10d 只有当月时不给出按月均推算的需求量');
+ok(ronly.j.warnings.some((w) => /只有当月/.test(w) && /补充/.test(w)), 'Q10e 只有当月时 warning 提示补充历史数据');
+ok(!/0 个月/.test(ronly.md || '') && !ronly.j.warnings.some((w) => /共 0 个月/.test(w)), 'Q10f 不写出「0 个月」的导出窗口');
+// 只有完整历史月（不含当月）：不出当月未满月的提示，行为不变
+ok(!rqs.j.warnings.some((w) => /未满月|只有当月/.test(w)), 'Q10g 只有完整历史月时不出当月相关提示');
 // 数量无法解析的月份：不按 0 计入分母，补 0 时跳过（2026-11-04 复核补充）
 const rbad = run(['--input', mk('bad-mb51.xlsx', { '物料凭证': [['物料', '物料描述', '基本计量单位', '过账日期', '数量', '移动类型'],
   ...mon('2025-01', 8).map((m) => ['W-01', '机械密封 W', 'ST', `${m}-10`, m === '2025-04' ? '两件' : -2, '261'])] }), ...BASE], 'bad-mb51');
