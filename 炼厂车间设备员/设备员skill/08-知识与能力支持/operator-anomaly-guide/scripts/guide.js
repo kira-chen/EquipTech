@@ -29,6 +29,8 @@ const ALIASES = C.mergeAliases({
   '设备类型': ['设备类型', '类型', '设备类别', '对象类型', '设备分类', '专业类别'],
   '区域': ['区域', '装置区', '位置', '装置', '工厂区段', '单元', '装置名称', '生产单元'],
 });
+// 车间范围核对（D007）：「车间」只认真正的车间列（车间/所属车间/属地车间/运行部及其后加「名称」），共享别名里的维护工厂、属地单位、使用单位、作业部不占用车间字段
+ALIASES['车间'] = [...C.WORKSHOP_COLS, ...C.WORKSHOP_COLS.map((c) => c + '名称')];
 
 function loadBook(p) { return fs.statSync(p).isDirectory() ? readCsvDir(p) : readXlsx(p); }
 
@@ -45,11 +47,16 @@ function main() {
   // ---- 设备范围：从清单或从 --scope 文本
   const types = new Map();   // type -> [{tag,name,area}]
   const ledgerRecs = [];     // 清单有效设备 {type,tag,name,area}
+  const scopes = [];         // 车间范围核对结果（D007），只核对 --ledger 设备清单
   if (a.ledger) {
     if (!fs.existsSync(a.ledger)) throw new Error(`设备清单不存在: ${a.ledger}`);
     const rows = C.pickSheet(loadBook(a.ledger), '设备台账', '设备清单', '台账', '设备');
     if (!rows) throw new Error('设备清单文件中未找到「设备台账」工作表');
-    const recs = C.toRecords(rows, ['位号'], '设备台账', ['设备名称', '设备类型', '区域'], warnings, ALIASES);
+    const allRecs = C.toRecords(rows, ['位号'], '设备台账', ['设备名称', '设备类型', '区域', '车间'], warnings, ALIASES);
+    // 车间范围核对：清单带车间列时按 --workshop 剔除其他车间的设备；列全不一致时不筛并【注意】提示
+    const ws = C.workshopScope(allRecs, a.workshop, '设备台账', warnings);
+    scopes.push(ws.scope);
+    const recs = ws.records;
     for (const r of recs) {
       const tag = C.str(r['位号']);
       if (!tag) { warnings.push(`工作表「设备台账」第${r._row}行 位号为空，已跳过`); continue; }
@@ -163,7 +170,8 @@ function main() {
   const statement = '本材料仅供参考，不替代操作规程与检修规程；为设备专业建议稿，由车间工艺/安全审核后纳入岗位操作法或 HSE 作业指导书，并与厂内操作规程、应急预案一致后发放；遇紧急情况以应急预案为准。';
   const result = {
     meta: { workshop: a.workshop, scope: a.scope || null, format, generatedAt: C.localDateTime(),
-      ledgerProvided: !!a.ledger, specProvided: !!a.spec, noTouch, touchQualifier: noTouch ? null : S.TOUCH_QUALIFIER, statement },
+      ledgerProvided: !!a.ledger, specProvided: !!a.spec, noTouch, touchQualifier: noTouch ? null : S.TOUCH_QUALIFIER, statement,
+      workshopScope: scopes },
     counts, sections, reportPath, emergency: S.EMERGENCY,
     outOfScope: actionCheck ? actionCheck.blocked : null,
     scopeRules: S.OUT_OF_SCOPE.map(([id, , reason]) => ({ ruleId: id, reason })),
@@ -171,11 +179,14 @@ function main() {
   };
   fs.writeFileSync(path.join(outDir, 'guide.json'), JSON.stringify(result, null, 2), 'utf8');
 
+  const wsNote = C.workshopScopeNote(scopes, a.workshop);
   const L = [];
   L.push(`# ${a.workshop} 设备异常识别与上报指引`);
   L.push('');
+  if (wsNote.alert) { L.push(`> **${wsNote.alert}**`); L.push(''); }
   L.push(`发给：岗位操作工　｜　发现异常报告给：**${reportPath.to}**`);
   L.push(`编制：车间设备员（设备专业建议稿）　｜　审核：车间工艺 / 安全　｜　生成时间：${C.localDateTime()}（北京时间）`);
+  if (wsNote.note) L.push(wsNote.note);
   L.push('');
   L.push('> **这张卡解决四件事：看什么、什么算异常、先做什么、找谁报。**');
   L.push('> 不要求你判断原因，也不要求你动手修。**看到不对，停下来，报上去。**');

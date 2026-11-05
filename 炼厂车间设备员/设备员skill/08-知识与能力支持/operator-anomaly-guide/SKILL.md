@@ -36,7 +36,7 @@ metadata:
 取数后：
 
 1. 工具返回下载链接（60 分钟内有效，过期重新调用）。csv 按原文件名放进新建的空目录，不改文件名，不与其他技能的文件混放；把目录作为“交给脚本”一列的参数值。
-2. `get_equipment_ledger`：按台账的设备类型分节，区域取「装置」列。
+2. `get_equipment_ledger`：按台账的设备类型分节，区域取「装置」列；必须带 `workshop`。脚本只在输入带车间列时按 --workshop 核对（剔除其他车间的行；车间列全不一致时不筛并在报告开头提示）；MCP 导出多数不带车间列，取数时仍必须带 workshop（只核对 `--ledger` 设备清单）。
 
 操作规程或应急预案来自平台知识库，可作 `--spec`（可选）。
 
@@ -47,7 +47,7 @@ metadata:
    node "<技能目录绝对路径>/scripts/guide.js" --scope "<设备类型或范围>" --workshop "<车间名>" --report-to "<上报对象>" --out "<工作目录>/操作工指引"
    ```
    可选：`--ledger "<设备清单xlsx>"`（与 `--scope` 同时给时按 scope 过滤清单，只保留 scope 内的设备类型、位号或区域，warning 写明剔除台数）、`--spec "<操作规程或应急预案路径>"`、`--emergency "<紧急上报方式>"`、`--format <卡片|手册>`、`--actions "<自拟处置动作,逗号分隔>"`、`--no-touch`（去掉全部"摸"类观察点与依赖手摸的异常特征；不加时每条"摸"类观察点自动带"仅在操作规程允许且确认安全时"限定语）。
-   读取末行 JSON 摘要（同时写入 `<out>/summary.json`）：`ok` 必须为 `true`，`ok:false` 时把 `error` 告知用户并终止；`warnings` 非空时逐条告知用户（设备类型不覆盖/规程无法解析/上报路径未提供等）。脚本用法详见 `scripts/README.md`。
+   读取末行 JSON 摘要（同时写入 `<out>/summary.json`）：`ok` 必须为 `true`，`ok:false` 时把 `error` 告知用户并终止；`warnings` 非空时逐条告知用户（设备类型不覆盖/规程无法解析/上报路径未提供/清单按车间剔除的台数与车间名/车间列为空的行数等）。warning 以【注意】开头说清单车间列取值与 --workshop 不一致时，多半是传错了文件，先请用户核对清单再交付。脚本用法详见 `scripts/README.md`。
    - **脚本会校验每条处置动作是否超出操作工职责**（如"打开泵盖检查""调整联轴器""拆接线""用火补焊"），命中时拦截并 warning，**模型必须改为"停止操作并上报"**。"检查接线盒外观"这类观察描述不拦；"确认联锁未旁路后上报""泵停用后观察报警是否消失"这类否定、疑问或观察写法不拦；"对泄漏法兰进行包扎""把保温拆掉检查""摘掉联锁""打旁路"照样拦截。
    - 白名单里"切换至备用设备""降低负荷"自带"经值班领导/内操同意后执行"限定语，脚本已写进指引卡正文，**不得删掉**。
 3. **读取 guide.json** —— 从 `<输出目录>/guide.json` 获取：`sections[]`（按设备类型：`observe.看/听/摸/闻`、`abnormalSigns`、`immediateActions`、`actionNote`、`equipment`、`covered`）、`reportPath`（`to`、`emergency`、`elements`）、`emergency`（撤离条件）、`outOfScope`（被拦截的超范围动作）、`meta.noTouch`、`meta.statement`、`counts`。

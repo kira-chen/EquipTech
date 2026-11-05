@@ -592,6 +592,41 @@ eq(rp7.summary.counts.insufficientData, 2, '28.17 seed 变多变样例结论不�
   ok(r.summary.warnings.some((w) => /没有运行时间列/.test(w)), '30.21 无运行时间列时 warning 写明缺列');
 }
 
+// ---- 31. 车间范围核对（D007）：运行数据带车间列时按 --workshop 核对
+{
+  const sc = (i) => ((r.data && r.data.meta.workshopScope) || [])[i] || {};
+  const H = [...PUMP_HDR, '车间'];
+  const wsMix = mk('ws-mix.xlsx', { '运行数据': [H,
+    [...pumpRow('P-A1', 0.80), '测试车间'], [...pumpRow('P-A2', 0.75), '测试'],
+    [...pumpRow('P-B1', 0.30), '催化车间'], [...pumpRow('P-B2', 0.40), '催化车间'], [...pumpRow('P-C1', 0.60), ''],
+  ] });
+  r = run(wsMix, [], 'ws-mix');
+  eq(r.summary.counts.equipment, 3, '31.1 混合输入只纳入本车间与车间为空的设备（剔除催化车间 2 台）');
+  ok(!r.data.byEquipment.some((x) => /^P-B/.test(x.tag)), '31.2 其他车间设备不进逐台能效');
+  eq(r.data.groupComparison[0] && r.data.groupComparison[0].medianPct, 75, '31.3 组内中位数只按本车间设备算（80/75/60 → 75%）');
+  eq(r.data.lowEfficiency.map((x) => x.tag).join(','), 'P-C1', '31.4 能效偏低只含本车间设备，车间为空的 P-C1 按本车间保留');
+  ok(r.summary.warnings.some((w) => /剔除其他车间 2 行/.test(w) && w.includes('催化车间 2 行')), '31.5 warning 写明剔除行数与车间名');
+  ok(r.summary.warnings.some((w) => /车间列为空 1 行/.test(w)), '31.6 warning 写明车间为空行数');
+  eq(sc(0).status, 'checked', '31.7 meta.workshopScope 记录已核对');
+  eq(sc(0).droppedRows, 2, '31.8 meta.workshopScope 记录剔除行数');
+  eq((sc(0).dropped || {})['催化车间'], 2, '31.9 meta.workshopScope 按车间记录剔除');
+  ok(/车间范围：已按车间列核对「测试车间」/.test(r.md || ''), '31.10 md 口径处写明按车间核对与剔除');
+  const wsBad = mk('ws-bad.xlsx', { '运行数据': [H, [...pumpRow('P-D1', 0.80), '催化车间'], [...pumpRow('P-D2', 0.70), '焦化车间']] });
+  r = run(wsBad, [], 'ws-bad');
+  eq(r.summary.counts.equipment, 2, '31.11 车间列全不一致时不筛');
+  ok(r.summary.warnings.some((w) => w.startsWith('【注意】') && /未按车间筛选/.test(w)), '31.12 warning 以【注意】开头');
+  eq(sc(0).status, 'mismatch', '31.13 meta.workshopScope 记录不一致');
+  const ai = (r.md || '').indexOf('【注意】工作表「运行数据」的车间列取值与 --workshop「测试车间」不一致');
+  ok(ai > 0 && ai < r.md.indexOf('## 一、统计概览'), '31.14 md 开头（第一节之前）有【注意】提示');
+  r = run(base, [], 'ws-none');
+  eq(sc(0).status, 'noColumn', '31.15 无车间列 status 为 noColumn');
+  ok((r.md || '').includes('输入未含车间列，车间范围以取数条件为准'), '31.16 md 口径处说明无车间列');
+  const wsPlant = mk('ws-plant.xlsx', { '运行数据': [[...PUMP_HDR, '维护工厂'], [...pumpRow('P-E1', 0.80), '1100'], [...pumpRow('P-E2', 0.70), '1200']] });
+  r = run(wsPlant, [], 'ws-plant');
+  eq(sc(0).status, 'noColumn', '31.17 「维护工厂」列不当车间列（noColumn）');
+  eq(r.summary.counts.equipment, 2, '31.18 「维护工厂」列不触发筛选');
+}
+
 // ---- 输出
 console.log(`\n${'='.repeat(56)}`);
 console.log(`equipment-energy-analysis 自测：${pass} 通过，${fail} 失败`);

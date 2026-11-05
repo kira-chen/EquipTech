@@ -23,7 +23,7 @@ node "<技能目录>/scripts/training.js" \
 | `--questions` | 否 | 题目数量（正整数）。超过素材上限时按上限出并 warning |
 | `--types` | 否 | 题型：单选 / 多选 / 判断 / 简答，逗号分隔，默认四种全用 |
 | `--difficulty` | 否 | 基础 / 中等 / 较难，默认按培训对象（新员工、三级安全教育=基础；其余=中等） |
-| `--workshop` | 否 | 车间名，写进材料抬头 |
+| `--workshop` | 否 | 车间名，写进材料抬头；同时给 `--ledger` 且台账带车间列时按它核对车间范围 |
 | `--no-negative-judge` | 否 | 判断题只出肯定式（默认交替出肯定式 / 否定式，否定式不改数值） |
 
 ### 产出
@@ -33,7 +33,7 @@ node "<技能目录>/scripts/training.js" \
 | `培训提纲.md` | 培训目标、模块与学时分配、各模块内容、实操考核项、不在范围内的内容 |
 | `讲义要点.md` | 资料来源、通用原理要点、厂内规定要点（逐条带出处）、无资料支撑的内容 |
 | `考题与答案.md` | 题量构成、考题、答案与出处表、无资料支撑未出数值题的主题 |
-| `training.json` | `outline` / `keyPoints` / `questions` / `practicalItems` / `noSourceTopics` / `counts` / `blockedTopics` / `forbiddenRules` |
+| `training.json` | `outline` / `keyPoints` / `questions` / `practicalItems` / `noSourceTopics` / `counts` / `blockedTopics` / `forbiddenRules` / `meta.workshopScope`（台账车间范围核对结果，未给 `--ledger` 时为空数组） |
 | `summary.json` | 末行摘要落盘 |
 
 ### 退出码
@@ -52,6 +52,7 @@ node "<技能目录>/scripts/training.js" \
 8. **学时缺失为 null**。显示「—」，不按 0 也不臆造。
 9. **内置原理条目标 builtin**。`PRINCIPLES` 每条 `source: 'builtin'`，题目与讲义要点 `origin: builtin`，声明行点名须经车间技术人员审核；`counts.questionsBuiltinPrinciple` 计数。
 10. **产出 md 不用 emoji**，醒目提示用「【注意】」。
+11. **车间范围核对**：`--ledger` 设备清单（给了 `--workshop` 时）带车间列（车间/所属车间/属地车间/运行部，或其后加「名称」；「车间负责人」等人员列不算）时按 `--workshop` 核对：剔除其他车间的行并 warning，车间为空的行保留；没有一行是本车间时不筛，warning 与报告开头写【注意】；无车间列不筛，口径写「以取数条件为准」；「维护工厂」不当车间列。`meta.workshopScope` 为数组，每张表一项：`sheet`、`status`（`noWorkshop`/`noColumn`/`checked`/`mismatch`）、`column`、`total`、`kept`、`droppedRows`、`dropped`（按车间的剔除行数）、`blank`。三份 md 抬头写车间范围口径，车间列全不一致时标题下写【注意】提示；未给 `--workshop` 时不核对（`noWorkshop`）、不写口径。
 
 ## lib/tm.js —— 口径库与数值识别
 
@@ -107,4 +108,4 @@ node scripts/make-sample.js [--seed <n>]
 node scripts/selftest.js
 ```
 
-254 条断言，覆盖：数值识别（含条款号 / 年份不误判）、六类培训对象深度（含复岗 / 四新 / 三级安全教育的厂级归口声明）、通用原理库无数值全扫与 builtin 标记、规程类拦截（含「用火作业许可证办理流程」）、**无资料时正则扫描产出不得出现带数值的答案**、数值题出处完整性、题量不足不凑数、干扰项无数值、判断题否定式（数字序列一致、复合词不误改、`--no-negative-judge`）、题型限定、设备清单别名与合计行、SAP IH08 列名（功能位置作位号、8 位设备号不作位号）、学时 null、16 项参数校验、资料格式与出处写法（含 docx 段落 / 表格行出处、损坏 docx warning 跳过）、培训类声明行与建议稿抬头、无 emoji、TYPE_PATTERNS 与 operator-anomaly-guide 同源、SKILL/training-rules 文档同步、make-sample SAP 样例可再生、数值题干遮蔽区间两端与比较词后的数（P 组，2026-11-04）、连字符区间两端与负数连同负号遮蔽、位号不遮、「反应器」归塔器容器、资料目录中的 PDF 与不支持格式逐个 warning 不静默丢弃、「数字-数字」编号尾段不遮（P12~P15）、`--ledger` 与 `--scope` 同时给时按 scope 过滤清单（I10~I18）。
+273 条断言，覆盖：数值识别（含条款号 / 年份不误判）、六类培训对象深度（含复岗 / 四新 / 三级安全教育的厂级归口声明）、通用原理库无数值全扫与 builtin 标记、规程类拦截（含「用火作业许可证办理流程」）、**无资料时正则扫描产出不得出现带数值的答案**、数值题出处完整性、题量不足不凑数、干扰项无数值、判断题否定式（数字序列一致、复合词不误改、`--no-negative-judge`）、题型限定、设备清单别名与合计行、SAP IH08 列名（功能位置作位号、8 位设备号不作位号）、学时 null、16 项参数校验、资料格式与出处写法（含 docx 段落 / 表格行出处、损坏 docx warning 跳过）、培训类声明行与建议稿抬头、无 emoji、TYPE_PATTERNS 与 operator-anomaly-guide 同源、SKILL/training-rules 文档同步、make-sample SAP 样例可再生、数值题干遮蔽区间两端与比较词后的数（P 组，2026-11-04）、连字符区间两端与负数连同负号遮蔽、位号不遮、「反应器」归塔器容器、资料目录中的 PDF 与不支持格式逐个 warning 不静默丢弃、「数字-数字」编号尾段不遮（P12~P15）、`--ledger` 与 `--scope` 同时给时按 scope 过滤清单（I10~I18）、P002 台账车间范围核对（W 组 19 条：两车间混合只留本车间、车间为空保留、全不一致不筛并【注意】、无车间列口径说明、「维护工厂」不当车间列、未给 --workshop 不核对）。

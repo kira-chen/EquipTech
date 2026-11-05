@@ -63,6 +63,8 @@ const ALIASES = C.mergeAliases({
   '介质单位': ['介质单位', '计价单位', '单位'],
   '时段': ['时段', '电价时段', '峰谷', '峰平谷', '时段类型'],
 });
+// 车间范围核对（D007）：「车间」只认真正的车间列（车间/所属车间/属地车间/运行部及其后加「名称」），共享别名里的维护工厂、属地单位、使用单位、作业部不占用车间字段
+ALIASES['车间'] = [...C.WORKSHOP_COLS, ...C.WORKSHOP_COLS.map((c) => c + '名称')];
 
 /** 设备类型归一化：把用户写法映射到内部类型键 */
 const TYPE_KEYS = [
@@ -266,8 +268,13 @@ function main() {
   if (!runSheet) throw new Error('未找到「运行数据」工作表');
   const OPT_COLS = ['设备名称', '设备类型', '分组', '流量', '扬程', '全压', '轴功率', '电机功率', '电机效率', '介质密度',
     '进口压力', '出口压力', '进口温度', '出口温度', '绝热指数', '输出功率', '输入功率',
-    '燃料量', '低位发热值', '有效热负荷', '换热量', '换热面积', '对数平均温差', '运行时间'];
-  const runs = C.toRecords(runSheet, ['位号'], '运行数据', OPT_COLS, warnings, ALIASES);
+    '燃料量', '低位发热值', '有效热负荷', '换热量', '换热面积', '对数平均温差', '运行时间', '车间'];
+  const allRuns = C.toRecords(runSheet, ['位号'], '运行数据', OPT_COLS, warnings, ALIASES);
+  // 车间范围核对（D007）：运行数据带车间列时按 --workshop 剔除其他车间的行；列全不一致时不筛并【注意】提示。设计参数、分组、单价表按位号查找，不核对
+  const wsRuns = C.workshopScope(allRuns, a.workshop, '运行数据', warnings);
+  const scopes = [wsRuns.scope];
+  const wsNote = C.workshopScopeNote(scopes, a.workshop);
+  const runs = wsRuns.records;
 
   // ---- 设计参数（可选；无设计参数时只做横向对比，不做偏差分析）
   const designMap = new Map();
@@ -574,6 +581,7 @@ function main() {
       baselineRule: '有设计效率的以设计效率为基准；无设计效率但组内同类设备 ≥2 台的以组内中位数为基准；两者皆无则不判偏低（不引用通用典型效率值）',
       efficiencyRange: '效率的物理合理范围为 0~100%（不含 0），超出即单列 implausible 且不截断',
       formulas: Object.fromEntries(Object.entries(REQUIRED).map(([k, v]) => [TYPE_LABEL[k] || '压缩机（多变）', v.formula])),
+      workshopScope: scopes,
     },
     counts, byEquipment, lowEfficiency, groupComparison, insufficientData, implausible, savingPotential,
     savingTotal, warnings,
@@ -607,8 +615,10 @@ function main() {
   const L = [];
   L.push(`# ${a.workshop} 设备能效分析与对标（${from} 至 ${to}）`);
   L.push('');
+  if (wsNote.alert) { L.push(`> **${wsNote.alert}**`); L.push(''); }
   L.push(`设备类型：${defType.label}　｜　偏低判定：低于基准的 ${C.round(threshold * 100, 0)}%　｜　设计参数：${designProvided ? '已提供' : '未提供'}　｜　压缩机口径：${polytropic ? '多变效率（--polytropic）' : '等温效率'}`);
   L.push(`生成时间：${C.localDateTime()}（北京时间）`);
+  if (wsNote.note) L.push(wsNote.note);
   L.push('');
   L.push(`> ${boundary}`);
   L.push('');

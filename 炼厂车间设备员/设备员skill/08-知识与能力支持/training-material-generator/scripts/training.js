@@ -37,6 +37,11 @@ const ALIASES = C.mergeAliases({
   '设备类型': ['设备类型', '类型', '设备类别', '对象类型', '设备分类', '专业类别', '设备品种'],
   '区域': ['区域', '装置区', '位置', '装置', '工厂区段', '单元', '装置名称', '生产单元'],
 });
+// 车间范围核对（D007）：「车间」只认真正的车间列（车间/所属车间/属地车间/运行部及其后加「名称」），共享别名里的维护工厂、属地单位、使用单位、作业部不占用车间字段
+ALIASES['车间'] = [...C.WORKSHOP_COLS, ...C.WORKSHOP_COLS.map((c) => c + '名称')];
+
+/** 车间范围核对口径（D007）：main 中按 --ledger 核对结果设定，head() 写进三份 md */
+let WS_NOTE = { note: null, alert: null };
 
 function loadBook(p) { return fs.statSync(p).isDirectory() ? readCsvDir(p) : readXlsx(p); }
 const CN = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四', '十五'];
@@ -75,6 +80,7 @@ function main() {
   const typeMap = new Map();      // 设备类型 -> [{tag,name,area}]
   const scopeTopics = [];         // --scope 中的自由主题（非设备类型）
   const ledgerRecs = [];          // 台账有效设备 {type, tag, name, area}
+  const scopes = [];              // 车间范围核对结果（D007），只核对 --ledger 台账；--workshop 未给时不核对
   if (a.ledger) {
     if (!fs.existsSync(a.ledger)) throw new Error(`设备清单不存在: ${a.ledger}`);
     const book = loadBook(a.ledger);
@@ -86,7 +92,11 @@ function main() {
       warnings.push(`设备清单文件中未找到「设备台账 / 技术对象清单」工作表，已按第一个工作表「${first}」读取，请核对`);
       rows = book[first];
     }
-    const recs = C.toRecords(rows, ['位号'], '设备台账', ['设备名称', '设备类型', '区域'], warnings, ALIASES);
+    const allRecs = C.toRecords(rows, ['位号'], '设备台账', ['设备名称', '设备类型', '区域', '车间'], warnings, ALIASES);
+    // 车间范围核对：台账带车间列且给了 --workshop 时剔除其他车间的设备；列全不一致时不筛并【注意】提示
+    const ws = C.workshopScope(allRecs, a.workshop, '设备台账', warnings);
+    scopes.push(ws.scope);
+    const recs = ws.records;
     for (const r of recs) {
       const tag = C.str(r['位号']);
       if (!tag) { warnings.push(`工作表「设备台账」第${r._row}行 位号为空，已跳过`); continue; }
@@ -354,6 +364,8 @@ function main() {
     blockedTopics: blockedTopics.length,
   };
 
+  WS_NOTE = C.workshopScopeNote(scopes, a.workshop);
+
   // ---------------- 产出
   C.ensureDir(outDir);
   const result = {
@@ -363,6 +375,7 @@ function main() {
       docsProvided, docFiles, ledgerProvided: !!a.ledger,
       negativeJudge, principleSource: T.PRINCIPLE_SOURCE,
       generatedAt: C.localDateTime(), statement: T.STATEMENT,
+      workshopScope: scopes,
     },
     counts, outline, keyPoints: keyPointsClean, questions, practicalItems,
     noSourceTopics,
@@ -492,8 +505,10 @@ function defaultCount(AUD, duration) {
 function head(L, title, a, audKey, AUD) {
   L.push(`# ${title}`);
   L.push('');
+  if (WS_NOTE.alert) { L.push(`> **${WS_NOTE.alert}**`); L.push(''); }
   L.push(`培训对象：**${audKey}**　｜　侧重：${AUD.focus}`);
   if (a.workshop) L.push(`车间：${a.workshop}`);
+  if (WS_NOTE.note) L.push(WS_NOTE.note);
   if (a.scope) L.push(`设备范围 / 主题：${a.scope}`);
   L.push(`生成时间：${C.localDateTime()}（北京时间）`);
   L.push('');
