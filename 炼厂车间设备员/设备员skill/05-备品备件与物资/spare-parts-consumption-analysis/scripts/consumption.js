@@ -41,6 +41,8 @@ const ALIASES = C.mergeAliases({
   '设备名称': ['设备名称', '设备描述', '设备'],
   '设备类型': ['设备类型', '类型', '设备类别', '对象类型'],
 });
+// 车间范围核对（D007）：「车间」只认真正的车间列（车间/所属车间/属地车间/运行部及其后加「名称」），共享别名里的维护工厂、属地单位、使用单位、作业部不占用车间字段
+ALIASES['车间'] = [...C.WORKSHOP_COLS, ...C.WORKSHOP_COLS.map((c) => c + '名称')];
 /** SAP 移动类型：发料计正、冲销计负、其余不计入 */
 const MVT_ISSUE = /^(261|201|221|281|291|601|Z61)$/i;
 const MVT_REVERSAL = /^(262|202|222|282|292|602|Z62)$/i;
@@ -68,11 +70,17 @@ function main() {
   const outDir = a.out || path.join(path.dirname(a.input), 'spc-out');
 
   // ---- 出库记录读取（本期与基期共用）：支持 MB51 物料凭证（移动类型 / 本位币金额）
+  const scopes = [];   // 车间范围核对结果（D007），每张出库表一项
   function readIssues(book, f, t, label) {
     const rows = C.pickSheet(book, '出库记录', '消耗记录', '出库', '领用记录', '物料凭证', 'MB51', '发料');
     if (!rows) throw new Error(`${label}中未找到「出库记录」工作表（亦可为「物料凭证」「MB51」）`);
-    const recs = C.toRecords(rows, ['备件编码', '数量'], label,
-      ['出库日期', '备件名称', '单位', '位号', '领用单位', '用途', '工单号', '移动类型', '金额'], warnings, ALIASES);
+    // 「车间」放最后：共享别名里的「使用单位」先归「领用单位」，不被车间抢走
+    const allRecs = C.toRecords(rows, ['备件编码', '数量'], label,
+      ['出库日期', '备件名称', '单位', '位号', '领用单位', '用途', '工单号', '移动类型', '金额', '车间'], warnings, ALIASES);
+    // 车间范围核对：出库表带车间列时按 --workshop 剔除其他车间的行；列全不一致时不筛并【注意】提示
+    const ws = C.workshopScope(allRecs, a.workshop, label, warnings);
+    scopes.push(ws.scope);
+    const recs = ws.records;
     if (!recs.length) throw new Error(`${label}中没有有效数据行`);
     const list = [];
     let outOfRange = 0, mvtSkipped = 0, mvtReversed = 0;
@@ -318,12 +326,14 @@ function main() {
     reversals: items.filter((x) => x.mvt && MVT_REVERSAL.test(x.mvt)).length,
   };
 
+  const wsNote = C.workshopScopeNote(scopes, a.workshop);
+
   // ---- 产出
   C.ensureDir(outDir);
   const result = {
     meta: { workshop: a.workshop, from, to, by, topN, anomalyRatio: ratio,
       generatedAt: C.localDateTime(), priceProvided: !!priceMap, amountFromColumn, amountSource, mvtColumn: cur.hasMvt,
-      ledgerProvided: !!equipMap, prevProvided: !!prev, prevSource },
+      ledgerProvided: !!equipMap, prevProvided: !!prev, prevSource, workshopScope: scopes },
     counts, byEquipment, byPart, byMonth, byType, topConsumers, anomalies, newInPeriod, unitMismatch, compare,
     unattributed: unattributed.map((x) => ({ code: x.code, name: x.name, qty: x.qty, unit: x.unit,
       date: x.date, dept: x.dept, purpose: x.purpose, row: x._row })),
@@ -335,7 +345,9 @@ function main() {
   const L = [];
   L.push(`# ${a.workshop} 备件消耗分析（${from} ~ ${to}）`);
   L.push('');
+  if (wsNote.alert) { L.push(`> **${wsNote.alert}**`); L.push(''); }
   L.push(`数据来源：${path.basename(a.input)}　生成时间：${C.localDateTime()}（北京时间）`);
+  if (wsNote.note) L.push(wsNote.note);
   L.push('');
   L.push('## 一、统计概览');
   L.push('');

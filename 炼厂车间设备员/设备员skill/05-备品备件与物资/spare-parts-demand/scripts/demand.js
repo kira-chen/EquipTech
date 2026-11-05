@@ -64,6 +64,8 @@ const ALIASES = C.mergeAliases({
   '到货数量': ['到货数量', '在途数量', '采购数量', '订单数量'],
   '预计到货': ['预计到货', '到货日期', '预计到货日期', '交期', '交货日期'],
 });
+// 车间范围核对（D007）：「车间」只认真正的车间列（车间/所属车间/属地车间/运行部及其后加「名称」），共享别名里的维护工厂、属地单位、使用单位、作业部不占用车间字段
+ALIASES['车间'] = [...C.WORKSHOP_COLS, ...C.WORKSHOP_COLS.map((c) => c + '名称')];
 /** SAP 移动类型：发料计正、冲销计负；其他类型（收货/转储等）不计入消耗 */
 const MVT_ISSUE = /^(261|201|221|281|291|601)$/;
 const MVT_REVERSAL = /^(262|202|222|282|292|602)$/;
@@ -143,6 +145,9 @@ function main() {
     return hits;
   }
   const mergedSources = { plan: [], history: [] };
+  // 车间范围核对（D007）：检修计划、历史消耗带车间列时按 --workshop 剔除其他车间的行；列全不一致时不筛并【注意】提示。每个文件的每张表一项
+  const scopes = [];
+  const scoped = (recs, label) => { const ws = C.workshopScope(recs, a.workshop, label, warnings); scopes.push(ws.scope); return ws.records; };
 
   // ---------------- 一、检修计划驱动
   const planItems = [];
@@ -154,8 +159,8 @@ function main() {
     } else {
       planFound = true;
       mergedSources.plan = pfs.map((h) => h.file);
-      const recs = pfs.flatMap((pf) => C.toRecords(pf.rows, ['备件编码'], `检修计划（${pf.file}）`,
-        ['项目编号', '项目名称', '计划开工', '备件名称', '规格型号', '单位', '需求数量', '位号'], warnings, ALIASES));
+      const recs = pfs.flatMap((pf) => scoped(C.toRecords(pf.rows, ['备件编码'], `检修计划（${pf.file}）`,
+        ['项目编号', '项目名称', '计划开工', '备件名称', '规格型号', '单位', '需求数量', '位号', '车间'], warnings, ALIASES), `检修计划（${pf.file}）`));
       for (const r of recs) {
         const code = C.str(r['备件编码']);
         if (!code) { warnings.push(`工作表「检修计划」第${r._row}行 备件编码为空，已跳过`); continue; }
@@ -192,8 +197,8 @@ function main() {
     } else {
       histFound = true;
       mergedSources.history = hfs.map((h) => h.file);
-      const recs = hfs.flatMap((hf) => C.toRecords(hf.rows, ['备件编码'], `历史消耗（${hf.file}）`,
-        ['备件名称', '规格型号', '单位', '消耗月份', '消耗数量', '位号', '移动类型'], warnings, ALIASES));
+      const recs = hfs.flatMap((hf) => scoped(C.toRecords(hf.rows, ['备件编码'], `历史消耗（${hf.file}）`,
+        ['备件名称', '规格型号', '单位', '消耗月份', '消耗数量', '位号', '移动类型', '车间'], warnings, ALIASES), `历史消耗（${hf.file}）`));
       let mvtSkipped = 0, mvtReversed = 0;
       // MB51 物料凭证只记发生的业务：导出窗口（全表过账日期的首末月，含 101 收货等不计消耗的行）内没有领用凭证的月份就是当月没领，按 0 期计；
       // 汇总式消耗表（一行一个月）没列的月份可能是没统计，仍只数有值的期（口径不变）
@@ -527,6 +532,8 @@ function main() {
     arrivalPassed: items.filter((x) => x.arrivalPassed).length,
   };
 
+  const wsNote = C.workshopScopeNote(scopes, a.workshop);
+
   // ---------------- 产出
   C.ensureDir(outDir);
   const grossOnly = !stockMap;
@@ -536,6 +543,7 @@ function main() {
       sources: inputs.map((p) => path.basename(p)),
       stockProvided: !!stockMap, safetyProvided: safetyMap.size > 0, intransitProvided: !!transitMap,
       grossOnly, minPeriods: MIN_PERIODS, leadDays: LEAD_DAYS, mergedSources, mb51Window, periodRange: range, today,
+      workshopScope: scopes,
       generatedAt: C.localDateTime(),
       statement: STATEMENT,
       demandKind: grossOnly ? '毛需求（未扣减在库量）' : '净需求（已扣减在库与在途）',
@@ -548,6 +556,7 @@ function main() {
   const L = [];
   L.push(`# ${C.str(a.workshop)} 备件需求申报稿（${C.str(a.period)}）`);
   L.push('');
+  if (wsNote.alert) { L.push(`> **${wsNote.alert}**`); L.push(''); }
   L.push(`数据来源：${result.meta.sources.join('、')}　推算口径：${methodText}`);
   L.push(`需求周期：${C.str(a.period)}（按 ${months} 个月计）　历史回溯：${Math.round(lookback)} 个月　历史期数下限：${MIN_PERIODS} 期　建议到货提前：${LEAD_DAYS} 天`);
   L.push(`生成时间：${C.localDateTime()}（北京时间）`);
@@ -586,6 +595,7 @@ function main() {
   if (!safetyMap.size) L.push('- 未提供安全库存标准（`--safety`），历史消耗推算未加安全库存。');
   L.push('- 单位不一致的备件按单位分别统计，**未做任何换算**。');
   L.push('- 每项需求均注明依据（检修项目编号或历史消耗期数）；无依据的项只列入第六节建议核实区。');
+  if (wsNote.note) L.push(`- ${wsNote.note}`);
   L.push('');
 
   L.push('## 二、需求明细');

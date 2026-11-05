@@ -293,6 +293,59 @@ ok(!r.j.anomalies.some((x) => x.code === 'U-01'), 'U7 单位不同项不计入�
 r = run(['--input', OUT, ...BASE], 'unit-noprev');
 eq(r.s.counts.unitMismatch, null, 'U8 未提供基期时 unitMismatch 为 null 不是 0');
 
+// ============ W. 车间范围核对（D007）：出库表带车间列时按 --workshop 核对 ============
+{
+  const sc = (i) => ((r.j && r.j.meta.workshopScope) || [])[i] || {};
+  const H = ['出库日期', '备件编码', '备件名称', '数量', '单位', '位号', '使用单位', '车间'];
+  const WMIX = mk('ws-mix.xlsx', { '出库记录': [H,
+    ['2026-07-10', 'A-01', '机械密封', 1, '套', 'P-01', '设备组', '测试车间'],
+    ['2026-08-10', 'A-01', '机械密封', 2, '套', 'P-01', '设备组', '测试'],
+    ['2026-08-11', 'A-01', '机械密封', 5, '套', 'P-71', '加氢设备组', '加氢车间'],
+    ['2026-08-12', 'X-01', '叶轮', 3, '个', 'P-72', '加氢设备组', '加氢车间'],
+    ['2026-09-10', 'B-01', '轴承', 4, '套', 'P-02', '设备组', ''],
+  ] });
+  r = run(['--input', WMIX, ...BASE], 'ws-mix');
+  eq(r.s.counts.records, 3, 'W1 混合输入只统计本车间与车间为空的行（剔除加氢车间 2 行）');
+  ok(!r.j.byPart.some((g) => g.key === 'X-01'), 'W2 其他车间独有备件不进按备件分布');
+  const a01 = r.j.byPart.find((g) => g.key === 'A-01');
+  eq(a01 && a01.byUnit[0].qty, 3, 'W3 本车间 A-01 消耗只计本车间（1+2，不含加氢车间 5）');
+  ok(r.j.byEquipment.some((g) => g.key === 'P-02'), 'W4 车间列为空的行按本车间保留');
+  ok(r.j.warnings.some((w) => /剔除其他车间 2 行/.test(w) && w.includes('加氢车间 2 行')), 'W5 warning 写明剔除行数与车间名');
+  ok(r.j.warnings.some((w) => /车间列为空 1 行/.test(w)), 'W6 warning 写明车间为空行数');
+  eq(sc(0).status, 'checked', 'W7 meta.workshopScope 记录已核对');
+  eq(sc(0).droppedRows, 2, 'W8 meta.workshopScope 记录剔除行数');
+  eq((sc(0).dropped || {})['加氢车间'], 2, 'W9 meta.workshopScope 按车间记录剔除');
+  eq(sc(0).column, '车间', 'W10 「使用单位」归领用单位，「车间」列归车间');
+  ok(/车间范围：已按车间列核对「测试车间」/.test(r.md || ''), 'W11 md 口径处写明按车间核对与剔除');
+  const WBAD = mk('ws-bad.xlsx', { '出库记录': [H,
+    ['2026-07-10', 'A-01', '机械密封', 1, '套', 'P-01', '设备组', '加氢车间'],
+    ['2026-08-10', 'B-01', '轴承', 2, '套', 'P-02', '设备组', '焦化车间'],
+  ] });
+  r = run(['--input', WBAD, ...BASE], 'ws-bad');
+  eq(r.s.counts.records, 2, 'W12 车间列全不一致时不筛');
+  ok(r.j.warnings.some((w) => w.startsWith('【注意】') && /未按车间筛选/.test(w)), 'W13 warning 以【注意】开头');
+  eq(sc(0).status, 'mismatch', 'W14 meta.workshopScope 记录不一致');
+  const ai = (r.md || '').indexOf('【注意】工作表「出库记录」的车间列取值与 --workshop「测试车间」不一致');
+  ok(ai > 0 && ai < r.md.indexOf('## 一、统计概览'), 'W15 md 开头（第一节之前）有【注意】提示');
+  r = run(['--input', OUT, ...BASE], 'ws-none');
+  eq(sc(0).status, 'noColumn', 'W16 无车间列 status 为 noColumn');
+  ok((r.md || '').includes('输入未含车间列，车间范围以取数条件为准'), 'W17 md 口径处说明无车间列');
+  const WPLANT = mk('ws-plant.xlsx', { '出库记录': [['出库日期', '备件编码', '备件名称', '数量', '单位', '位号', '维护工厂'],
+    ['2026-07-10', 'A-01', '机械密封', 1, '套', 'P-01', '1100'], ['2026-08-10', 'B-01', '轴承', 2, '套', 'P-02', '1200']] });
+  r = run(['--input', WPLANT, ...BASE], 'ws-plant');
+  eq(sc(0).status, 'noColumn', 'W18 「维护工厂」列不当车间列（noColumn）');
+  eq(r.s.counts.records, 2, 'W19 「维护工厂」列不触发筛选');
+  // 基期出库表同样核对
+  const WPREV = mk('ws-prev.xlsx', { '出库记录': [H,
+    ['2026-05-10', 'A-01', '机械密封', 1, '套', 'P-01', '设备组', '测试车间'],
+    ['2026-05-11', 'A-01', '机械密封', 9, '套', 'P-71', '加氢设备组', '加氢车间'],
+  ] });
+  r = run(['--input', WMIX, ...BASE, '--prev', WPREV, '--prev-from', '2026-04-01', '--prev-to', '2026-06-30'], 'ws-prev');
+  eq(sc(1).droppedRows, 1, 'W20 基期出库表剔除其他车间 1 行');
+  const ca = ((r.j && r.j.anomalies) || []).find((x) => x.code === 'A-01');
+  eq(ca && ca.previous, 1, 'W21 基期 A-01 只计本车间 1 套（不含加氢车间 9 套），本期 3 套计为异常增长');
+}
+
 console.log(`\n${'='.repeat(56)}`);
 console.log(`spare-parts-consumption-analysis 自测：${pass} 通过，${fail} 失败`);
 if (failures.length) { console.log('\n失败项：'); failures.forEach((f) => console.log('  ✗ ' + f)); }

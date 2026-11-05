@@ -470,6 +470,60 @@ eq(t02.arrivalPassed, false, 'R15 建议到货日未到 → arrivalPassed false'
 ok(((rold.j && rold.j.warnings) || []).some((w) => w.includes('T-01') && w.includes('已过')), 'R16 warning 提示建议到货日已过');
 ok(/已过/.test(((rold.md || '').split('## 二、需求明细')[1] || '').split('## 三')[0]), 'R17 md 需求明细标注建议到货日已过');
 
+// ============ W. 车间范围核对（D007）：检修计划、历史消耗带车间列时按 --workshop 核对 ============
+{
+  const sc = (x, i) => ((x.j && x.j.meta.workshopScope) || [])[i] || {};
+  const PH = ['项目编号', '项目名称', '计划开工', '备件编码', '备件名称', '规格型号', '单位', '需求数量', '车间'];
+  const HH = ['备件编码', '备件名称', '规格型号', '单位', '消耗月份', '消耗数量', '车间'];
+  const hw = (code, name, unit, from, n, q, ws) => hist(code, name, unit, from, n, q).map((row) => [...row, ws]);
+  const WMIX = mk('ws-mix.xlsx', {
+    '检修计划': [PH,
+      ['JX-101', 'P-01 泵检修', '2026-10-12', 'A-01', '机械密封', '104-45', '套', 2, '炼油一车间'],
+      ['JX-102', 'P-02 泵检修', '2026-10-20', 'A-02', '轴承', '6310', '套', 4, '炼油一'],
+      ['JX-901', 'P-91 泵检修', '2026-10-15', 'X-01', '叶轮', 'ZA-1', '个', 1, '炼油二车间'],
+      ['JX-902', 'P-92 泵检修', '2026-10-16', 'A-01', '机械密封', '104-45', '套', 6, '炼油二车间'],
+      ['JX-103', 'E-01 抽芯', '2026-11-03', 'B-01', '缠绕垫片', 'DN800', '片', 10, ''],
+    ],
+    '历史消耗': [HH,
+      ...hw('F-01', '轴承', '个', '2025-10', 12, 2, '炼油一车间'),
+      ...hw('Y-01', '密封环', '个', '2025-10', 12, 5, '炼油二车间'),
+    ],
+  });
+  r = run(['--input', WMIX, ...BASE, '--method', 'both'], 'ws-mix');
+  eq(r.s.counts.itemsFromPlan, 3, 'W1 检修计划只计本车间与车间为空的行（剔除炼油二车间 2 行）');
+  ok(!r.j.items.some((x) => x.code === 'X-01'), 'W2 其他车间检修计划的备件不进正式清单');
+  const a01 = r.j.items.filter((x) => x.code === 'A-01' && x.source === '检修计划').reduce((s, x) => s + x.grossQty, 0);
+  eq(a01, 2, 'W3 A-01 计划需求只计本车间 2 套（不含炼油二车间 6 套）');
+  ok(r.j.items.some((x) => x.code === 'B-01'), 'W4 车间列为空的行按本车间保留');
+  ok(r.j.warnings.some((w) => /检修计划/.test(w) && /剔除其他车间 2 行/.test(w) && w.includes('炼油二车间 2 行')), 'W5 warning 写明剔除行数与车间名');
+  ok(r.j.warnings.some((w) => /车间列为空 1 行/.test(w)), 'W6 warning 写明车间为空行数');
+  eq(sc(r, 0).status, 'checked', 'W7 meta.workshopScope 记录检修计划已核对');
+  eq(sc(r, 0).droppedRows, 2, 'W8 meta.workshopScope 记录剔除行数');
+  eq((sc(r, 0).dropped || {})['炼油二车间'], 2, 'W9 meta.workshopScope 按车间记录剔除');
+  ok(/车间范围：已按车间列核对「炼油一车间」/.test(r.md || ''), 'W10 md 口径处写明按车间核对与剔除');
+  eq(sc(r, 1).droppedRows, 12, 'W11 历史消耗剔除其他车间 12 行');
+  ok(!r.j.items.some((x) => x.code === 'Y-01'), 'W12 其他车间的历史消耗不推算需求');
+  const WBAD = mk('ws-bad.xlsx', { '检修计划': [PH,
+    ['JX-201', 'P-01 泵检修', '2026-10-12', 'A-01', '机械密封', '104-45', '套', 2, '炼油二车间'],
+    ['JX-202', 'P-02 泵检修', '2026-10-20', 'A-02', '轴承', '6310', '套', 4, '焦化车间'],
+  ] });
+  r = run(['--input', WBAD, ...BASE, '--method', 'plan'], 'ws-bad');
+  eq(r.s.counts.itemsFromPlan, 2, 'W13 车间列全不一致时不筛');
+  ok(r.j.warnings.some((w) => w.startsWith('【注意】') && /未按车间筛选/.test(w)), 'W14 warning 以【注意】开头');
+  eq(sc(r, 0).status, 'mismatch', 'W15 meta.workshopScope 记录不一致');
+  const ai = (r.md || '').indexOf('的车间列取值与 --workshop「炼油一车间」不一致，未按车间筛选');
+  ok(ai > 0 && ai < r.md.indexOf('## 一、需求概况') && r.md.slice(0, ai).includes('【注意】'), 'W16 md 开头（第一节之前）有【注意】提示');
+  r = run(['--input', MAIN, ...BASE], 'ws-none');
+  eq(sc(r, 0).status, 'noColumn', 'W17 无车间列 status 为 noColumn');
+  ok((r.md || '').includes('输入未含车间列，车间范围以取数条件为准'), 'W18 md 口径处说明无车间列');
+  const WPLANT = mk('ws-plant.xlsx', { '检修计划': [['项目编号', '项目名称', '计划开工', '备件编码', '备件名称', '规格型号', '单位', '需求数量', '维护工厂'],
+    ['JX-301', 'P-01 泵检修', '2026-10-12', 'A-01', '机械密封', '104-45', '套', 2, '1100'],
+    ['JX-302', 'P-02 泵检修', '2026-10-20', 'A-02', '轴承', '6310', '套', 4, '1200']] });
+  r = run(['--input', WPLANT, ...BASE, '--method', 'plan'], 'ws-plant');
+  eq(sc(r, 0).status, 'noColumn', 'W19 「维护工厂」列不当车间列（noColumn）');
+  eq(r.s.counts.itemsFromPlan, 2, 'W20 「维护工厂」列不触发筛选');
+}
+
 console.log(`\n${'='.repeat(56)}`);
 console.log(`spare-parts-demand 自测：${pass} 通过，${fail} 失败`);
 if (failures.length) { console.log('\n失败项：'); failures.forEach((f) => console.log('  ✗ ' + f)); }
