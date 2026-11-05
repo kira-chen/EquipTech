@@ -1,19 +1,24 @@
-# 输入规格：检修方案安全措施核查入口
+# 输入规格：车间检修方案安全措施核查
 
-本技能不读表、不读方案；方案由源技能 `overhaul-safety-check` 解析。本技能的输入是**源技能的 `result.json`**、**交给源技能的 `plan.json`**（`--plan`，取方案编号与作业类型）与**车间侧 `notes.json`**，另有可选参数 `--repair-type`。
+本技能的输入分四类：**检修方案文件**（读取后抽取为 plan.json）、**plan.json**（交给规则引擎 `check.js --input`，合并时再用 `--plan` 传入）、**规则引擎的 `result.json`**（`merge-report.js --result`）与可选的**车间侧 `notes.json`**，另有可选参数 `--repair-type`。
 
-## 一、检修方案文件（交给源技能）
+## 一、检修方案文件
 
 | 形式 | 处理 |
 |---|---|
-| `.docx` | 源技能 `scripts/docx2text.js` 转文本后抽取 `plan.json` |
+| `.docx` | 本技能 `scripts/docx2text.js` 转文本后按抽取手册抽取 `plan.json` |
 | PDF | **先用平台 pdf 技能转为 txt/docx 再传入，脚本不读 PDF；扫描件需 OCR** |
-| 图片 / 扫描件 | 由模型读图抽取，每处 null / 推断在源技能 `extraction_notes[]` 记一条 |
-| 文字描述 | 按源技能抽取手册直接映射 |
+| 图片 / 扫描件 | 由模型读图抽取，每处 null / 推断在 `extraction_notes[]` 记一条 |
+| 文字描述 | 按抽取手册直接映射 |
 
-源技能抽取时的关键字段：`unit`（装置）、`project`（检修项目）、`contractor`（承修单位）、`duration_days`（工期）、`jobs[]`（每项作业的名称与 `job_types` 标签）、`measures{}`（方案已写明的措施）、`org{}`、`attachments{}`。**方案没写的一律 null**，不按"常规肯定会做"猜。
+## 二、`plan.json`（抽取结果）
 
-## 二、检修分级（`--repair-type`，可选）
+字段定义见 `references/plan-schema.md`，抽取方法见 `references/extraction-guide.md`，空模板为 `assets/templates/plan.json`。关键字段：`plan_no`（方案编号）、`unit`（装置）、`project`（检修项目）、`contractor`（承修单位）、`duration_days`（工期）、`jobs[]`（每项作业的名称与 `job_types` 标签）、`measures{}`（方案已写明的措施）、`org{}`、`attachments{}`、`extraction_notes[]`。**方案没写的一律 null**，不按"常规肯定会做"猜。
+
+- `job_types` 取值沿用 GB 30871：动火 / 受限空间 / 高处 / 吊装 / 临时用电 / 盲板抽堵 / 动土 / 带压堵漏 / 射线探伤 / 化学清洗。**用火作业填"动火"**（票面或方案写"用火作业许可证 / 用火安全作业证 / 用火票 / 用火"的都按此映射）；写成"用火"不在合法表内，会被剔除并按未标注处理。
+- `job_types: []` = 方案标注"无特殊作业"；`null` = 看不出类型（会产生未判定）。
+
+## 三、检修分级（`--repair-type`，可选）
 
 | 取值 | 说明 |
 |---|---|
@@ -27,9 +32,9 @@
 
 只写入报告抬头与 `meta.repairType`，**不进入判定**；不传则 `null`，不默认。
 
-## 三、源技能 `result.json`（`--result`，必需）
+## 四、规则引擎 `result.json`（`--result`，必需）
 
-由 `node "<overhaul-safety-check>/scripts/check.js" --input plan.json --out <dir>` 生成，结构：
+由 `node scripts/check.js --input plan.json --out <dir>` 生成，结构：
 
 ```jsonc
 {
@@ -51,12 +56,13 @@
 
 - `findings` 必须是数组，否则脚本报错终止（常见错误：把 `summary.json` 当 `result.json` 传入）。
 - `severity` 四级：`must_fix` 缺失（必须补充）/ `should_improve` 建议完善 / `undetermined` 未判定 / `pass` 已有。不在四级内的值原样保留并单列。
-- `UND-<作业类型>` 是源技能把"作业未标注类型导致的未判定"按类型聚合后的一条，`detail` 里列出涉及规则号；本技能照搬，不拆开。
-- 源技能 `result.json` 顶层**没有 `plan_no`、`job_types`**（以上即 check.js 的全部顶层字段）。方案编号与作业类型标签须用 `--plan` 传入 plan.json 读取，见第五节；旧格式结果若自带这两项且未传 `--plan`，照搬并记来源 `result.json`。
+- `UND-<作业类型>` 是规则引擎把"作业未标注类型导致的未判定"按类型聚合后的一条，`detail` 里列出涉及规则号；合并时照搬，不拆开。
+- findings 的 `name / message / advice / basis` 来自规则库原文，其中"动火""大修 / 中修"等写法合并时照搬，不替换。
+- `result.json` 顶层**没有 `plan_no`、`job_types`**（以上即 check.js 的全部顶层字段）。方案编号与作业类型标签须用 `--plan` 传入 plan.json 读取，见第六节；旧格式结果若自带这两项且未传 `--plan`，照搬并记来源 `result.json`。
 - `summary` 与 `findings` 计数不一致 → warning，报告按 findings 重算，`summary` 原值留在 `bridge.json.sourceSummary`。
 - 无 `disclaimer` → warning，不伪造。
 
-## 四、车间侧 `notes.json`（`--notes`，可选）
+## 五、车间侧 `notes.json`（`--notes`，可选）
 
 数组，每项 `{item, status, note}`：
 
@@ -73,29 +79,29 @@
 |---|---|---|
 | `item` | 固定四项：设备交出条件 / 同期交叉作业 / 承包商资质 / 备件与工机具到位；其它自定义项追加并标「车间自查」 | 固定项缺失 → 「未核实」 |
 | `status` | **只认 已核实 / 未核实 / 不适用** | 其它写法（「应该够了」「大概没问题」）→ 按「未核实」并 warning |
-| `note` | 自由文字（写核实依据、日期、来源技能） | 原样展示 |
+| `note` | 自由文字（写核实依据、日期、用哪个技能核对的） | 原样展示 |
 
-不传 `--notes` → 四项全部「未核实」，**脚本不替用户推测**。
+不传 `--notes` → 四项全部「未核实」，**脚本不替用户推测**。只做纯核查时不传即可。
 
-## 五、源技能输入 `plan.json`（`--plan`，可选，建议始终传）
+## 六、`plan.json` 作为 `--plan`（可选，建议始终传）
 
-即第三步交给 `check.js --input` 的同一份 `plan.json`。源技能 `result.json` 不含方案编号与作业类型，本技能只从这里读两项：
+即第 3 步交给 `check.js --input` 的同一份 `plan.json`。`result.json` 不含方案编号与作业类型，merge-report 只从这里读两项：
 
 | 读取 | 来源字段 | 写入 | 规则 |
 |---|---|---|---|
-| 方案编号 | `plan_no` | `sourceMeta.plan_no`、md 源技能字段表 | 原值；为空 → null 并 warning，不猜测 |
-| 作业类型标签 | `jobs[].job_types` | `sourceMeta.jobTypes` / `jobTypesCn` | 各作业原值去重、按出现顺序；`null`（未标注）的作业不计；另加注八大类名称 |
+| 方案编号 | `plan_no` | `sourceMeta.plan_no`、md 字段表 | 原值；为空 → null 并 warning，不猜测 |
+| 作业类型标签 | `jobs[].job_types` | `sourceMeta.jobTypes` / `jobTypesCn` | 各作业原值去重、按出现顺序；`null`（未标注）的作业不计；另加注八大类名称（动火 → 用火作业） |
 
 - 两项只进抬头字段表，**不进入判定**；判定一律以 `result.json` 的 findings 为准。
 - `plan.json` 的 `unit` / `project` 与 `result.json` 不一致，或 `jobs` 条数与 `jobs_count` 不一致 → warning，提示核对是否同一份方案（不中断）。
-- 不传 `--plan` → 两项为 null / 空数组并 warning；源结果若为旧格式、顶层自带 `plan_no` / `job_types`，则照搬并记来源 `result.json`。
+- 不传 `--plan` → 两项为 null / 空数组并 warning；结果若为旧格式、顶层自带 `plan_no` / `job_types`，则照搬并记来源 `result.json`。
 - 文件不存在、JSON 非法、不是对象 → `ok:false` 退出 1。
 
-## 六、不会发生的事
+## 七、不会发生的事
 
-- 不会改写源技能任何一条 finding 的级别、措辞、建议或顺序
+- 不会改写规则引擎任何一条 finding 的级别、措辞、建议或顺序
 - 不会把「未判定」归到已有或缺失
-- 不会把源技能的"动火"标签改写成"用火"（只作加注）
+- 不会替换规则库原文里的"动火"等写法（作业类型标签只作加注）
 - 不会按检修分级增减规则（分级只进抬头）
 - 不会在没有 `notes.json` 时把车间侧项标为已核实
-- 不会在源技能不可用时自行判定方案
+- 不会在 node 不可用时凭经验判定方案

@@ -1,0 +1,93 @@
+{
+  "meta": {
+    "name": "检修方案安全措施核查规则库",
+    "version": "0.2.0",
+    "basis": "GB 30871-2022《危险化学品企业特殊作业安全规范》及炼化企业检修管理通行做法（按记忆整理，条款号以正式文本与企业制度为准）",
+    "severity_levels": ["must_fix", "should_improve"],
+    "job_types": ["动火", "受限空间", "高处", "吊装", "临时用电", "盲板抽堵", "动土", "带压堵漏", "射线探伤", "化学清洗"],
+    "note": "severity_levels 为规则可配置的严重度；undetermined（未判定）与 pass（已有）是引擎的输出状态，不在规则中配置。trigger 缺省为通用规则（每份方案都查）；trigger.job_type 表示任一作业的 job_types 含该类型时触发；trigger.job_types_all 表示同一项作业同时含全部类型时触发。基准 basis 标注「待核实」的为通行做法或条款号不确定，写「XX作业章节」不带章号的为章节号未核对，汇总见 checklist-ref.md 末节。when 依赖字段为空 → undetermined（未判定）；on_when_empty:\"skip\" 例外。措施字段值为 null/空串/false/数字 0/否定词（无、不涉及、不适用、没有、N/A、待定、暂无或仅符号）视为方案未写明，true 或实质文字视为已写明。"
+  },
+  "rules": [
+    {"id":"G-001","type":"required","field":"jobs","min_count":1,"severity":"must_fix","name":"检修作业内容清单","message":"方案未列明检修作业内容（jobs 为空）","advice":"在方案中增加检修作业内容表：作业名称、位置、涉及介质、作业类型（动火/受限空间/高处等）","basis":"通行做法：检修方案应列明作业项目清单（待核实）"},
+    {"id":"G-002","type":"required","field":"unit","severity":"should_improve","name":"检修装置名称","message":"未写明检修装置/单元名称","advice":"在方案封面或工程概况中写明装置名称","basis":"通行做法（待核实）"},
+    {"id":"G-003","type":"required","field":"project","severity":"should_improve","name":"检修项目名称","message":"未写明检修项目名称","advice":"补充项目名称与检修性质（大修/中修/单体检修）","basis":"通行做法（待核实）"},
+    {"id":"G-004","type":"required","field":"duration_days","severity":"should_improve","name":"检修工期","message":"未写明检修工期","advice":"补充计划工期（天数）与起止日期，便于安排阶段性安全检查","basis":"通行做法（待核实）"},
+    {"id":"G-005","type":"required","field":"contractor","severity":"should_improve","name":"承包商/施工单位","message":"未写明承包商或施工单位","advice":"写明施工单位名称；自行检修的写明承担车间/班组","basis":"通行做法（待核实）"},
+    {"id":"G-006","type":"measure","field":"measures.risk_identification","severity":"must_fix","name":"风险辨识与 JSA","message":"方案未写明作业风险辨识 / JSA（作业安全分析）安排","advice":"补充风险辨识章节：逐项作业开展 JSA，输出风险清单与对应控制措施","basis":"GB 30871-2022 第4章 通用要求（作业前应进行危害辨识）"},
+    {"id":"G-007","type":"measure","field":"measures.safety_briefing","severity":"must_fix","name":"安全交底","message":"方案未写明开工前安全交底安排","advice":"补充安全交底安排：交底人、交底对象、交底内容与签字确认要求","basis":"GB 30871-2022 第4章 通用要求（作业前应进行安全交底）"},
+    {"id":"G-008","type":"measure","field":"measures.emergency_plan","severity":"must_fix","name":"应急预案","message":"方案未写明检修期间应急预案/应急处置措施","advice":"补充应急预案章节：可能事故类型、应急处置程序、报警与疏散路线、应急物资","basis":"GB 30871-2022 第4章 通用要求（应制定应急措施并告知作业人员）"},
+    {"id":"G-009","type":"measure","field":"measures.emergency_drill","severity":"should_improve","name":"应急演练安排","message":"方案未写明开工前/检修期间的应急演练安排","advice":"补充应急演练计划：演练时间、参加人员、演练科目（如受限空间救援、着火初期处置）","basis":"通行做法：大中修开工前应组织应急演练（待核实）"},
+    {"id":"G-010","type":"required","field":"org.site_manager","severity":"must_fix","name":"现场负责人","message":"安全组织中未明确现场负责人","advice":"在安全组织机构中写明现场总负责人姓名与职责","basis":"通行做法：检修现场应明确总负责人（待核实）"},
+    {"id":"G-011","type":"required","field":"org.safety_officer","severity":"must_fix","name":"专职安全员","message":"安全组织中未明确专职安全员","advice":"写明现场专（兼）职安全员姓名与检查职责","basis":"通行做法：检修现场应配备安全员（待核实）"},
+    {"id":"G-012","type":"required","field":"org.emergency_contact","severity":"should_improve","name":"应急联系方式","message":"未写明应急联系人/联系电话","advice":"补充应急联系表：调度电话、消防气防电话、现场负责人手机","basis":"通行做法（待核实）"},
+    {"id":"G-013","type":"measure","field":"measures.contractor_qualification","severity":"must_fix","name":"承包商资质审查","message":"方案未写明承包商资质审查情况","advice":"补充承包商资质审查记录：营业执照、安全生产许可证、特种作业人员证书核验","basis":"《安全生产法》相关方管理要求及通行做法（条款待核实）"},
+    {"id":"G-014","type":"measure","field":"measures.contractor_agreement","severity":"must_fix","name":"安全管理协议","message":"方案未写明与承包商签订安全管理协议","advice":"开工前与施工单位签订安全管理协议，明确双方安全职责","basis":"《安全生产法》相关方管理要求及通行做法（条款待核实）"},
+    {"id":"G-015","type":"measure","field":"measures.contractor_training","severity":"should_improve","name":"承包商人员入厂安全教育","message":"方案未写明承包商作业人员入厂安全教育安排","advice":"补充入厂三级安全教育与考核安排，考核合格方可入场","basis":"通行做法（待核实）"},
+    {"id":"G-016","type":"measure","field":"measures.tool_inspection","severity":"should_improve","name":"工机具检验","message":"方案未写明工机具与安全器具进场检验安排","advice":"补充工机具检验要求：电动工具、吊索具、安全带、气瓶等进场检查合格并登记","basis":"通行做法（待核实）"},
+    {"id":"G-017","type":"measure","field":"measures.cross_work_coordination","when":[{"field":"jobs","op":"count_gte","value":2}],"severity":"must_fix","name":"交叉作业协调安排","message":"方案含多项作业但未写明交叉作业协调安排","advice":"补充交叉作业管理：统一协调人、上下同时作业限制、动火与吊装等作业的时序安排","basis":"GB 30871-2022 第4章 通用要求（同一区域交叉作业应统一协调）；条款待核实"},
+    {"id":"G-018","type":"measure","field":"measures.safety_acceptance","severity":"should_improve","name":"安全验收条款","message":"方案未写明检修完工后的安全验收条款","advice":"补充完工安全验收：盲板复位确认、现场清理、防护设施恢复、验收签字","basis":"通行做法（待核实）"},
+    {"id":"G-019","type":"measure","field":"measures.process_handover","severity":"must_fix","name":"停工处理与装置交出","message":"方案未写明装置/设备停工处理（切出、吹扫、置换）与交出安排","advice":"补充工艺处理章节：退料、蒸煮吹扫、置换合格标准与装置交出确认程序","basis":"通行做法：检修前装置应处理合格并办理交出手续（待核实）"},
+    {"id":"G-020","type":"measure","field":"measures.energy_isolation","severity":"must_fix","name":"能量隔离/挂牌上锁","message":"方案未写明能量隔离（电气停送电、上锁挂牌）安排","advice":"补充能量隔离措施：电机停电挂牌、阀门隔离、编制隔离清单逐项双人确认、钥匙管理责任人","basis":"通行做法（LOTO，待核实）"},
+    {"id":"G-021","type":"measure","field":"measures.waste_disposal","severity":"should_improve","name":"废弃物与残液处置","message":"方案未写明检修废弃物、残油残液的处置安排","advice":"补充固废/残液处置：收集容器、暂存地点、危废交接流程","basis":"通行做法（待核实）"},
+    {"id":"G-022","type":"measure","field":"measures.fire_access","severity":"should_improve","name":"消防通道与消防设施保障","message":"方案未写明检修期间消防通道畅通与消防设施保护安排","advice":"补充消防保障：施工布置不得占用消防通道，消火栓周围不得堆料","basis":"通行做法（待核实）"},
+    {"id":"G-023","type":"each_job","field":"name","severity":"should_improve","name":"作业项目名称齐全","message":"存在未写明名称的作业项目","advice":"逐项补齐作业名称","basis":"通行做法（待核实）"},
+    {"id":"G-024","type":"each_job","field":"job_types","severity":"should_improve","name":"作业类型标注齐全","message":"存在未标注作业类型的作业项目，专项措施核查可能遗漏","advice":"逐项标注作业类型（动火/受限空间/高处/吊装/临时用电/盲板抽堵/动土/带压堵漏/射线探伤/化学清洗）","basis":"本技能约定：作业类型标签用于触发专项核查"},
+    {"id":"G-025","type":"each_job","field":"medium","severity":"should_improve","name":"作业涉及介质标注","message":"存在未写明涉及介质的作业项目","advice":"逐项写明设备/管线介质，便于辨识中毒、着火爆炸风险","basis":"GB 30871-2022 第4章 通用要求（作业前应辨识介质危害）；条款待核实"},
+    {"id":"G-026","type":"each_job","field":"location","severity":"should_improve","name":"作业位置标注","message":"存在未写明位置的作业项目","advice":"逐项写明作业位置（设备位号/区域）","basis":"通行做法（待核实）"},
+    {"id":"G-027","type":"measure","field":"attachments.risk_assessment_doc","severity":"should_improve","name":"风险评估报告附件","message":"方案附件中未见风险评估/JSA 报告","advice":"将风险评估报告（或 JSA 记录表）作为方案附件","basis":"通行做法（待核实）"},
+    {"id":"G-028","type":"measure","field":"attachments.site_layout","severity":"should_improve","name":"施工平面布置图附件","message":"方案附件中未见施工平面布置图","advice":"补充施工平面图：办公/材料/吊装占位、临时用电点、消防通道、疏散路线","basis":"通行做法（待核实）"},
+    {"id":"G-029","type":"measure","field":"attachments.emergency_plan_doc","severity":"should_improve","name":"应急预案附件","message":"方案附件中未见应急预案文本","advice":"将检修应急预案（或引用的现行预案编号）作为方案附件","basis":"通行做法（待核实）"},
+    {"id":"G-030","type":"measure","field":"measures.toxic_protection","severity":"should_improve","name":"有毒介质职业卫生防护","message":"方案未写明有毒有害介质作业的职业卫生防护措施","advice":"补充职业卫生防护：硫化氢等有毒气体便携报警仪配置、防毒面具/空气呼吸器使用条件、作业前职业危害告知","basis":"通行做法（职业病防治及企业职业卫生制度，待核实）"},
+    {"id":"G-031","type":"measure","field":"measures.restart_safety","severity":"should_improve","name":"检修后试车与安全设施恢复","message":"方案未写明检修后试车、联锁投用与安全设施恢复确认安排","advice":"补充开车前安全条件确认：联锁/报警逐项投用、安全阀等安全附件复位、试车方案与专人监护","basis":"通行做法（待核实）"},
+
+    {"id":"HW-001","trigger":{"job_type":"动火"},"type":"measure","field":"measures.hotwork_permit","severity":"must_fix","name":"动火作业票办理安排","message":"含动火作业但方案未写明动火作业票办理安排","advice":"写明每次动火前按级别办理动火作业票，明确办票责任人","basis":"GB 30871-2022 第5章 动火作业（动火作业应办理作业票）"},
+    {"id":"HW-002","trigger":{"job_type":"动火"},"type":"measure","field":"measures.combustible_cleanup","severity":"must_fix","name":"动火点可燃物清理","message":"含动火作业但方案未写明动火点周边可燃物清理措施","advice":"写明动火前清理动火点周边可燃物、可燃液体，必要时用防火毯遮盖","basis":"GB 30871-2022 第5章 动火作业（动火点周围应清除可燃物）"},
+    {"id":"HW-003","trigger":{"job_type":"动火"},"type":"measure","field":"measures.cylinder_distance","severity":"should_improve","name":"气瓶放置与间距","message":"含动火作业但方案未写明气瓶放置与间距要求","advice":"写明氧气瓶与乙炔瓶间距≥5m、二者距动火点≥10m，直立固定防倾倒","basis":"通行做法（参考 GB 9448 焊接与切割安全，数值待核实）"},
+    {"id":"HW-004","trigger":{"job_type":"动火"},"type":"measure","field":"measures.fire_watch_equipment","severity":"should_improve","name":"动火现场消防器材","message":"含动火作业但方案未写明现场消防器材配置","advice":"写明每个动火点配置灭火器/消防水带，动火监护人会使用","basis":"GB 30871-2022 第5章 动火作业（现场应配备消防器材）；条款待核实"},
+    {"id":"HW-005","trigger":{"job_type":"动火"},"type":"measure","field":"measures.hotwork_gas_test","severity":"must_fix","name":"动火分析安排","message":"含动火作业但方案未写明动火分析（可燃气体检测）安排","advice":"写明每次动火前 30min 内进行动火分析，分析合格方可动火；作业中断超时或环境变化时重新分析，分析记录保存","basis":"GB 30871-2022 动火作业章节（动火作业前应进行动火分析）"},
+    {"id":"HW-006","trigger":{"job_type":"动火"},"type":"measure","field":"measures.fire_watcher","severity":"must_fix","name":"动火监护人/监火人","message":"含动火作业但方案未写明动火监护人（监火人）安排","advice":"写明每个动火点设专职监火人，监火人经培训合格、动火期间不得离岗，作业结束确认无残留火种后方可离开","basis":"GB 30871-2022 动火作业章节（动火作业应设专人监火）"},
+
+    {"id":"CS-001","trigger":{"job_type":"受限空间"},"type":"measure","field":"measures.confined_permit","severity":"must_fix","name":"受限空间作业票办理安排","message":"含受限空间作业但方案未写明受限空间作业票办理安排","advice":"写明进入塔、罐、釜等受限空间前办理受限空间作业票","basis":"GB 30871-2022 第6章 受限空间作业（应办理作业票）"},
+    {"id":"CS-002","trigger":{"job_type":"受限空间"},"type":"measure","field":"measures.isolation_purge","severity":"must_fix","name":"受限空间隔离与清洗置换","message":"含受限空间作业但方案未写明隔离、清洗置换措施","advice":"写明加盲板与外界可靠隔离、蒸煮/氮气置换后再用空气置换、分析合格后进入","basis":"GB 30871-2022 第6章 受限空间作业（应与其他系统可靠隔离并清洗置换）"},
+    {"id":"CS-003","trigger":{"job_type":"受限空间"},"type":"measure","field":"measures.ventilation","severity":"must_fix","name":"受限空间通风措施","message":"含受限空间作业但方案未写明通风措施","advice":"写明自然通风或强制通风安排，禁止直接通氧气","basis":"GB 30871-2022 第6章 受限空间作业（应保持空气流通）"},
+    {"id":"CS-004","trigger":{"job_type":"受限空间"},"type":"measure","field":"measures.gas_test_plan","severity":"must_fix","name":"受限空间气体检测安排","message":"含受限空间作业但方案未写明气体检测安排","advice":"写明进入前 30min 内检测氧含量/可燃气/有毒气，作业中定时或连续检测，检测记录保存","basis":"GB 30871-2022 第6章 受限空间作业（作业前及作业过程中应进行气体分析）"},
+    {"id":"CS-005","trigger":{"job_type":"受限空间"},"type":"measure","field":"measures.rescue_equipment","severity":"should_improve","name":"受限空间应急救援器材","message":"含受限空间作业但方案未写明应急救援器材配置","advice":"写明现场配置正压式空气呼吸器、救援绳/三脚架等救援器材","basis":"通行做法（待核实）"},
+    {"id":"CS-006","trigger":{"job_type":"受限空间"},"type":"measure","field":"measures.confined_guardian","severity":"must_fix","name":"受限空间专人监护","message":"含受限空间作业但方案未写明专人监护与进出登记安排","advice":"写明作业期间坑/罐外专人监护、进出人员登记制度","basis":"GB 30871-2022 第6章 受限空间作业（作业期间应设专人监护）"},
+
+    {"id":"HP-001","trigger":{"job_type":"高处"},"type":"measure","field":"measures.scaffold_acceptance","severity":"must_fix","name":"脚手架搭设与验收","message":"含高处作业但方案未写明脚手架搭设与验收安排","advice":"写明脚手架由持证架子工搭设、验收挂牌后使用","basis":"通行做法（参考 GB 30871-2022 高处作业章节及脚手架安全规范，待核实）"},
+    {"id":"HP-002","trigger":{"job_type":"高处"},"type":"measure","field":"measures.fall_protection","severity":"must_fix","name":"防坠落措施","message":"含高处作业但方案未写明防坠落措施","advice":"写明高挂低用安全带、安全网/生命线设置、临边孔洞防护","basis":"GB 30871-2022 高处作业章节（应采取防坠落措施）"},
+    {"id":"HP-003","trigger":{"job_type":"高处"},"type":"measure","field":"measures.weather_stop","severity":"should_improve","name":"恶劣天气停止高处作业","message":"含高处作业但方案未写明恶劣天气停止作业的约定","advice":"写明大风（≥5级）、雷雨、大雾等恶劣天气停止露天高处作业","basis":"GB 30871-2022 高处作业章节（恶劣天气应停止露天高处作业）；风级阈值待核实"},
+    {"id":"HP-004","trigger":{"job_type":"高处"},"type":"measure","field":"measures.highplace_permit","severity":"must_fix","name":"高处作业票办理安排","message":"含高处作业但方案未写明高处作业票办理安排","advice":"写明 2 米及以上高处作业前按级别办理高处安全作业票","basis":"GB 30871-2022 高处作业章节（高处作业应办理作业票）"},
+
+    {"id":"LF-001","trigger":{"job_type":"吊装"},"type":"measure","field":"measures.lifting_plan","severity":"must_fix","name":"吊装方案","message":"含吊装作业但方案未写明吊装方案（吊车选型、站位、吊索具核算）","advice":"编制吊装方案：吊物重量、吊车型号与站位、吊索具选择与核算；大型吊装（通行做法 ≥40t）应专项论证","basis":"GB 30871-2022 吊装作业章节（应编制吊装方案）；吨位分级待核实"},
+    {"id":"LF-002","trigger":{"job_type":"吊装"},"type":"measure","field":"measures.lifting_permit","severity":"must_fix","name":"吊装作业票/吊装令","message":"含吊装作业但方案未写明吊装作业票（吊装令）办理安排","advice":"写明吊装前办理吊装作业票，明确指挥人员","basis":"GB 30871-2022 吊装作业章节（应办理作业票）"},
+    {"id":"LF-003","trigger":{"job_type":"吊装"},"type":"measure","field":"measures.lifting_warning_zone","severity":"should_improve","name":"吊装警戒区","message":"含吊装作业但方案未写明吊装警戒区设置","advice":"写明吊装区域拉警戒带、设专人警戒，吊臂下禁止站人","basis":"GB 30871-2022 吊装作业章节（吊装区域应设警戒）；条款待核实"},
+    {"id":"LF-004","trigger":{"job_type":"吊装"},"type":"measure","field":"measures.lifting_ground_check","severity":"should_improve","name":"吊装场地确认","message":"含吊装作业但方案未写明吊车站位场地承载力与地下设施确认","advice":"写明吊车站位处地面承载力确认、地下管线/电缆避让措施","basis":"通行做法（待核实）"},
+
+    {"id":"TE-001","trigger":{"job_type":"临时用电"},"type":"measure","field":"measures.power_distribution","severity":"must_fix","name":"临时配电规范","message":"含临时用电但方案未写明配电箱与线路敷设规范","advice":"写明临时配电箱设置、电缆架空/穿管敷设、接线由电工负责","basis":"GB 30871-2022 临时用电作业章节（应规范敷设与接线）"},
+    {"id":"TE-002","trigger":{"job_type":"临时用电"},"type":"measure","field":"measures.leakage_protector","severity":"must_fix","name":"漏电保护","message":"含临时用电但方案未写明漏电保护装置要求","advice":"写明临时用电回路装设漏电保护器并定期试验","basis":"GB 30871-2022 临时用电作业章节（应装设漏电保护）；条款待核实"},
+    {"id":"TE-003","trigger":{"job_type":"临时用电"},"type":"measure","field":"measures.electrician_cert","severity":"should_improve","name":"持证电工","message":"含临时用电但方案未写明由持证电工安装维护","advice":"写明临时用电由持低压电工证人员安装、维护、拆除","basis":"通行做法（特种作业人员持证上岗，待核实）"},
+    {"id":"TE-004","trigger":{"job_type":"临时用电"},"type":"measure","field":"measures.temp_power_permit","severity":"must_fix","name":"临时用电作业票办理安排","message":"含临时用电但方案未写明临时用电作业票办理安排","advice":"写明临时用电前办理临时用电安全作业票，明确用电时限与完工拆除确认","basis":"GB 30871-2022 临时用电作业章节（临时用电应办理作业票）"},
+
+    {"id":"BP-001","trigger":{"job_type":"盲板抽堵"},"type":"measure","field":"measures.blind_plate_map","severity":"must_fix","name":"盲板图","message":"含盲板抽堵作业但方案附件未见盲板图","advice":"绘制盲板图：标注每块盲板位置与编号，作为方案附件","basis":"GB 30871-2022 盲板抽堵作业章节（应绘制盲板位置图）；条款待核实"},
+    {"id":"BP-002","trigger":{"job_type":"盲板抽堵"},"type":"measure","field":"measures.blind_plate_list","severity":"must_fix","name":"盲板清单/台账","message":"含盲板抽堵作业但方案未见盲板清单（编号、规格、装拆确认）","advice":"编制盲板台账：编号、规格材质、加装/拆除时间与确认人，逐块销号","basis":"GB 30871-2022 盲板抽堵作业章节（盲板应统一编号、专人管理）；条款待核实"},
+    {"id":"BP-003","trigger":{"job_type":"盲板抽堵"},"type":"measure","field":"measures.blind_plate_permit","severity":"must_fix","name":"盲板抽堵作业票办理安排","message":"含盲板抽堵作业但方案未写明盲板抽堵作业票办理安排","advice":"写明盲板抽堵前办理作业票，涉及易燃有毒介质的落实防护","basis":"GB 30871-2022 盲板抽堵作业章节（应办理作业票）"},
+
+    {"id":"EX-001","trigger":{"job_type":"动土"},"type":"measure","field":"measures.excavation_permit","severity":"must_fix","name":"动土作业票办理安排","message":"含动土作业但方案未写明动土作业票办理安排","advice":"写明动土前办理动土作业票","basis":"GB 30871-2022 第11章 动土作业（应办理作业票）"},
+    {"id":"EX-002","trigger":{"job_type":"动土"},"type":"measure","field":"measures.underground_check","severity":"must_fix","name":"地下设施探测与交底","message":"含动土作业但方案未写明地下管线/电缆探测与交底","advice":"写明动土前查明地下管线、电缆走向并向作业人员交底，机械开挖保持安全距离","basis":"GB 30871-2022 第11章 动土作业（应查明地下设施）；条款待核实"},
+
+    {"id":"PS-001","trigger":{"job_type":"带压堵漏"},"type":"measure","field":"measures.pressure_seal_approval","severity":"must_fix","name":"带压堵漏专项方案审批","message":"含带压堵漏作业但方案未写明专项方案编制与审批","advice":"编制带压堵漏专项方案（介质、温度压力、夹具设计）并经技术负责人审批","basis":"通行做法：带压堵漏应专项论证审批（待核实）"},
+    {"id":"PS-002","trigger":{"job_type":"带压堵漏"},"type":"measure","field":"measures.pressure_seal_qualified","severity":"should_improve","name":"专业堵漏队伍","message":"含带压堵漏作业但方案未写明由具备资质/能力的专业队伍实施","advice":"写明由专业带压堵漏队伍实施并核验其业绩与人员培训记录","basis":"通行做法（待核实）"},
+
+    {"id":"RT-001","trigger":{"job_type":"射线探伤"},"type":"measure","field":"measures.radiation_protection","severity":"must_fix","name":"辐射防护与警戒区","message":"含射线探伤作业但方案未写明辐射防护与警戒区设置","advice":"写明探伤时划定控制区/监督区、设警戒线与警示标志、专人警戒清场","basis":"通行做法（参考 GBZ 117 工业X射线探伤放射防护要求，待核实）"},
+    {"id":"RT-002","trigger":{"job_type":"射线探伤"},"type":"measure","field":"measures.radiation_schedule","severity":"should_improve","name":"探伤时段安排","message":"含射线探伤作业但方案未写明探伤时段安排","advice":"写明探伤安排在夜间或人员较少时段进行，提前通知交叉作业单位撤离","basis":"通行做法（待核实）"},
+
+    {"id":"CC-001","trigger":{"job_type":"化学清洗"},"type":"measure","field":"measures.chemical_disposal","severity":"must_fix","name":"清洗介质处置","message":"含化学清洗作业但方案未写明清洗介质回收与废液处置","advice":"写明清洗液（酸/碱/缓蚀剂）的中和处理与废液排放去向，不得直排","basis":"通行做法（待核实）"},
+    {"id":"CC-002","trigger":{"job_type":"化学清洗"},"type":"measure","field":"measures.chemical_ppe","severity":"must_fix","name":"化学清洗个体防护","message":"含化学清洗作业但方案未写明个体防护要求","advice":"写明作业人员穿防酸碱服、戴防护面罩与耐腐蚀手套","basis":"通行做法（待核实）"},
+    {"id":"CC-003","trigger":{"job_type":"化学清洗"},"type":"measure","field":"measures.chemical_emergency_flush","severity":"should_improve","name":"应急冲洗设施","message":"含化学清洗作业但方案未写明现场应急冲洗设施","advice":"写明清洗现场就近设置洗眼器/冲洗水源","basis":"通行做法（待核实）"},
+
+    {"id":"C-001","trigger":{"job_types_all":["受限空间","动火"]},"type":"reminder","severity":"should_improve","name":"受限空间内动火双票联办","message":"同一作业同时涉及受限空间与动火，方案应明确双票联办与互相关联","advice":"在方案中写明：该作业需同时办理受限空间作业票与动火作业票，两票互相关联，动火分析与受限空间分析同步进行","basis":"GB 30871-2022（受限空间内动火应同时办理两类作业票）；条款待核实"},
+    {"id":"C-002","trigger":{"job_types_all":["动火","高处"]},"type":"measure","field":"measures.spark_containment","severity":"should_improve","name":"高处动火火花防溅落","message":"同一作业同时涉及高处与动火，方案未写明火花防溅落措施","advice":"写明高处动火下方铺设接火盆/防火毯、清理下方可燃物并设监护","basis":"通行做法（待核实）"},
+    {"id":"C-003","type":"measure","field":"measures.phased_safety_check","when":[{"field":"duration_days","op":"gt","value":30}],"severity":"should_improve","name":"阶段性安全检查安排","message":"工期超过 30 天但方案未写明阶段性安全检查安排","advice":"补充阶段性（周/旬）安全大检查安排：检查组织、频次与问题整改闭环","basis":"通行做法：长周期检修应安排阶段性安全检查（30 天阈值为通行做法，待核实）"}
+  ]
+}

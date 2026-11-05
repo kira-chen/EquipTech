@@ -1,0 +1,162 @@
+{
+  "plan_no": "CDU-DX-2026-01",
+  "unit": "常减压装置（CDU-1）",
+  "project": "2026 年停工大修",
+  "contractor": "某甲石化检修工程有限公司（总承包）",
+  "duration_days": 45,
+  "jobs": [
+    {
+      "name": "常压塔 T-101 内件更换（塔内焊接）",
+      "job_types": [
+        "受限空间",
+        "高处",
+        "动火"
+      ],
+      "medium": "常压渣油/油气",
+      "location": "T-101"
+    },
+    {
+      "name": "减压塔 T-201 规整填料更换",
+      "job_types": [
+        "受限空间",
+        "高处"
+      ],
+      "medium": "减压渣油",
+      "location": "T-201"
+    },
+    {
+      "name": "常压加热炉 F-101 炉管更换",
+      "job_types": [
+        "动火",
+        "受限空间"
+      ],
+      "medium": "常压渣油",
+      "location": "F-101 炉膛"
+    },
+    {
+      "name": "原油换热器 E-102 管束抽芯清洗及回装",
+      "job_types": [
+        "吊装"
+      ],
+      "medium": "原油",
+      "location": "E-102"
+    },
+    {
+      "name": "塔顶空冷器 A-101 整体更换",
+      "job_types": [
+        "吊装",
+        "高处"
+      ],
+      "medium": "塔顶油气",
+      "location": "A-101 平台"
+    },
+    {
+      "name": "装置界区工艺管线加/拆盲板",
+      "job_types": [
+        "盲板抽堵"
+      ],
+      "medium": "油品、瓦斯",
+      "location": "装置界区"
+    },
+    {
+      "name": "电脱盐罐 D-101 内部防腐检修",
+      "job_types": [
+        "受限空间"
+      ],
+      "medium": "原油",
+      "location": "D-101"
+    },
+    {
+      "name": "临时施工用电接引及现场照明",
+      "job_types": [
+        "临时用电"
+      ],
+      "medium": "无（方案标注「—」）",
+      "location": "装置区"
+    },
+    {
+      "name": "常压炉出口转油线焊缝射线探伤",
+      "job_types": [
+        "射线探伤"
+      ],
+      "medium": "油气",
+      "location": "F-101 出口"
+    }
+  ],
+  "measures": {
+    "risk_identification": "开工前逐项作业开展 JSA，形成 JSA 记录表（附件 1）",
+    "safety_briefing": "每日开工前班组长对作业人员安全交底，记录签字保存",
+    "emergency_plan": "编制检修专项应急预案（附件 4），明确着火/中毒窒息/高处坠落处置程序",
+    "emergency_drill": null,
+    "contractor_qualification": "已核验营业执照、安全生产许可证及特种作业人员操作证",
+    "contractor_agreement": "开工前签订安全管理协议",
+    "contractor_training": "入厂前完成厂、车间、班组三级安全教育并考核合格",
+    "tool_inspection": "电动工具、吊索具、安全带进场检验合格登记挂牌",
+    "cross_work_coordination": "指挥部设总协调人统一安排作业时序，同一垂直面上下不同时作业",
+    "safety_acceptance": "完工组织安全验收：盲板复位销号、现场清理、防护设施恢复，验收单签字",
+    "process_handover": "停工后退料、蒸汽吹扫、水洗置换，采样分析合格并办理装置交出手续",
+    "energy_isolation": "检修用电动机停电上锁挂牌，隔离阀门挂禁止操作警示牌",
+    "waste_disposal": "废油残渣收集至危废暂存区，有资质单位处置",
+    "fire_access": "材料机具不占用消防通道，消火栓周围 2 米内不堆放物品",
+    "phased_safety_check": "检修期间每周五指挥部组织现场安全大检查，问题限期整改闭环",
+    "toxic_protection": "佩戴便携式硫化氢检测报警仪，必要时佩戴空气呼吸器，作业前职业危害告知",
+    "restart_safety": "开车前联锁、报警逐项投用，安全附件复位，试车阶段专人监护",
+    "hotwork_permit": "每次动火前按级别办理动火安全作业票",
+    "combustible_cleanup": "动火点周围 10 米内清除可燃物，无法清除的防火毯覆盖",
+    "cylinder_distance": "氧气瓶与乙炔瓶间距≥5 米，距动火点≥10 米，直立固定",
+    "fire_watch_equipment": "每个动火点配 2 具 8kg 干粉灭火器并定期检查压力",
+    "hotwork_gas_test": null,
+    "fire_watcher": null,
+    "confined_permit": "进入塔、罐、炉膛前办理受限空间安全作业票",
+    "isolation_purge": "连接管线全部加盲板隔离，蒸汽吹扫、空气置换",
+    "ventilation": "防爆轴流风机持续强制通风，严禁通氧气",
+    "gas_test_plan": null,
+    "rescue_equipment": "正压式空气呼吸器 2 套、救援绳及安全梯",
+    "confined_guardian": "每个受限空间入口专人监护，进出人员登记",
+    "scaffold_acceptance": "持证架子工按方案搭设，联合验收合格挂绿牌",
+    "fall_protection": "双钩安全带高挂低用，临边安全网，孔洞加盖板",
+    "weather_stop": "5 级以上大风、雷雨、大雾停止露天高处与吊装作业",
+    "highplace_permit": "2 米及以上高处作业前按规定办理高处安全作业票",
+    "lifting_plan": null,
+    "lifting_permit": "吊装前办理吊装安全作业票，持证起重指挥统一指挥",
+    "lifting_warning_zone": "吊装区域设警戒绳与警示标志，专人警戒，吊物下方禁止站人",
+    "lifting_ground_check": null,
+    "power_distribution": "检修电源箱接引，电缆架空敷设或穿管保护",
+    "leakage_protector": "临时用电回路装漏电保护器，每日试验",
+    "electrician_cert": "接拆线由持低压电工证人员操作",
+    "temp_power_permit": "临时用电前办理临时用电安全作业票，明确用电时限",
+    "blind_plate_map": "绘制盲板图（附件 3），盲板统一编号",
+    "blind_plate_list": "建立盲板台账，逐块记录加装/拆除时间与确认人，挂牌销号",
+    "blind_plate_permit": "盲板抽堵前办理盲板抽堵安全作业票",
+    "excavation_permit": null,
+    "underground_check": null,
+    "pressure_seal_approval": null,
+    "pressure_seal_qualified": null,
+    "radiation_protection": "探伤时划定控制区、拉警戒线、设电离辐射警告标志，专人警戒清场",
+    "radiation_schedule": "安排 22:00 后进行，提前 2 小时通知交叉作业单位撤离",
+    "chemical_disposal": null,
+    "chemical_ppe": null,
+    "chemical_emergency_flush": null,
+    "spark_containment": "塔内动火下方铺设接火盆与防火毯，防止火花溅落"
+  },
+  "org": {
+    "site_manager": "王某某（联合装置一部经理，总指挥）",
+    "safety_officer": "李某某（HSE 部）、赵某某（某甲公司）",
+    "emergency_contact": "生产调度 内线 0001（24 小时）；指挥部值班 内线 0002"
+  },
+  "attachments": {
+    "risk_assessment_doc": "附件 1：JSA 记录表（风险评估）",
+    "site_layout": "附件 2：施工平面布置图",
+    "emergency_plan_doc": "附件 4：检修专项应急预案"
+  },
+  "extraction_notes": [
+    "measures.emergency_drill：方案通用措施与应急章节均未提及应急演练安排 → 填 null",
+    "measures.hotwork_gas_test：3.2 动火措施只写了办票、清可燃物、气瓶与灭火器，未提及动火分析/可燃气体检测安排 → 填 null",
+    "measures.fire_watcher：3.2 动火措施未提及动火监护人（监火人）安排 → 填 null",
+    "measures.gas_test_plan：3.3 受限空间措施只写了置换、通风、监护，未提及气体检测/分析安排 → 填 null",
+    "measures.lifting_plan：3.5 吊装只写了办票与警戒，附件清单亦无吊装方案 → 填 null",
+    "measures.lifting_ground_check：方案未提及吊车站位场地承载力确认 → 填 null",
+    "duration_days：方案写「45 天（9 月 20 日至 11 月 3 日）」→ 填 45",
+    "jobs[7].medium：方案介质栏为「—」（明确无介质）→ 填「无（方案标注「—」）」而非 null"
+  ]
+}

@@ -1,11 +1,11 @@
 # 检修方案安全措施核查结果（车间自查）
 
-调用技能：`overhaul-safety-check`　｜　检修方案：{{meta.objectName}}　｜　检修分级：{{meta.repairType}}
-自查时间：{{meta.generatedAt}}（北京时间）　｜　源结果文件：{{meta.resultFile}}
+规则引擎：`check.js`　｜　检修方案：{{meta.objectName}}　｜　检修分级：{{meta.repairType}}
+自查时间：{{meta.generatedAt}}（北京时间）　｜　结果文件：{{meta.resultFile}}
 
-## 一、核查结论（引自 overhaul-safety-check）
+## 一、核查结论（引自规则引擎 check.js）
 
-> 以下内容原文引自源技能判定结果，本技能未做任何改写。
+> 以下内容原文引自规则引擎（check.js）的判定结果，合并时未做任何改写。
 
 共核查 {{findings.length}} 项：缺失（必须补充）{{counts.must_fix}} 项，建议完善 {{counts.should_improve}} 项，未判定 {{counts.undetermined}} 项，已有 {{counts.pass}} 项。
 
@@ -17,13 +17,13 @@
 
 {{table:findings[must_fix|should_improve]}}
 
-> 逐条照搬源技能结果，未合并、未归类、未调整级别。
+> 逐条照搬规则引擎结果，未合并、未归类、未调整级别。
 
 ## 三、未判定项
 
 {{table:findings[undetermined]}}
 
-> 【未判定】以上各项保持源技能的「未判定」状态，本技能不改写为已有或缺失；补齐方案信息后重新运行源技能。
+> 【未判定】以上各项保持规则引擎的「未判定」状态，合并时不改写为已有或缺失；补齐方案信息后重新运行 check.js。
 
 ## 四、已有措施
 
@@ -31,7 +31,7 @@
 
 ## 五、车间侧补充提示（非规则判定）
 
-> **以下为车间设备员关注项，不参与上述合规判定，不影响源技能结论。**
+> **以下为车间设备员关注项，不参与上述合规判定，不影响规则引擎结论。**
 
 {{table:workshopNotes}}
 
@@ -41,7 +41,7 @@
 
 各专项措施最终仍以开工时逐票办理的作业票为准（作业票预检用 permit-precheck-bridge）。
 
-## 附：源技能抽取说明（原文）
+## 附：抽取说明（原文）
 
 {{extractionNotes}}
 

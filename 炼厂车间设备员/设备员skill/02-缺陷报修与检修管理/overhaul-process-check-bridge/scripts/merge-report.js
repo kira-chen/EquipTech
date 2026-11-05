@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * 结果转达脚本（仅 Node.js 内置模块）：把 overhaul-safety-check 的 result.json 原样转达为车间自查合并报告。
- * 用法：node scripts/merge-report.js --result <源技能 result.json> [--plan <源技能输入 plan.json>] [--notes <车间侧提示 json>]
+ * 结果转达脚本（仅 Node.js 内置模块）：把本技能规则引擎 check.js 的 result.json 原样转达为车间自查合并报告。
+ * 用法：node scripts/merge-report.js --result <check.js 输出的 result.json> [--plan <交给 check.js 的 plan.json>] [--notes <车间侧提示 json>]
  *       [--object <方案名称>] [--repair-type <大检修|日常维修|抢修|专项>] [--out <dir>]
  * 产出：<out>/overhaul-check-bridge.md、bridge.json、summary.json；末行 JSON 摘要
  *
  * 硬约束（references/bridge-rules.md）：
  *   - findings 逐条深拷贝，severity / name / message / detail / advice / basis / rule_id / jobs 一字不改，不合并、不归类、不简化
  *   - 本脚本按 findings 重新计数，与源 summary 不一致时只 warning，不改源数据
- *   - 源技能 disclaimer 原文保留；本技能声明行追加在其后
+ *   - 规则引擎 disclaimer 原文保留；本技能声明行追加在其后
  *   - 车间侧提示单独成节「车间侧补充提示（非规则判定）」，状态只认 已核实 / 未核实 / 不适用，其它一律按「未核实」并 warning
  *   - --repair-type 只写入报告抬头（检修分级口径：装置大检修 / 日常维修 / 抢修 / 专项），不进入判定；旧值 大修→大检修、中修/小修→日常维修 并 warning
- *   - 源技能 result.json 不含 plan_no、job_types：方案编号与作业类型标签从 --plan（交给源技能 check.js 的 plan.json）读取，
+ *   - check.js 的 result.json 不含 plan_no、job_types：方案编号与作业类型标签从 --plan（交给 check.js 的 plan.json）读取，
  *     只进抬头与字段表，不进入判定；不传 --plan 时为 null / 空数组并 warning，不猜测
  */
 const fs = require('fs');
@@ -23,7 +23,7 @@ const warnings = [];
 const VALUE_OPTS = ['result', 'plan', 'notes', 'object', 'repair-type', 'out'];
 const FLAG_OPTS = ['help'];
 
-const SOURCE = 'overhaul-safety-check';
+const SOURCE = 'check.js';
 const OUT_MD = 'overhaul-check-bridge.md';
 const TITLE = '检修方案安全措施核查结果（车间自查）';
 const OBJECT_LABEL = '检修方案';
@@ -39,7 +39,7 @@ const NOTE_ITEMS = [
 const NOTE_STATUS = ['已核实', '未核实', '不适用'];
 const REPAIR_TYPES = ['大检修', '日常维修', '抢修', '专项'];
 const REPAIR_TYPE_ALIAS = { '大修': '大检修', '装置大检修': '大检修', '停工检修': '大检修', '中修': '日常维修', '小修': '日常维修', '技改': '专项', '技改技措': '专项', '专项检修': '专项' };
-/** 作业类型标签 → 作业许可八大类名称（只作加注；源技能标签原值照搬） */
+/** 作业类型标签 → 作业许可八大类名称（只作加注；plan.json / 规则库的标签原值照搬，「动火」即中石化的「用火作业」） */
 const JOB_TYPE_CN = {
   '动火': '用火作业', '受限空间': '受限空间作业', '高处': '高处作业', '吊装': '吊装作业', '临时用电': '临时用电作业',
   '盲板抽堵': '盲板抽堵作业', '动土': '动土作业', '断路': '断路作业',
@@ -49,20 +49,20 @@ const esc = (v) => C.str(v).replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
 
 function main() {
   const a = C.parseArgs(process.argv.slice(2), VALUE_OPTS, FLAG_OPTS);
-  if (!a.result) throw new Error('缺少 --result（源技能 result.json）');
-  if (!fs.existsSync(a.result)) throw new Error(`源技能结果文件不存在: ${a.result}`);
+  if (!a.result) throw new Error('缺少 --result（规则引擎 check.js 输出的 result.json）');
+  if (!fs.existsSync(a.result)) throw new Error(`规则引擎结果文件不存在: ${a.result}`);
   const outDir = a.out || path.join(require('os').tmpdir(), 'opcb-out');
   let src;
-  try { src = JSON.parse(fs.readFileSync(a.result, 'utf8')); } catch (e) { throw new Error(`源技能结果文件解析失败: ${e.message}`); }
-  if (!src || typeof src !== 'object' || !Array.isArray(src.findings)) throw new Error('源技能结果格式错误：缺少 findings 数组，请确认传入的是 result.json 而不是 summary.json');
-  if (!src.disclaimer) warnings.push('源技能结果无 disclaimer 字段，合并报告只能保留本技能声明行');
+  try { src = JSON.parse(fs.readFileSync(a.result, 'utf8')); } catch (e) { throw new Error(`规则引擎结果文件解析失败: ${e.message}`); }
+  if (!src || typeof src !== 'object' || !Array.isArray(src.findings)) throw new Error('规则引擎结果格式错误：缺少 findings 数组，请确认传入的是 check.js 输出的 result.json 而不是 summary.json');
+  if (!src.disclaimer) warnings.push('规则引擎结果无 disclaimer 字段，合并报告只能保留本技能声明行');
 
-  // 源技能输入的 plan.json：check.js 的 result.json 不含 plan_no / job_types，这两项从这里取（只进抬头与字段表，不进入判定）
+  // 交给 check.js 的 plan.json：check.js 的 result.json 不含 plan_no / job_types，这两项从这里取（只进抬头与字段表，不进入判定）
   let plan = null;
   if (a.plan) {
     if (!fs.existsSync(a.plan)) throw new Error(`检修方案数据 plan.json 不存在: ${a.plan}`);
     try { plan = JSON.parse(fs.readFileSync(a.plan, 'utf8')); } catch (e) { throw new Error(`检修方案数据 plan.json 解析失败: ${e.message}`); }
-    if (!plan || typeof plan !== 'object' || Array.isArray(plan)) throw new Error('检修方案数据 plan.json 格式错误：应为对象（即交给源技能 check.js --input 的文件）');
+    if (!plan || typeof plan !== 'object' || Array.isArray(plan)) throw new Error('检修方案数据 plan.json 格式错误：应为对象（即交给 check.js --input 的文件）');
   }
 
   // 检修分级（只进抬头，不进判定）
@@ -86,7 +86,7 @@ function main() {
   if (src.summary && typeof src.summary === 'object') {
     for (const k of ['must_fix', 'should_improve', 'undetermined', 'pass']) {
       if (src.summary[k] !== undefined && Number(src.summary[k]) !== counts[k]) {
-        warnings.push(`源技能 summary.${k}=${src.summary[k]} 与 findings 重新计数 ${counts[k]} 不一致，报告按 findings 逐条照搬，summary 原值保留在 bridge.json`);
+        warnings.push(`规则引擎 summary.${k}=${src.summary[k]} 与 findings 重新计数 ${counts[k]} 不一致，报告按 findings 逐条照搬，summary 原值保留在 bridge.json`);
       }
     }
   }
@@ -112,8 +112,8 @@ function main() {
     }
   }
 
-  // 方案编号与涉及的作业类型：优先取 plan.json（源技能真实 result.json 不含这两项）；
-  // 未传 --plan 时兼容源结果顶层自带的 plan_no / job_types（旧格式）；都没有则留空并 warning，不从 findings 反推
+  // 方案编号与涉及的作业类型：优先取 plan.json（check.js 的 result.json 不含这两项）；
+  // 未传 --plan 时兼容结果顶层自带的 plan_no / job_types（旧格式）；都没有则留空并 warning，不从 findings 反推
   let planNo = null, planNoSource = null, jobTypes = [], jobTypesSource = null;
   if (plan) {
     planNo = C.str(plan.plan_no) || null;
@@ -140,7 +140,7 @@ function main() {
     jobTypesSource = 'result.json';
   }
   if (!plan && (!planNo || !jobTypesSource)) {
-    warnings.push('未提供 --plan：源技能 result.json 不含 plan_no（方案编号）与 job_types（作业类型），报告中这两项留空；传入交给 check.js 的 plan.json（--plan）即可补上');
+    warnings.push('未提供 --plan：规则引擎 result.json 不含 plan_no（方案编号）与 job_types（作业类型），报告中这两项留空；传入交给 check.js 的 plan.json（--plan）即可补上');
   }
   const objectName = a.object || src.project || planNo || '（未提供）';
   const jobTypesCn = jobTypes.map((t) => (JOB_TYPE_CN[t] ? `${t}（${JOB_TYPE_CN[t]}）` : t));
@@ -169,32 +169,32 @@ function main() {
   const L = [];
   L.push(`# ${TITLE}`);
   L.push('');
-  L.push(`调用技能：\`${SOURCE}\`　｜　${OBJECT_LABEL}：${objectName}${repairType ? `　｜　检修分级：${repairType}` : ''}`);
-  L.push(`自查时间：${C.localDateTime()}（北京时间）　｜　源结果文件：${path.basename(a.result)}`);
+  L.push(`规则引擎：\`${SOURCE}\`　｜　${OBJECT_LABEL}：${objectName}${repairType ? `　｜　检修分级：${repairType}` : ''}`);
+  L.push(`自查时间：${C.localDateTime()}（北京时间）　｜　结果文件：${path.basename(a.result)}`);
   L.push('');
-  L.push(`## 一、${ACTION}结论（引自 ${SOURCE}）`);
+  L.push(`## 一、${ACTION}结论（引自规则引擎 ${SOURCE}）`);
   L.push('');
-  L.push('> 以下内容原文引自源技能判定结果，本技能未做任何改写。');
+  L.push(`> 以下内容原文引自规则引擎（${SOURCE}）的判定结果，合并时未做任何改写。`);
   L.push('');
   L.push(`共核查 ${findings.length} 项：缺失（必须补充）${counts.must_fix} 项，建议完善 ${counts.should_improve} 项，未判定 ${counts.undetermined} 项，已有 ${counts.pass} 项${counts.other ? `，其它级别 ${counts.other} 项` : ''}。`);
   const META_CN = { plan_no: '方案编号（plan_no）', unit: '装置/单位（unit）', project: '检修项目（project）', contractor: '承修单位（contractor）', duration_days: '工期天数（duration_days）', jobs_count: '作业项数（jobs_count）' };
   const metaRows = Object.entries(result.sourceMeta)
     .filter(([k, v]) => META_CN[k] && v !== null && v !== undefined && v !== '')
     .map(([k, v]) => [META_CN[k], esc(v)]);
-  if (jobTypesCn.length) metaRows.push([`作业类型标签（${jobTypesSource === 'plan.json' ? 'plan.json 各作业 job_types 原值' : '源技能原值'}，括号内为作业许可八大类加注）`, esc(jobTypesCn.join('、'))]);
-  if (metaRows.length) { L.push(''); L.push(C.mdTable(['源技能字段', '值'], metaRows)); }
+  if (jobTypesCn.length) metaRows.push([`作业类型标签（${jobTypesSource === 'plan.json' ? 'plan.json 各作业 job_types 原值' : 'result.json 原值'}，括号内为作业许可八大类加注）`, esc(jobTypesCn.join('、'))]);
+  if (metaRows.length) { L.push(''); L.push(C.mdTable(['result.json 字段', '值'], metaRows)); }
   const fromPlan = [planNoSource === 'plan.json' ? '方案编号' : null, jobTypesSource === 'plan.json' && jobTypes.length ? '作业类型标签' : null].filter(Boolean);
-  if (fromPlan.length) L.push(`> ${fromPlan.join('、')}取自 plan.json（源技能 result.json 不含这${fromPlan.length > 1 ? '两' : '一'}项），只作抬头信息，不进入判定。\n`);
+  if (fromPlan.length) L.push(`> ${fromPlan.join('、')}取自 plan.json（规则引擎 result.json 不含这${fromPlan.length > 1 ? '两' : '一'}项），只作抬头信息，不进入判定。\n`);
   if (counts.undetermined) L.push('【注意】未判定项既不代表措施已有，也不代表缺失，需补齐方案信息（作业类型标注、工期等）后重新' + ACTION + '。');
   L.push('');
 
   L.push('## 二、措施缺失项（缺失 / 建议完善）');
   L.push('');
-  if (!nonConform.length) L.push('_源技能结果中无缺失与建议完善项。_\n');
+  if (!nonConform.length) L.push('_规则引擎结果中无缺失与建议完善项。_\n');
   else {
     L.push(C.mdTable(['序号', '规则编号', '级别', '措施名称（原文）', '问题（原文）', '现状（原文）', '方案里怎么补（原文）', '依据（原文）', '触发作业（原文）'],
       nonConform.map((f, i) => [i + 1, esc(f.rule_id), SEV_CN[f.severity], esc(f.name), esc(f.message), esc(f.detail), esc(f.advice), esc(f.basis), esc(Array.isArray(f.jobs) ? f.jobs.join('、') : f.jobs)])));
-    L.push('> 逐条照搬源技能结果，未合并、未归类、未调整级别。');
+    L.push('> 逐条照搬规则引擎结果，未合并、未归类、未调整级别。');
     L.push('');
   }
 
@@ -204,7 +204,7 @@ function main() {
   else {
     L.push(C.mdTable(['序号', '规则编号', '未判定内容（原文）', '缺失信息（原文）', '补齐建议（原文）', '依据（原文）'],
       undetermined.map((f, i) => [i + 1, esc(f.rule_id), esc(f.message), esc(f.detail), esc(f.advice), esc(f.basis)])));
-    L.push('> 【未判定】以上各项保持源技能的「未判定」状态，本技能不改写为已有或缺失；补齐方案信息后重新运行源技能。');
+    L.push(`> 【未判定】以上各项保持规则引擎的「未判定」状态，合并时不改写为已有或缺失；补齐方案信息后重新运行 ${SOURCE}。`);
     L.push('');
   }
   if (others.length) {
@@ -222,7 +222,7 @@ function main() {
 
   L.push('## 五、车间侧补充提示（非规则判定）');
   L.push('');
-  L.push('> **以下为车间设备员关注项，不参与上述合规判定，不影响源技能结论。**');
+  L.push('> **以下为车间设备员关注项，不参与上述合规判定，不影响规则引擎结论。**');
   L.push('');
   L.push(C.mdTable(['检查项', '状态', '说明', '可接技能'],
     workshopNotes.map((n) => [n.item, n.status === '未核实' ? '**未核实**' : n.status, esc(n.note) || (n.status === '未核实' ? (n.skill === '车间自查' ? '待车间自查' : `建议用 ${n.skill} 核对`) : ''), n.skill])));
@@ -241,7 +241,7 @@ function main() {
   }
 
   if (result.extractionNotes.length) {
-    L.push('## 附：源技能抽取说明（原文）');
+    L.push('## 附：抽取说明（原文）');
     L.push('');
     for (const n of result.extractionNotes) L.push(`- ${C.str(n)}`);
     L.push('');
@@ -258,7 +258,7 @@ function main() {
   L.push(`> ${DECLARATION}`);
   L.push('');
   L.push('<!-- ANALYSIS_START -->');
-  L.push('（模型在此补充车间侧说明：调用了哪个技能、缺失项与未判定项数量、车间提示项、下一步整改重点；不得复述或改写判定结论，不得审查方案技术内容。）');
+  L.push('（模型在此补充车间侧说明：缺失 / 建议完善 / 未判定项数量、车间提示项、下一步整改重点；不得复述或改写判定结论，不得审查方案技术内容。）');
   L.push('<!-- ANALYSIS_END -->');
   fs.writeFileSync(path.join(outDir, OUT_MD), L.join('\n'), 'utf8');
 

@@ -1,0 +1,103 @@
+{
+  "plan_no": "JX-P102-2026-07",
+  "unit": "常减压装置（减压渣油泵 P-102）",
+  "project": "P-102 泵解体检修（更换机械密封及轴承）",
+  "contractor": "本厂第二机修车间（自行检修，不涉及外委）",
+  "duration_days": 5,
+  "jobs": [
+    {
+      "name": "P-102 泵解体检修、更换机械密封及轴承",
+      "job_types": [],
+      "medium": "减压渣油",
+      "location": "泵区"
+    },
+    {
+      "name": "泵进出口管线加/拆盲板",
+      "job_types": [
+        "盲板抽堵"
+      ],
+      "medium": "减压渣油",
+      "location": "P-102 进出口"
+    },
+    {
+      "name": "检修临时电源接引（电动扳手、行灯）",
+      "job_types": [
+        "临时用电"
+      ],
+      "medium": "无（方案标注「—」）",
+      "location": "泵区"
+    }
+  ],
+  "measures": {
+    "risk_identification": "检修前车间技术员组织 JSA 分析，记录表见附件 1",
+    "safety_briefing": "开工前班长安全交底并签字确认",
+    "emergency_plan": "执行现行《生产区域检维修应急处置预案》（附件 3 引用）",
+    "emergency_drill": "参加装置区月度应急演练，本季度 9 月 2 日已演练一次",
+    "contractor_qualification": "自行检修不涉及外委，方案已说明不适用情形；人员为在册职工持培训记录",
+    "contractor_agreement": "自行检修不涉及外部承包商，方案已说明安全协议不适用情形",
+    "contractor_training": "参检人员检修前进行专项安全教育",
+    "tool_inspection": "电动扳手、捯链、行灯变压器使用前检查合格",
+    "cross_work_coordination": "泵检修与盲板抽堵、临时用电由机修班长统一协调时序",
+    "safety_acceptance": "完工验收：盲板复位、现场清理、防护罩复位，车间与属地共同签字",
+    "process_handover": "P-102 切出、渣油退净、蒸汽吹扫置换合格，办理设备交出确认",
+    "energy_isolation": "电机停电上锁挂牌「有人检修，禁止合闸」",
+    "waste_disposal": "废机械密封、含油棉纱收集至危废桶交危废暂存间",
+    "fire_access": "现场不占用消防通道，泵区消火栓畅通",
+    "phased_safety_check": null,
+    "toxic_protection": "拆法兰时佩戴防护面罩、耐油手套，现场配便携式硫化氢检测报警仪",
+    "restart_safety": "盘车确认灵活、防护罩恢复后配合工艺单机试车，确认机械密封无泄漏后交付",
+    "hotwork_permit": null,
+    "combustible_cleanup": null,
+    "cylinder_distance": null,
+    "fire_watch_equipment": null,
+    "hotwork_gas_test": null,
+    "fire_watcher": null,
+    "confined_permit": null,
+    "isolation_purge": null,
+    "ventilation": null,
+    "gas_test_plan": null,
+    "rescue_equipment": null,
+    "confined_guardian": null,
+    "scaffold_acceptance": null,
+    "fall_protection": null,
+    "weather_stop": null,
+    "highplace_permit": null,
+    "lifting_plan": null,
+    "lifting_permit": null,
+    "lifting_warning_zone": null,
+    "lifting_ground_check": null,
+    "power_distribution": "从泵区检修电源箱接引，行灯 36V 安全电压",
+    "leakage_protector": "装设漏电保护器并试验合格",
+    "electrician_cert": "接拆线由持低压电工证的维修电工负责",
+    "temp_power_permit": "作业前办理临时用电安全作业票",
+    "blind_plate_map": "按附件 2 盲板图统一编号",
+    "blind_plate_list": "建立盲板台账逐块销号",
+    "blind_plate_permit": "办理盲板抽堵安全作业票",
+    "excavation_permit": null,
+    "underground_check": null,
+    "pressure_seal_approval": null,
+    "pressure_seal_qualified": null,
+    "radiation_protection": null,
+    "radiation_schedule": null,
+    "chemical_disposal": null,
+    "chemical_ppe": null,
+    "chemical_emergency_flush": null,
+    "spark_containment": null
+  },
+  "org": {
+    "site_manager": "陈某某（机修车间主任）",
+    "safety_officer": "刘某某（车间安全员）",
+    "emergency_contact": "生产调度 内线 0001；车间值班 内线 0003"
+  },
+  "attachments": {
+    "risk_assessment_doc": "附件 1：JSA 记录表",
+    "site_layout": null,
+    "emergency_plan_doc": "附件 3：《生产区域检维修应急处置预案》（引用现行版本 Q/XX-虚构-001）"
+  },
+  "extraction_notes": [
+    "jobs[0].job_types：方案作业类型栏明确写「无特殊作业」→ 填空数组 []（不算未标注）",
+    "attachments.site_layout：附件清单无施工平面布置图 → 填 null",
+    "contractor：方案写「本厂第二机修车间自行实施，不涉及外委」→ 填车间名称并在资质/协议措施中摘录说明",
+    "jobs[2].medium：方案介质栏为「—」（明确无介质）→ 填「无（方案标注「—」）」而非 null"
+  ]
+}
