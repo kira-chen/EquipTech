@@ -1,0 +1,222 @@
+{
+  "meta": {
+    "name": "特殊作业票预检规则库",
+    "version": "0.3.0",
+    "basis": "GB 30871-2022《危险化学品企业特殊作业安全规范》及中石化特殊作业管理通行做法（按记忆整理，条款号以正式文本为准）",
+    "severity_levels": [
+      "must_fix",
+      "should_improve",
+      "undetermined",
+      "pass"
+    ],
+    "note": "basis 中标注“参考 … 相应条款”的表示条款号不确定；标注“通行做法”的表示来自企业管理惯例而非国标强制条文；标注“待核实”的为审查新增、尚未逐条核对正式文本的规则（见 rules-gb30871.md §9）。when 依赖字段为空 → 输出 undetermined（未判定）；on_when_empty:\"skip\" 的规则例外（依赖字段为空即视为不适用）。check_name 为通过项显示的正向名称。"
+  },
+  "toxic_limits": {
+    "note": "GBZ 2.1-2019 工作场所有害因素职业接触限值（PC-TWA/MAC，mg/m3），常见介质摘录，不全时请人工核对",
+    "H2S": {
+      "limit": 10,
+      "unit": "mg/m3",
+      "kind": "MAC"
+    },
+    "硫化氢": {
+      "limit": 10,
+      "unit": "mg/m3",
+      "kind": "MAC"
+    },
+    "CO": {
+      "limit": 20,
+      "unit": "mg/m3",
+      "kind": "PC-TWA"
+    },
+    "一氧化碳": {
+      "limit": 20,
+      "unit": "mg/m3",
+      "kind": "PC-TWA"
+    },
+    "NH3": {
+      "limit": 20,
+      "unit": "mg/m3",
+      "kind": "PC-TWA"
+    },
+    "氨": {
+      "limit": 20,
+      "unit": "mg/m3",
+      "kind": "PC-TWA"
+    },
+    "苯": {
+      "limit": 6,
+      "unit": "mg/m3",
+      "kind": "PC-TWA"
+    },
+    "SO2": {
+      "limit": 5,
+      "unit": "mg/m3",
+      "kind": "PC-TWA"
+    },
+    "二氧化硫": {
+      "limit": 5,
+      "unit": "mg/m3",
+      "kind": "PC-TWA"
+    },
+    "Cl2": {
+      "limit": 1,
+      "unit": "mg/m3",
+      "kind": "MAC"
+    },
+    "氯气": {
+      "limit": 1,
+      "unit": "mg/m3",
+      "kind": "MAC"
+    },
+    "甲苯": {
+      "limit": 50,
+      "unit": "mg/m3",
+      "kind": "PC-TWA"
+    },
+    "二甲苯": {
+      "limit": 50,
+      "unit": "mg/m3",
+      "kind": "PC-TWA"
+    }
+  },
+  "rules": [
+    {"id":"G-000","applies_to":"*","type":"time_format","fields":["start_time","end_time","gas_tests[].time"],"severity":"should_improve","check_name":"时间格式合规","message":"时间格式不合规（需 ISO 8601 带时区），相关时间已按缺失处理","basis":"本技能约定（permit-schema.md：时间一律 ISO 8601 带时区）"},
+    {"id":"G-001","applies_to":"*","type":"required","field":"permit_no","severity":"must_fix","check_name":"作业票编号已填写","message":"作业票编号缺失","basis":"GB 30871-2022 第4章 通用要求（作业票应统一编号）"},
+    {"id":"G-002","applies_to":"*","type":"enum","field":"type","values":["动火","受限空间","高处","吊装","临时用电","盲板抽堵","动土","断路"],"severity":"must_fix","check_name":"作业类型属于八类特殊作业","message":"作业类型不在八类特殊作业范围内","basis":"GB 30871-2022 第1章 范围 / 第3章 术语"},
+    {"id":"G-003","applies_to":"*","type":"required","field":"location","severity":"must_fix","check_name":"作业地点已填写","message":"作业地点缺失","basis":"GB 30871-2022 第4章 通用要求"},
+    {"id":"G-004","applies_to":"*","type":"required","field":"unit","severity":"should_improve","check_name":"作业/属地单位已填写","message":"作业单位/属地单位未填写","basis":"通行做法：作业票应写明属地单位与作业单位"},
+    {"id":"G-005","applies_to":"*","type":"required","field":"medium.name","severity":"must_fix","check_name":"介质已填写","message":"作业涉及的设备/管线介质未填写","basis":"GB 30871-2022 第4章 通用要求（作业前应辨识介质危害）"},
+    {"id":"G-006","applies_to":"*","type":"required","field":"start_time","severity":"must_fix","check_name":"开始时间已填写","message":"作业开始时间缺失","basis":"GB 30871-2022 第4章 通用要求（作业票应注明有效期）"},
+    {"id":"G-007","applies_to":"*","type":"required","field":"end_time","severity":"must_fix","check_name":"结束时间已填写","message":"作业结束时间缺失","basis":"GB 30871-2022 第4章 通用要求（作业票应注明有效期）"},
+    {"id":"G-008","applies_to":"*","type":"time_order","start":"start_time","end":"end_time","severity":"must_fix","check_name":"结束时间晚于开始时间","message":"作业结束时间不晚于开始时间","basis":"GB 30871-2022 第4章 通用要求"},
+    {"id":"G-009","applies_to":"*","type":"now_in_window","start":"start_time","end":"end_time","severity":"must_fix","check_name":"当前时间在有效期内","message":"当前时间已超出作业票有效期，需重新办票","basis":"GB 30871-2022 第4章 通用要求（作业票超过有效期应重新办理）"},
+    {"id":"G-010","applies_to":"*","type":"required","field":"applicant","severity":"must_fix","check_name":"申请人已签字","message":"申请人/作业负责人未签字","basis":"GB 30871-2022 第4章 通用要求（作业票应由相关人员签字确认）"},
+    {"id":"G-011","applies_to":"*","type":"required","field":"guardian","severity":"must_fix","check_name":"监护人已指定","message":"监护人未指定/未签字","basis":"GB 30871-2022 第4章 通用要求（特殊作业应设专人监护）"},
+    {"id":"G-012","applies_to":"*","type":"required","field":"approvers","min_count":1,"severity":"must_fix","check_name":"审批人已签字","message":"审批人签字缺失","basis":"GB 30871-2022 第4章 通用要求（作业票应经审批）"},
+    {"id":"G-013","applies_to":"*","type":"required","field":"workers","min_count":1,"severity":"must_fix","check_name":"作业人员已登记","message":"作业人员名单为空","basis":"GB 30871-2022 第4章 通用要求"},
+    {"id":"G-014","applies_to":"*","type":"required","field":"workers[].cert","severity":"must_fix","check_name":"作业人员证书栏已填写","message":"存在作业人员未填写特种作业/资质证书编号（非特种作业可填 N/A-非特种作业；焊工等特种工种另由 HW-024 等核查）","basis":"GB 30871-2022 第4章 通用要求（特种作业人员应持证上岗）"},
+    {"id":"G-015","applies_to":"*","type":"required","field":"measures.risk_identified","truthy":true,"severity":"must_fix","check_name":"风险辨识已勾选","message":"未进行作业风险辨识（风险辨识栏未勾选）","basis":"GB 30871-2022 第4章 通用要求（作业前应进行风险辨识）"},
+    {"id":"G-016","applies_to":"*","type":"required","field":"measures.briefing_done","truthy":true,"severity":"must_fix","check_name":"安全教育/交底已勾选","message":"未对作业人员进行安全教育/交底","basis":"GB 30871-2022 第4章 通用要求（作业前应进行安全交底）"},
+    {"id":"G-017","applies_to":"*","type":"required","field":"measures.emergency_plan","truthy":true,"severity":"must_fix","check_name":"应急措施已勾选","message":"应急措施未落实/未勾选","basis":"GB 30871-2022 第4章 通用要求（应制定应急措施并告知作业人员）"},
+    {"id":"G-018","applies_to":"*","type":"required","field":"measures.warning_zone","truthy":true,"severity":"should_improve","check_name":"警戒/隔离标识已勾选","message":"作业区域未设置警戒/隔离标识","basis":"GB 30871-2022 第4章 通用要求"},
+    {"id":"G-019","applies_to":"*","type":"required","field":"guardian_cert","severity":"should_improve","check_name":"监护人证书已填写","message":"监护人资质/培训合格证未填写","basis":"通行做法：监护人应经培训合格并持证"},
+    {"id":"G-020","applies_to":"*","type":"required","field":"measures.ppe_confirmed","truthy":true,"severity":"should_improve","check_name":"个体防护已确认","message":"个体防护用品配备未确认","basis":"GB 30871-2022 第4章 通用要求"},
+    {"id":"G-021","applies_to":"*","type":"required","field":"level","when":[{"field":"type","op":"in","value":["动火","高处","吊装"]}],"severity":"must_fix","check_name":"作业级别已填写","message":"作业级别未填写","basis":"GB 30871-2022 各作业章节分级要求"},
+    {"id":"G-022","applies_to":"*","type":"guardian_independent","when":[{"field":"guardian","op":"exists"}],"severity":"should_improve","check_name":"监护人未兼任作业人员/申请人","message":"监护人兼任作业人员/申请人","basis":"GB 30871-2022 第4章 通用要求（监护人应专职监护、不得兼任）；具体条款待核实"},
+    {"id":"G-023","applies_to":"*","type":"briefing_signed","severity":"must_fix","check_name":"安全交底已签字确认","message":"安全交底未经作业人员签字确认","basis":"GB 30871-2022 第4章 通用要求（作业前应进行安全交底并由作业人员签字确认）"},
+    {"id":"G-024","applies_to":["动火","受限空间"],"type":"required","field":"medium.lel_pct","when":[{"field":"gas_tests","op":"exists"}],"severity":"should_improve","check_name":"介质爆炸下限已填写","message":"无法按 GB 体积分数判定可燃气体，请补介质爆炸下限（medium.lel_pct）","basis":"GB 30871-2022 5.3（按介质 LEL 判定 0.5%/0.2% 体积分数）"},
+    {"id":"G-025","applies_to":"*","type":"cross_jobs_valid","severity":"should_improve","check_name":"关联作业票类型有效","message":"关联作业票类型不在八类特殊作业范围内，请核对","basis":"GB 30871-2022 第1章 范围"},
+
+    {"id":"HW-001","applies_to":["动火"],"type":"enum","field":"level","values":["特级","一级","二级"],"severity":"must_fix","check_name":"动火级别取值有效","message":"动火级别应为 特级/一级/二级","basis":"GB 30871-2022 第5章 动火作业（5.1 作业分级）"},
+    {"id":"HW-002","applies_to":["动火"],"type":"conditional","when":[{"field":"night_or_holiday","op":"eq","value":true},{"field":"level","op":"eq","value":"二级"}],"then":{"type":"fail"},"severity":"must_fix","check_name":"夜间/节假日二级动火已升级","message":"节假日/夜间二级动火应升级按一级管理","basis":"GB 30871-2022 第5章 动火作业（遇节假日、夜间等特殊情况动火作业应升级管理，参考 5.1 相应条款）"},
+    {"id":"HW-003","applies_to":["动火"],"type":"conditional","when":[{"field":"in_confined_space","op":"eq","value":true},{"field":"level","op":"eq","value":"二级"}],"then":{"type":"fail"},"severity":"should_improve","check_name":"受限空间内动火级别已核实","message":"受限空间内动火通常按一级动火管理，请核实级别","basis":"通行做法（中石化）：受限空间内动火不低于一级动火；参考 GB 30871-2022 第5章相应条款"},
+    {"id":"HW-004","applies_to":["动火"],"type":"required","field":"gas_tests","min_count":1,"severity":"must_fix","check_name":"已进行可燃气体分析","message":"动火前未进行可燃气体分析","basis":"GB 30871-2022 第5章 动火作业（5.3 动火分析）"},
+    {"id":"HW-005","applies_to":["动火"],"type":"time_window","field":"gas_tests[].time","ref":"start_time","max_minutes":60,"soft_minutes":30,"when":[{"field":"gas_tests","op":"exists"}],"severity":"must_fix","check_name":"气体分析距开工 ≤30 分钟","message":"最近一次气体分析距作业开始超过 30 分钟（超过 60 分钟为必须整改）","basis":"GB 30871-2022 第5章 5.3（动火分析与动火作业间隔不应超过 30min）；>60min 升为必须整改的分档为通行做法，待核实"},
+    {"id":"HW-006","applies_to":["动火"],"type":"range","field":"gas_tests[last].lel","max":10,"when":[{"field":"gas_tests","op":"exists"}],"severity":"must_fix","check_name":"可燃气体 ≤10%LEL（检测仪）","message":"可燃气体浓度超过 10%LEL","basis":"通行做法（企业制度）：现场检测仪 10%LEL 作为合格线；GB 30871-2022 5.3 按体积分数判定，见 HW-007/008"},
+    {"id":"HW-007","applies_to":["动火"],"type":"conditional","when":[{"field":"medium.lel_pct","op":"gte","value":4},{"field":"gas_tests","op":"exists"}],"then":{"type":"range","field":"gas_tests[last].combustible_vol","max":0.5,"derive":"combustible_from_lel"},"on_when_empty":"skip","severity":"must_fix","check_name":"可燃气体体积分数 ≤0.5%（LEL≥4%）","message":"介质爆炸下限≥4% 时，可燃气体体积分数应≤0.5%","basis":"GB 30871-2022 第5章 动火作业（5.3 动火分析合格判定）"},
+    {"id":"HW-008","applies_to":["动火"],"type":"conditional","when":[{"field":"medium.lel_pct","op":"lt","value":4},{"field":"gas_tests","op":"exists"}],"then":{"type":"range","field":"gas_tests[last].combustible_vol","max":0.2,"derive":"combustible_from_lel"},"on_when_empty":"skip","severity":"must_fix","check_name":"可燃气体体积分数 ≤0.2%（LEL<4%）","message":"介质爆炸下限<4% 时，可燃气体体积分数应≤0.2%","basis":"参考 GB 30871-2022 第5章 5.3 相应条款（阈值 0.2% 按记忆整理，请以正式文本为准）"},
+    {"id":"HW-009","applies_to":["动火"],"type":"range","field":"gas_tests[last].o2","min":19.5,"max":21,"when":[{"field":"in_confined_space","op":"eq","value":true},{"field":"gas_tests","op":"exists"}],"severity":"must_fix","check_name":"受限空间内动火氧含量 19.5%~21%","message":"氧含量不在 19.5%~21% 范围","basis":"GB 30871-2022 第5章/第6章（氧含量合格范围）"},
+    {"id":"HW-010","applies_to":["动火"],"type":"required","field":"gas_tests[].analyst","when":[{"field":"gas_tests","op":"exists"}],"severity":"should_improve","check_name":"分析人已签字","message":"气体分析人未签字","basis":"GB 30871-2022 第5章 动火作业（分析人应签字确认）"},
+    {"id":"HW-011","applies_to":["动火"],"type":"conditional","when":[{"field":"interrupted_minutes","op":"gt","value":60}],"then":{"type":"required","field":"measures.retest_after_interrupt","truthy":true},"on_when_empty":"skip","severity":"must_fix","check_name":"中断后已复检","message":"作业中断超过 60min 后未重新进行气体分析","basis":"GB 30871-2022 第5章 动火作业（作业中断超过 60min 应重新分析）"},
+    {"id":"HW-012","applies_to":["动火"],"type":"duration_max","start":"start_time","end":"end_time","max_hours":8,"when":[{"field":"level","op":"in","value":["特级","一级"]}],"severity":"must_fix","check_name":"特级/一级有效期 ≤8h","message":"特级/一级动火作业票有效期超过 8h","basis":"GB 30871-2022 第5章 动火作业（特级、一级动火票有效期不超过 8h）"},
+    {"id":"HW-013","applies_to":["动火"],"type":"duration_max","start":"start_time","end":"end_time","max_hours":72,"when":[{"field":"level","op":"eq","value":"二级"}],"severity":"must_fix","check_name":"二级有效期 ≤72h","message":"二级动火作业票有效期超过 72h","basis":"GB 30871-2022 第5章 动火作业（二级动火票有效期不超过 72h）"},
+    {"id":"HW-014","applies_to":["动火"],"type":"required","field":"measures.fire_equipment","truthy":true,"severity":"must_fix","check_name":"消防器材已配备","message":"动火点未配备消防器材","basis":"GB 30871-2022 第5章 动火作业（动火点应配备足够适用的消防器材）"},
+    {"id":"HW-015","applies_to":["动火"],"type":"required","field":"measures.drains_sealed","truthy":true,"severity":"must_fix","check_name":"排水井/地漏/地沟已封堵","message":"动火点周边排水井/地漏/地沟未封堵","basis":"GB 30871-2022 第5章 动火作业（动火点周围的下水井、地漏、地沟等应封堵）"},
+    {"id":"HW-016","applies_to":["动火"],"type":"required","field":"measures.isolation_done","truthy":true,"severity":"must_fix","check_name":"已与系统隔离","message":"动火设备/管线未与系统有效隔离（加盲板/断开）","basis":"GB 30871-2022 第5章 动火作业（动火设备应与生产系统可靠隔离）"},
+    {"id":"HW-017","applies_to":["动火"],"type":"required","field":"measures.purge_clean","truthy":true,"severity":"must_fix","check_name":"已清洗/置换/吹扫","message":"动火设备未清洗/置换/吹扫合格","basis":"GB 30871-2022 第5章 动火作业"},
+    {"id":"HW-018","applies_to":["动火"],"type":"required","field":"measures.combustibles_cleared","truthy":true,"severity":"must_fix","check_name":"可燃物已清理","message":"动火点周围可燃物未清理","basis":"GB 30871-2022 第5章 动火作业"},
+    {"id":"HW-019","applies_to":["动火"],"type":"cross_permit","required_type":"受限空间","when":[{"field":"in_confined_space","op":"eq","value":true}],"severity":"must_fix","check_name":"受限空间内动火已关联受限空间票","message":"受限空间内动火，未关联受限空间作业票","basis":"GB 30871-2022 第4章 通用要求（涉及多种特殊作业应同时办理相应作业票）"},
+    {"id":"HW-020","applies_to":["动火"],"type":"cross_permit","required_type":"高处","when":[{"field":"height_m","op":"gte","value":2}],"severity":"must_fix","check_name":"高处动火已关联高处票","message":"动火点高度≥2m，未关联高处作业票","basis":"GB 30871-2022 第4章 通用要求（涉及多种特殊作业应同时办理相应作业票）"},
+    {"id":"HW-021","applies_to":["动火"],"type":"cross_permit","required_type":"盲板抽堵","when":[{"field":"measures.isolation_by_blind","op":"eq","value":true}],"severity":"must_fix","check_name":"加盲板已关联盲板抽堵票","message":"隔离方式为加盲板，但未关联盲板抽堵作业票","basis":"GB 30871-2022 第4章 通用要求（涉及多种特殊作业应同时办理相应作业票）/ 第7章 盲板抽堵作业"},
+    {"id":"HW-022","applies_to":["动火"],"type":"conditional","when":[{"field":"outdoor","op":"eq","value":true},{"field":"weather.wind_level","op":"gte","value":5}],"then":{"type":"fail"},"severity":"must_fix","check_name":"风力低于五级","message":"五级及以上大风天气原则上禁止露天动火","basis":"GB 30871-2022 第5章 动火作业（五级风以上天气原则上禁止露天动火作业）"},
+    {"id":"HW-023","applies_to":["动火"],"type":"required","field":"gas_tests[].location","when":[{"field":"gas_tests","op":"exists"}],"severity":"should_improve","check_name":"取样点位置已注明","message":"气体分析未注明取样点位置","basis":"GB 30871-2022 第5章 动火作业（取样应有代表性并记录部位）"},
+    {"id":"HW-024","applies_to":["动火"],"type":"role_cert","roles":["焊"],"severity":"must_fix","check_name":"焊工持有效特种作业证","message":"焊工（焊接与热切割）未填写有效特种作业证（空白或 N/A 均不接受）","basis":"GB 30871-2022 第4章 通用要求（特种作业人员持证上岗）；《特种作业人员安全技术培训考核管理规定》焊接与热切割作业"},
+    {"id":"HW-025","applies_to":["动火"],"type":"required","field":"measures.continuous_monitoring","truthy":true,"when":[{"field":"level","op":"eq","value":"特级"}],"severity":"must_fix","check_name":"特级动火已安排随时监测","message":"特级动火作业期间未安排随时监测可燃气体","basis":"GB 30871-2022 第5章 5.3（特级动火作业期间应随时进行监测）"},
+    {"id":"HW-026","applies_to":["动火"],"type":"required","field":"gas_tests[].instrument_ok","truthy":true,"when":[{"field":"gas_tests","op":"exists"}],"severity":"should_improve","check_name":"检测仪在校验有效期内","message":"气体检测仪是否在校验有效期内未确认","basis":"通行做法：检测仪应在校验有效期内并记录；待核实"},
+    {"id":"HW-027","applies_to":["动火"],"type":"approver_level","min_count":2,"keywords":["公司","厂"],"when":[{"field":"level","op":"eq","value":"特级"}],"severity":"should_improve","check_name":"特级动火审批层级充分","message":"特级动火审批层级不足（应 ≥2 级且含公司/厂级）","basis":"通行做法（中石化）：特级动火由公司/厂级审批；待核实"},
+    {"id":"HW-028","applies_to":["动火"],"type":"required","field":"measures.video_monitoring","truthy":true,"when":[{"field":"level","op":"eq","value":"特级"}],"severity":"should_improve","check_name":"特级动火已安排全程视频监控","message":"特级动火未安排全程视频监控","basis":"通行做法：特级动火全程视频监控；待核实"},
+    {"id":"HW-029","applies_to":["动火"],"type":"required","field":"measures.cylinder_distance_ok","truthy":true,"severity":"should_improve","check_name":"气瓶间距已确认","message":"未确认乙炔/氧气瓶间距 ≥5m、距火点 ≥10m","basis":"GB 30871-2022 第5章 动火作业（气瓶间距与距火点距离）；具体数值待核实"},
+    {"id":"HW-030","applies_to":["动火"],"type":"conditional","when":[{"field":"night_or_holiday","op":"eq","value":true},{"field":"level","op":"ne","value":"二级"}],"then":{"type":"fail"},"severity":"should_improve","check_name":"夜间/节假日动火已升级管理","message":"节假日/夜间动火应升级管理，请确认级别已上调","basis":"GB 30871-2022 第5章（遇节假日、夜间等特殊情况动火作业应升级管理）；升级范围待核实"},
+
+    {"id":"CS-001","applies_to":["受限空间"],"type":"required","field":"gas_tests","min_count":1,"severity":"must_fix","check_name":"进入前已进行气体检测","message":"进入受限空间前未进行气体检测","basis":"GB 30871-2022 第6章 受限空间作业（进入前应进行气体检测分析）"},
+    {"id":"CS-002","applies_to":["受限空间"],"type":"range","field":"gas_tests[last].o2","min":19.5,"max":21,"when":[{"field":"gas_tests","op":"exists"}],"severity":"must_fix","check_name":"氧含量 19.5%~21%","message":"氧含量不在 19.5%~21% 范围","basis":"GB 30871-2022 第6章 受限空间作业（氧含量 19.5%~21%）"},
+    {"id":"CS-003","applies_to":["受限空间"],"type":"range","field":"gas_tests[last].lel","max":10,"when":[{"field":"gas_tests","op":"exists"}],"severity":"must_fix","check_name":"可燃气体 ≤10%LEL（检测仪）","message":"可燃气体浓度超过 10%LEL","basis":"通行做法（企业制度）：10%LEL 作为合格线；GB 30871-2022 第6章引用 5.3 体积分数判定，见 CS-019/020"},
+    {"id":"CS-004","applies_to":["受限空间"],"type":"toxic","field":"gas_tests[last].toxic","when":[{"field":"gas_tests","op":"exists"}],"severity":"must_fix","check_name":"有毒气体在限值内","message":"有毒有害气体浓度超过 GBZ 2.1 限值","basis":"GB 30871-2022 第6章 受限空间作业；GBZ 2.1 工作场所有害因素职业接触限值"},
+    {"id":"CS-005","applies_to":["受限空间"],"type":"time_window","field":"gas_tests[].time","ref":"start_time","max_minutes":30,"when":[{"field":"gas_tests","op":"exists"}],"severity":"must_fix","check_name":"检测距进入 ≤30 分钟","message":"最近一次气体检测距进入作业超过 30 分钟","basis":"GB 30871-2022 第6章 受限空间作业（检测与作业间隔不应超过 30min）"},
+    {"id":"CS-006","applies_to":["受限空间"],"type":"required","field":"measures.isolation_by_blind","truthy":true,"severity":"must_fix","check_name":"已加盲板/拆管段隔离","message":"受限空间隔离方式未采用加盲板/拆除管段（仅勾选“已隔离”不够，不得以关阀代替）","basis":"GB 30871-2022 第6章 受限空间作业（应采用加盲板或拆除一段管道隔离，不应以关闭阀门代替）"},
+    {"id":"CS-007","applies_to":["受限空间"],"type":"required","field":"measures.ventilation","truthy":true,"severity":"must_fix","check_name":"通风已落实","message":"未采取通风措施","basis":"GB 30871-2022 第6章 受限空间作业（应保持空气流通，必要时强制通风）"},
+    {"id":"CS-008","applies_to":["受限空间"],"type":"range","field":"lighting_voltage","max":36,"severity":"must_fix","check_name":"照明电压 ≤36V","message":"受限空间内照明电压超过 36V","basis":"GB 30871-2022 第6章 受限空间作业（照明电压不大于 36V）"},
+    {"id":"CS-009","applies_to":["受限空间"],"type":"range","field":"lighting_voltage","max":12,"when":[{"field":"wet_or_metal_container","op":"eq","value":true}],"severity":"must_fix","check_name":"潮湿/狭小金属容器照明电压 ≤12V","message":"潮湿容器/狭小容器内照明电压超过 12V","basis":"GB 30871-2022 第6章 受限空间作业（潮湿容器、狭小容器内照明电压不大于 12V）"},
+    {"id":"CS-010","applies_to":["受限空间"],"type":"required","field":"measures.rescue_equipment","truthy":true,"severity":"must_fix","check_name":"应急救援器材已配备","message":"未配备应急救援器材（呼吸器、救生绳、三脚架等）","basis":"GB 30871-2022 第6章 受限空间作业（应配备应急救援装备）"},
+    {"id":"CS-011","applies_to":["受限空间"],"type":"required","field":"measures.entry_register","truthy":true,"severity":"must_fix","check_name":"进出人员登记已落实","message":"未设置进出人员登记（出入口人员清点）","basis":"GB 30871-2022 第6章 受限空间作业（应对进出人员进行登记清点）"},
+    {"id":"CS-012","applies_to":["受限空间"],"type":"duration_max","start":"start_time","end":"end_time","max_hours":24,"severity":"must_fix","check_name":"有效期 ≤24h","message":"受限空间作业票有效期超过 24h","basis":"GB 30871-2022 第6章 受限空间作业（有效期不超过 24h）"},
+    {"id":"CS-013","applies_to":["受限空间"],"type":"required","field":"measures.continuous_monitoring","truthy":true,"severity":"must_fix","check_name":"作业期间连续/定时监测已安排","message":"作业期间未安排连续/定时气体监测","basis":"GB 30871-2022 第6章 受限空间作业（作业中应定时或连续监测）"},
+    {"id":"CS-014","applies_to":["受限空间"],"type":"cross_permit","required_type":"动火","when":[{"field":"hot_work_inside","op":"eq","value":true}],"severity":"must_fix","check_name":"内部动火已关联动火票","message":"受限空间内有动火作业，未关联动火作业票","basis":"GB 30871-2022 第4章 通用要求（涉及多种特殊作业应同时办理相应作业票）"},
+    {"id":"CS-015","applies_to":["受限空间"],"type":"required","field":"measures.energy_locked","truthy":true,"severity":"must_fix","check_name":"设备已停电上锁挂牌","message":"受限空间内机械/电气设备未停电上锁挂牌","basis":"GB 30871-2022 第6章 受限空间作业（设备应断电并上锁挂牌）"},
+    {"id":"CS-016","applies_to":["受限空间"],"type":"required","field":"measures.guardian_outside","truthy":true,"severity":"must_fix","check_name":"监护人在外全程监护","message":"监护人未在受限空间外全程监护","basis":"GB 30871-2022 第6章 受限空间作业（监护人应在外部全程监护，不得离开）"},
+    {"id":"CS-017","applies_to":["受限空间"],"type":"required","field":"measures.continuous_monitoring","truthy":true,"when":[{"op":"duration_gt","start":"start_time","end":"end_time","value":2}],"severity":"should_improve","check_name":"有效期>2h 已安排连续监测/复测","message":"作业票有效期超过 2h，作业中应连续监测或至少每 2h 复测","basis":"通行做法：受限空间作业每 2h 复测；待核实"},
+    {"id":"CS-018","applies_to":["受限空间"],"type":"multi_point_sampling","min_count":3,"when":[{"field":"gas_tests","op":"exists"}],"severity":"should_improve","check_name":"上/中/下多点取样","message":"大容积受限空间应上/中/下多点取样检测","basis":"GB 30871-2022 第6章 受限空间作业（取样应有代表性，容积较大的空间应上中下分层取样）"},
+    {"id":"CS-019","applies_to":["受限空间"],"type":"conditional","when":[{"field":"medium.lel_pct","op":"gte","value":4},{"field":"gas_tests","op":"exists"}],"then":{"type":"range","field":"gas_tests[last].combustible_vol","max":0.5,"derive":"combustible_from_lel"},"on_when_empty":"skip","severity":"must_fix","check_name":"可燃气体体积分数 ≤0.5%（LEL≥4%）","message":"介质爆炸下限≥4% 时，可燃气体体积分数应≤0.5%","basis":"GB 30871-2022 第6章 受限空间作业（引用 5.3 动火分析合格判定）"},
+    {"id":"CS-020","applies_to":["受限空间"],"type":"conditional","when":[{"field":"medium.lel_pct","op":"lt","value":4},{"field":"gas_tests","op":"exists"}],"then":{"type":"range","field":"gas_tests[last].combustible_vol","max":0.2,"derive":"combustible_from_lel"},"on_when_empty":"skip","severity":"must_fix","check_name":"可燃气体体积分数 ≤0.2%（LEL<4%）","message":"介质爆炸下限<4% 时，可燃气体体积分数应≤0.2%","basis":"参考 GB 30871-2022 第6章 / 5.3 相应条款（阈值 0.2% 按记忆整理）"},
+    {"id":"CS-021","applies_to":["受限空间"],"type":"required","field":"gas_tests[].instrument_ok","truthy":true,"when":[{"field":"gas_tests","op":"exists"}],"severity":"should_improve","check_name":"检测仪在校验有效期内","message":"气体检测仪是否在校验有效期内未确认","basis":"通行做法：检测仪应在校验有效期内并记录；待核实"},
+
+    {"id":"HP-001","applies_to":["高处"],"type":"required","field":"height_m","severity":"must_fix","check_name":"作业高度已填写","message":"作业高度未填写","basis":"GB 30871-2022 第8章 高处作业（按高度分级）"},
+    {"id":"HP-002","applies_to":["高处"],"type":"derived_level","field":"height_m","level_field":"level","bands":[{"min":2,"max":5,"level":"一级"},{"min":5,"max":15,"level":"二级"},{"min":15,"max":30,"level":"三级"},{"min":30,"max":null,"level":"特级"}],"severity":"must_fix","check_name":"级别与高度匹配","message":"高处作业级别与作业高度不匹配","basis":"GB 30871-2022 第8章 高处作业（一级 2~5m，二级 5~15m，三级 15~30m，特级 ≥30m）"},
+    {"id":"HP-003","applies_to":["高处"],"type":"required","field":"measures.safety_belt","truthy":true,"severity":"must_fix","check_name":"安全带已确认","message":"未确认作业人员佩戴安全带并高挂低用","basis":"GB 30871-2022 第8章 高处作业（应正确佩戴安全带）"},
+    {"id":"HP-004","applies_to":["高处"],"type":"required","field":"measures.fall_protection","truthy":true,"severity":"must_fix","check_name":"防坠落措施已落实","message":"未落实防坠落措施（安全网/生命线/防护栏杆等）","basis":"GB 30871-2022 第8章 高处作业"},
+    {"id":"HP-005","applies_to":["高处"],"type":"duration_max","start":"start_time","end":"end_time","max_hours":168,"severity":"must_fix","check_name":"有效期 ≤7 天","message":"高处作业票有效期超过 7 天","basis":"GB 30871-2022 第8章 高处作业（有效期不超过 7 天）"},
+    {"id":"HP-006","applies_to":["高处"],"type":"conditional","when":[{"field":"weather.wind_level","op":"gte","value":6}],"then":{"type":"fail"},"severity":"must_fix","check_name":"风力低于六级","message":"六级及以上大风禁止露天高处作业","basis":"GB 30871-2022 第8章 高处作业（六级以上强风、暴雨、雷电等恶劣天气不应进行露天高处作业）"},
+    {"id":"HP-007","applies_to":["高处"],"type":"conditional","when":[{"field":"weather.thunderstorm","op":"eq","value":true}],"then":{"type":"fail"},"severity":"must_fix","check_name":"无雷雨","message":"雷雨天气禁止露天高处作业","basis":"GB 30871-2022 第8章 高处作业"},
+    {"id":"HP-008","applies_to":["高处"],"type":"required","field":"measures.scaffold_checked","truthy":true,"severity":"must_fix","check_name":"脚手架/平台已验收","message":"脚手架/作业平台未经检查验收","basis":"GB 30871-2022 第8章 高处作业（脚手架等应检查验收合格）"},
+    {"id":"HP-009","applies_to":["高处"],"type":"required","field":"measures.tools_secured","truthy":true,"severity":"should_improve","check_name":"防坠物措施已落实","message":"未采取防高空坠物措施（工具系绳、下方隔离）","basis":"GB 30871-2022 第8章 高处作业"},
+    {"id":"HP-010","applies_to":["高处"],"type":"required","field":"measures.health_checked","truthy":true,"severity":"should_improve","check_name":"身体状况已确认","message":"未确认作业人员身体状况适合高处作业","basis":"GB 30871-2022 第8章 高处作业（患有禁忌症者不得从事高处作业）"},
+    {"id":"HP-011","applies_to":["高处"],"type":"required","field":"attachments.scheme","when":[{"field":"level","op":"in","value":["三级","特级"]}],"severity":"must_fix","check_name":"三级/特级已附方案","message":"三级/特级高处作业未附作业方案","basis":"通行做法：三级及以上高处作业应编制专项方案；参考 GB 30871-2022 第8章相应条款"},
+    {"id":"HP-012","applies_to":["高处"],"type":"cross_permit","required_type":"动火","when":[{"field":"hot_work_inside","op":"eq","value":true}],"severity":"must_fix","check_name":"含动火已关联动火票","message":"高处作业中有动火，未关联动火作业票","basis":"GB 30871-2022 第4章 通用要求"},
+
+    {"id":"LF-001","applies_to":["吊装"],"type":"required","field":"load_mass_t","severity":"must_fix","check_name":"吊装质量已填写","message":"吊装重物质量未填写","basis":"GB 30871-2022 第9章 吊装作业（按吊装重物质量分级）"},
+    {"id":"LF-002","applies_to":["吊装"],"type":"derived_level","field":"load_mass_t","level_field":"level","bands":[{"min":100,"max":null,"level":"一级"},{"min":40,"max":100,"level":"二级"},{"min":0,"max":40,"level":"三级"}],"severity":"must_fix","check_name":"级别与吊装质量匹配","message":"吊装级别与吊装质量不匹配","basis":"GB 30871-2022 第9章 吊装作业（一级 ≥100t，二级 40~100t，三级 <40t）"},
+    {"id":"LF-003","applies_to":["吊装"],"type":"required","field":"attachments.scheme","when":[{"field":"level","op":"in","value":["一级","二级"]}],"severity":"must_fix","check_name":"一级/二级已附方案","message":"一级/二级吊装未附经审批的吊装方案","basis":"GB 30871-2022 第9章 吊装作业（一级、二级吊装应编制吊装方案并审批）"},
+    {"id":"LF-004","applies_to":["吊装"],"type":"required","field":"measures.warning_zone","truthy":true,"severity":"must_fix","check_name":"警戒区已设置","message":"吊装区域未设置警戒区并派人监护","basis":"GB 30871-2022 第9章 吊装作业（应设警戒区域，无关人员不得入内）"},
+    {"id":"LF-005","applies_to":["吊装"],"type":"role_cert","roles":["指挥","起重指挥"],"severity":"must_fix","check_name":"吊装指挥持证","message":"缺少持证吊装指挥人员","basis":"GB 30871-2022 第9章 吊装作业（指挥人员应持证）"},
+    {"id":"LF-006","applies_to":["吊装"],"type":"role_cert","roles":["司索"],"severity":"must_fix","check_name":"司索持证","message":"缺少持证司索人员","basis":"GB 30871-2022 第9章 吊装作业（司索人员应持证）"},
+    {"id":"LF-007","applies_to":["吊装"],"type":"role_cert","roles":["起重机司机","吊车司机","起重机操作","司机"],"severity":"must_fix","check_name":"起重机司机持证","message":"缺少持证起重机械操作人员","basis":"GB 30871-2022 第9章 吊装作业（起重机械操作人员应持证）"},
+    {"id":"LF-008","applies_to":["吊装"],"type":"required","field":"measures.equipment_inspected","truthy":true,"severity":"must_fix","check_name":"机械与吊索具已检查","message":"起重机械及吊索具未检查确认","basis":"GB 30871-2022 第9章 吊装作业"},
+    {"id":"LF-009","applies_to":["吊装"],"type":"conditional","when":[{"field":"weather.wind_level","op":"gte","value":6}],"then":{"type":"fail"},"severity":"must_fix","check_name":"风力低于六级","message":"六级及以上大风禁止露天吊装","basis":"GB 30871-2022 第9章 吊装作业（大风、大雾、雷雨等恶劣天气不应进行露天吊装）"},
+    {"id":"LF-010","applies_to":["吊装"],"type":"required","field":"measures.ground_bearing","truthy":true,"severity":"should_improve","check_name":"地基承载已确认","message":"吊车站位地基承载力未确认","basis":"GB 30871-2022 第9章 吊装作业"},
+    {"id":"LF-011","applies_to":["吊装"],"type":"required","field":"measures.overhead_lines_cleared","truthy":true,"severity":"must_fix","check_name":"架空线安全距离已确认","message":"吊臂回转范围内架空线路/管廊安全距离未确认","basis":"GB 30871-2022 第9章 吊装作业"},
+    {"id":"LF-012","applies_to":["吊装"],"type":"duration_max","start":"start_time","end":"end_time","max_hours":168,"severity":"should_improve","check_name":"有效期 ≤7 天","message":"吊装作业票有效期超过 7 天，请核对企业规定","basis":"参考 GB 30871-2022 第9章相应条款（有效期按记忆整理，不确定）"},
+    {"id":"LF-013","applies_to":["吊装"],"type":"required","field":"measures.ten_no_lift_checked","truthy":true,"severity":"should_improve","check_name":"“十不吊”已确认","message":"“十不吊”确认未勾选","basis":"通行做法：吊装作业执行“十不吊”；待核实"},
+
+    {"id":"TE-001","applies_to":["临时用电"],"type":"enum","field":"voltage","values":[12,24,36,220,380],"severity":"should_improve","check_name":"电压等级常见","message":"临时用电电压等级不在常见等级内，请核实","basis":"GB 30871-2022 第10章 临时用电作业"},
+    {"id":"TE-002","applies_to":["临时用电"],"type":"required","field":"measures.rcd_installed","truthy":true,"severity":"must_fix","check_name":"漏电保护器已安装","message":"临时用电未安装漏电保护器","basis":"GB 30871-2022 第10章 临时用电作业（应安装漏电保护装置）"},
+    {"id":"TE-003","applies_to":["临时用电"],"type":"duration_max","start":"start_time","end":"end_time","max_hours":360,"severity":"must_fix","check_name":"有效期 ≤15 天","message":"临时用电作业票有效期超过 15 天","basis":"GB 30871-2022 第10章 临时用电作业（有效期不超过 15 天）"},
+    {"id":"TE-004","applies_to":["临时用电"],"type":"role_cert","roles":["电工","电气"],"severity":"must_fix","check_name":"持证电工","message":"缺少持证电工进行接线/拆除","basis":"GB 30871-2022 第10章 临时用电作业（应由持证电工操作）"},
+    {"id":"TE-005","applies_to":["临时用电"],"type":"required","field":"measures.explosion_proof","truthy":true,"when":[{"field":"hazardous_area","op":"eq","value":true}],"severity":"must_fix","check_name":"爆炸危险区已用防爆设备","message":"爆炸危险区域内临时用电设备未采用防爆型","basis":"GB 30871-2022 第10章 临时用电作业（爆炸危险区域应使用相应防爆等级的电气设备）"},
+    {"id":"TE-006","applies_to":["临时用电"],"type":"required","field":"measures.grounding","truthy":true,"severity":"must_fix","check_name":"已接地/接零","message":"临时用电设备未接地/接零","basis":"GB 30871-2022 第10章 临时用电作业"},
+    {"id":"TE-007","applies_to":["临时用电"],"type":"required","field":"measures.cable_protected","truthy":true,"severity":"should_improve","check_name":"线路已架空/穿管","message":"临时线路敷设未架空/穿管保护","basis":"GB 30871-2022 第10章 临时用电作业"},
+    {"id":"TE-008","applies_to":["临时用电"],"type":"required","field":"power_source","severity":"should_improve","check_name":"接电点已注明","message":"未注明接电点/电源来源","basis":"通行做法"},
+
+    {"id":"BP-001","applies_to":["盲板抽堵"],"type":"required","field":"blind_plates","min_count":1,"severity":"must_fix","check_name":"盲板清单已填写","message":"盲板清单为空","basis":"GB 30871-2022 第7章 盲板抽堵作业（盲板应编号登记）"},
+    {"id":"BP-002","applies_to":["盲板抽堵"],"type":"required","field":"blind_plates[].no","severity":"must_fix","check_name":"盲板均已编号","message":"存在盲板未编号","basis":"GB 30871-2022 第7章 盲板抽堵作业（每块盲板应编号并挂牌）"},
+    {"id":"BP-003","applies_to":["盲板抽堵"],"type":"required","field":"attachments.blind_plate_map","severity":"must_fix","check_name":"已附盲板位置图","message":"未附盲板位置图","basis":"GB 30871-2022 第7章 盲板抽堵作业（应绘制盲板位置图）"},
+    {"id":"BP-004","applies_to":["盲板抽堵"],"type":"required","field":"blind_plates[].action","severity":"must_fix","check_name":"抽/堵动作与顺序已注明","message":"存在盲板未注明抽/堵及顺序","basis":"GB 30871-2022 第7章 盲板抽堵作业（应按顺序抽堵并逐块确认）"},
+    {"id":"BP-005","applies_to":["盲板抽堵"],"type":"duration_max","start":"start_time","end":"end_time","max_hours":24,"severity":"must_fix","check_name":"有效期 ≤24h","message":"盲板抽堵作业票有效期超过 24h","basis":"GB 30871-2022 第7章 盲板抽堵作业（有效期不超过 24h）"},
+    {"id":"BP-006","applies_to":["盲板抽堵"],"type":"required","field":"measures.pressure_relieved","truthy":true,"severity":"must_fix","check_name":"泄压已确认","message":"抽堵前未确认系统泄压","basis":"GB 30871-2022 第7章 盲板抽堵作业（应在泄压后作业）"},
+    {"id":"BP-007","applies_to":["盲板抽堵"],"type":"required","field":"measures.blind_plate_spec_ok","truthy":true,"severity":"must_fix","check_name":"盲板规格已确认","message":"盲板材质/厚度/压力等级未确认","basis":"GB 30871-2022 第7章 盲板抽堵作业"},
+    {"id":"BP-008","applies_to":["盲板抽堵"],"type":"required","field":"measures.nonsparking_tools","truthy":true,"when":[{"field":"medium.flammable","op":"eq","value":true}],"severity":"should_improve","check_name":"易燃介质已用防爆工具","message":"易燃易爆介质抽堵未使用防爆工具","basis":"GB 30871-2022 第7章 盲板抽堵作业"},
+    {"id":"BP-009","applies_to":["盲板抽堵"],"type":"count_max","field":"blind_plates","max":1,"severity":"should_improve","check_name":"一票一板","message":"一张盲板抽堵票登记多块盲板，通行做法为一票一板，请核对企业制度","basis":"通行做法：一票一板；待核实"},
+
+    {"id":"DG-001","applies_to":["动土"],"type":"required","field":"attachments.underground_map","severity":"must_fix","check_name":"已附地下管线图","message":"未附地下管线/电缆分布图","basis":"GB 30871-2022 第11章 动土作业（应查清地下设施并附图）"},
+    {"id":"DG-002","applies_to":["动土"],"type":"required","field":"measures.underground_confirmed","truthy":true,"severity":"must_fix","check_name":"地下管线已确认","message":"未确认地下管线、电缆、光缆位置","basis":"GB 30871-2022 第11章 动土作业"},
+    {"id":"DG-003","applies_to":["动土"],"type":"required","field":"measures.slope_support","truthy":true,"when":[{"field":"depth_m","op":"gte","value":1.5}],"severity":"must_fix","check_name":"深度≥1.5m 已支护/放坡","message":"深度≥1.5m 未采取放坡/支护措施","basis":"参考 GB 30871-2022 第11章相应条款（深度阈值按记忆整理）"},
+    {"id":"DG-004","applies_to":["动土"],"type":"duration_max","start":"start_time","end":"end_time","max_hours":168,"severity":"should_improve","check_name":"有效期 ≤7 天","message":"动土作业票有效期超过 7 天，请核对企业规定","basis":"参考 GB 30871-2022 第11章相应条款（有效期按记忆整理，不确定）"},
+    {"id":"DG-005","applies_to":["动土"],"type":"required","field":"measures.night_warning_light","truthy":true,"when":[{"field":"night_or_holiday","op":"eq","value":true}],"severity":"should_improve","check_name":"夜间警示灯已设置","message":"夜间动土未设置警示灯","basis":"GB 30871-2022 第11章 动土作业（夜间应设警示灯）；待核实"},
+    {"id":"DG-006","applies_to":["动土"],"type":"required","field":"measures.access_ladder","truthy":true,"when":[{"field":"depth_m","op":"gte","value":1.5}],"severity":"should_improve","check_name":"上下通道已设置","message":"深度≥1.5m 未设置上下通道/爬梯","basis":"GB 30871-2022 第11章 动土作业；深度阈值待核实"},
+
+    {"id":"RB-001","applies_to":["断路"],"type":"required","field":"attachments.detour_plan","severity":"must_fix","check_name":"已附断路措施/绕行图","message":"未附断路安全措施/绕行示意图","basis":"GB 30871-2022 第12章 断路作业（应制定交通疏导与安全措施）"},
+    {"id":"RB-002","applies_to":["断路"],"type":"required","field":"measures.warning_signs","truthy":true,"severity":"must_fix","check_name":"警示标志已设置","message":"断路处未设置警示标志/夜间警示灯","basis":"GB 30871-2022 第12章 断路作业"},
+    {"id":"RB-003","applies_to":["断路"],"type":"required","field":"measures.fire_access_kept","truthy":true,"severity":"must_fix","check_name":"消防通道已确认","message":"未确认消防通道畅通或通知消防部门","basis":"GB 30871-2022 第12章 断路作业（不应影响消防通道；应通知相关部门）"},
+    {"id":"RB-004","applies_to":["断路"],"type":"duration_max","start":"start_time","end":"end_time","max_hours":168,"severity":"should_improve","check_name":"有效期 ≤7 天","message":"断路作业票有效期超过 7 天，请核对企业规定","basis":"参考 GB 30871-2022 第12章相应条款（有效期按记忆整理，不确定）"},
+    {"id":"RB-005","applies_to":["断路"],"type":"required","field":"measures.night_warning_light","truthy":true,"when":[{"field":"night_or_holiday","op":"eq","value":true}],"severity":"should_improve","check_name":"夜间红灯已设置","message":"夜间断路未设置红灯警示","basis":"GB 30871-2022 第12章 断路作业（夜间应设红灯）；待核实"}
+  ]
+}

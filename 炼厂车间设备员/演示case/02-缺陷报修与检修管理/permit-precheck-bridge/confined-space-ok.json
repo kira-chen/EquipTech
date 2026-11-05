@@ -1,0 +1,85 @@
+{
+  "type": "受限空间",
+  "permit_no": "SX-2026-0828-009",
+  "level": null,
+  "location": "催化裂化装置 分馏塔 T-201 塔底",
+  "unit": "炼油二部 / 检维修中心",
+  "medium": {
+    "name": "油气（已蒸塔、置换、通风）",
+    "lel_pct": 1.1,
+    "flammable": true,
+    "toxic": true
+  },
+  "start_time": "2026-08-28T08:30:00+08:00",
+  "end_time": "2026-08-29T08:00:00+08:00",
+  "applicant": "周涛",
+  "guardian": "吴海",
+  "guardian_cert": "JH-2025-0412",
+  "approvers": [
+    "孙立（属地车间主任）",
+    "赵敏（安全环保部）"
+  ],
+  "workers": [
+    { "name": "马超", "role": "钳工", "cert": "QG-2023-118", "briefing_signed": true },
+    { "name": "韩磊", "role": "钳工", "cert": "QG-2023-125", "briefing_signed": true }
+  ],
+  "gas_tests": [
+    {
+      "time": "2026-08-28T07:40:00+08:00",
+      "location": "T-201 上人孔",
+      "o2": 20.8,
+      "lel": 0,
+      "combustible_vol": 0,
+      "toxic": [
+        { "name": "H2S", "value": 0, "unit": "mg/m3" }
+      ],
+      "analyst": "陈芳",
+      "instrument_ok": true
+    },
+    {
+      "time": "2026-08-28T08:10:00+08:00",
+      "location": "T-201 塔底人孔",
+      "o2": 20.9,
+      "lel": 0,
+      "combustible_vol": 0,
+      "toxic": [
+        { "name": "H2S", "value": 0, "unit": "mg/m3" },
+        { "name": "苯", "value": 0.5, "unit": "mg/m3" }
+      ],
+      "analyst": "陈芳",
+      "instrument_ok": true
+    }
+  ],
+  "measures": {
+    "risk_identified": true,
+    "briefing_done": true,
+    "emergency_plan": true,
+    "warning_zone": true,
+    "ppe_confirmed": true,
+    "isolation_done": true,
+    "isolation_by_blind": true,
+    "ventilation": true,
+    "rescue_equipment": true,
+    "entry_register": true,
+    "continuous_monitoring": true,
+    "energy_locked": true,
+    "guardian_outside": true
+  },
+  "cross_jobs": [
+    { "type": "盲板抽堵", "permit_no": "MB-2026-0827-021" }
+  ],
+  "attachments": {
+    "scheme": null,
+    "blind_plate_map": "MB-2026-0827-021 附图"
+  },
+  "night_or_holiday": false,
+  "hot_work_inside": false,
+  "lighting_voltage": 12,
+  "wet_or_metal_container": true,
+  "weather": {
+    "wind_level": 2,
+    "thunderstorm": false
+  },
+  "notes": null,
+  "briefing_signed": null
+}

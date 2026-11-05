@@ -1,0 +1,80 @@
+{
+  "type": "受限空间",
+  "permit_no": "SX-2026-0828-014",
+  "level": null,
+  "location": "储运部 中间罐区 柴油储罐 TK-208 罐内 底板检测与清淤",
+  "unit": "储运部 / 检维修中心",
+  "medium": {
+    "name": "氮气（柴油罐清空、氮气置换后已通风）",
+    "lel_pct": 0.6,
+    "flammable": true,
+    "toxic": false
+  },
+  "start_time": "2026-08-28T08:00:00+08:00",
+  "end_time": "2026-08-29T10:00:00+08:00",
+  "applicant": "郑凯",
+  "guardian": "何军",
+  "guardian_cert": "JH-2025-0388",
+  "approvers": [
+    "林峰（储运部主任）",
+    "赵敏（安全环保部）"
+  ],
+  "workers": [
+    { "name": "高飞", "role": "钳工", "cert": "QG-2024-031", "briefing_signed": true },
+    { "name": "宋健", "role": "检测工", "cert": "WT-2023-0156", "briefing_signed": true }
+  ],
+  "gas_tests": [
+    {
+      "time": "2026-08-28T07:20:00+08:00",
+      "location": "TK-208 罐顶人孔（上）",
+      "o2": 20.8,
+      "lel": 0,
+      "combustible_vol": 0,
+      "toxic": [],
+      "analyst": "陈芳",
+      "instrument_ok": true
+    },
+    {
+      "time": "2026-08-28T07:40:00+08:00",
+      "location": "TK-208 罐壁人孔（下）",
+      "o2": 20.8,
+      "lel": 0,
+      "combustible_vol": 0,
+      "toxic": [],
+      "analyst": "陈芳",
+      "instrument_ok": true
+    }
+  ],
+  "measures": {
+    "risk_identified": true,
+    "briefing_done": true,
+    "emergency_plan": true,
+    "warning_zone": true,
+    "ppe_confirmed": true,
+    "isolation_done": true,
+    "isolation_by_blind": true,
+    "ventilation": true,
+    "rescue_equipment": true,
+    "entry_register": true,
+    "continuous_monitoring": true,
+    "energy_locked": true,
+    "guardian_outside": true
+  },
+  "cross_jobs": [
+    { "type": "盲板抽堵", "permit_no": "MB-2026-0827-034" }
+  ],
+  "attachments": {
+    "scheme": null,
+    "blind_plate_map": "MB-2026-0827-034 附图"
+  },
+  "night_or_holiday": false,
+  "hot_work_inside": false,
+  "lighting_voltage": 12,
+  "wet_or_metal_container": true,
+  "weather": {
+    "wind_level": 3,
+    "thunderstorm": false
+  },
+  "notes": "票面有毒气体栏填「无」（介质氮气/柴油，无毒），作业时间 8:00 至次日 10:00",
+  "briefing_signed": null
+}

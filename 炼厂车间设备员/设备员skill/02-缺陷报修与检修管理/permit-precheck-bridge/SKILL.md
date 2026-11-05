@@ -1,31 +1,30 @@
 ---
 name: permit-precheck-bridge
-description: 车间侧作业票预检入口（中石化炼化厂车间设备员口径，对接已有 work-permit-precheck 技能）。当车间设备员提到"这张作业票帮我看一下""票填得对不对""用火票预检""受限空间票能不能过""作业许可票自查"并提供作业票（Word 或 PDF 转出的 txt/docx、图片）时使用；本技能只做车间侧前置信息补全与结果转达，实际规则判定调用 work-permit-precheck（按《中国石化作业许可管理规定》八大类：用火、受限空间、高处、吊装、临时用电、动土、断路、盲板抽堵）。不重复实现规则引擎、不替代作业票审批签发；检修方案安全措施核查用 overhaul-process-check-bridge，设备交出条件用 equipment-handover-check，交叉作业冲突用 cross-operation-conflict。
+description: 车间作业票预检（中石化炼化厂车间设备员口径）。当车间设备员提到"这张作业票帮我看一下""帮我检查这张作业票""票填得对不对""作业票预检""预审作业票""作业票有没有漏项""用火票预检""受限空间票能不能过""作业许可票自查"，并提供作业票（Word 或 PDF 转出的 txt/docx、图片、文字描述）时使用；本技能自己读票、抽取票面字段并向用户复述确认，按 GB 30871-2022 整理的 130 条规则逐项预检，输出"必须整改 / 建议完善 / 未判定 / 通过"四级结果，再附上设备交出、交叉作业、承包商资质等车间侧核实情况，按车间自查口径成文。覆盖《中国石化作业许可管理规定》八大类：用火、受限空间、高处、吊装、临时用电、动土、断路、盲板抽堵。不替代作业票审批签发，不判定作业级别；不用于一般检维修工单、巡检表和非危化企业票据；检修方案安全措施核查用 overhaul-process-check-bridge，设备交出条件用 equipment-handover-check，交叉作业冲突用 cross-operation-conflict。
 allowed-tools: Read,Write,Bash
 agent_created: true
 metadata:
-  version: 0.2.0
+  version: 0.3.0
   author: calvin
-  tags: [refinery, equipment, safety, permit, bridge, sinopec]
+  tags: [refinery, equipment, safety, permit, gb30871, sinopec]
 ---
 
-# 作业票预检入口（permit-precheck-bridge）
+# 车间作业票预检（permit-precheck-bridge）
 
-面向中石化体系炼化厂**车间（运行部）设备员**，在票据提交审批前调用已有的 `work-permit-precheck` 技能完成作业票预检，并把结果按车间自查口径转达。**本技能是入口与衔接层，不重复实现规则引擎；所有合规判定以 work-permit-precheck 的 `result.json` 为准，本技能的 `merge-report.js` 只做逐条转达，不改写任何判定。**
+面向中石化体系炼化厂**车间（运行部）设备员**，在作业票提交审批前读票、按规则预检，并按车间自查口径输出报告。技能内有两个分工明确的脚本：**规则引擎 `precheck.js` 只做判定**，按 `references/rules.json` 逐条检查并写出 `result.json`；**`merge-report.js` 只做转达**，把 `result.json` 的判定逐条照搬进车间自查报告，不改写任何判定项、等级或结论。
 
 ## 适用条件
-- 车间设备员说"帮我看看这张票 / 票填得对不对 / 用火票预检 / 受限空间票查一下 / 作业许可票自查"，并提供作业票文件。
-- 作业类型属于作业许可八大类：**用火作业**（票面常写"动火"，源技能按"动火"识别，转达时照搬票面原词）、受限空间作业、高处作业、吊装作业、临时用电作业、动土作业、断路作业、盲板抽堵作业。
+- 车间设备员说"帮我看看这张票 / 票填得对不对 / 作业票预检 / 用火票预检 / 受限空间票查一下 / 作业许可票自查"，并提供作业票文件或文字描述。
+- 作业类型属于作业许可八大类：**用火作业**、受限空间作业、高处作业、吊装作业、临时用电作业、动土作业、断路作业、盲板抽堵作业。规则引擎的 `type` 枚举与规则原文沿用 GB 30871-2022 的「动火」一词，即中石化的「用火作业」，报告里照搬原文、不替换，并在字段表加注「用火作业」。
 - 适用于车间侧自查场景：票据提交审批前的预检、退票后的整改复核、属地监护前的票面核对。
-- 车间设备员可做的部分：补全设备交出、交叉作业、承包商资质等车间侧信息；运行源技能并转达结果；把整改重点告知作业负责人。
+- 车间设备员可做的部分：读票并核对抽取结果；运行预检并转告整改项；补全设备交出、交叉作业、承包商资质等车间侧信息；把整改重点告知作业负责人。
 - 由其他岗位归口的部分（技能只提示，不代做）：作业票审批签发由作业许可系统与各级审批人负责；气体分析由分析人员出结论；作业级别以票面与审批人判定为准，技能不自判。
-- 不适用：检修方案安全措施核查（用 overhaul-process-check-bridge）；安全部门的正式审批；无票据文件仅口头描述；非特殊作业的一般维修工单。
+- 不适用：检修方案安全措施核查（用 overhaul-process-check-bridge）；安全部门的正式审批；非危险化学品企业的作业票；一般检维修工单、巡检记录；要求出具正式审批意见或代替任何一级审批签字。
 
 ## 前提条件
-- **依赖技能**：`work-permit-precheck` 必须已安装并可调用。先运行 `node "<技能目录>/scripts/check-dependency.js"`，`available:false` 时明确告知用户"需先安装特殊作业票预检技能"并终止，**不得用本技能自行判定票据合规性**。技能目录由平台决定（WorkBuddy / Claude Code / 豆包），两个技能并排装在同一个技能目录下时脚本会自动找到；装在别处时，任一平台都可用环境变量 `SKILL_PACK_ROOT` 或 `--skill-root` 指定依赖技能位置。
-- 输入：作业票文件。**PDF 先用平台 pdf 技能转为 txt/docx 再传入，脚本不读 PDF；扫描件需 OCR**。docx 由源技能的 `docx2text.js` 读取；图片由模型读图抽取并在源技能 `extraction_notes` 中声明。可选：对应的检修方案、设备交出单、作业人员资质材料。
+- 输入：作业票文件。**PDF 先用平台 pdf 技能转为 txt/docx 再传入，脚本不读 PDF；扫描件需 OCR**。docx 由本技能的 `scripts/docx2text.js` 读取；图片由模型直接读图抽取，每处看不清或推断都记入 `extraction_notes`。可选：对应的检修方案、设备交出单、作业人员资质材料。
 - 必填信息：作业类型（八大类之一）、作业设备位号、作业时间。作业许可系统导出的票面字段常见列名：许可证编号、作业类别、作业级别、作业地点、属地监护人、作业单位监护人、作业负责人、作业单位。
-- 环境：可执行 Node.js ≥ 18，脚本仅用内置模块。**若环境无法执行 node（无 Bash 工具或 `node --version` 失败），明确告知用户并终止，不得凭记忆给票据合规结论。**
+- 环境：可执行 Node.js ≥ 18，脚本仅用内置模块，无需 npm 安装。下文 `<技能目录>` 指平台加载本技能后的实际目录（含 SKILL.md 的目录），路径含空格时加引号。**若环境无法执行 node（无 Bash 工具或 `node --version` 失败），明确告知用户并终止，不得凭记忆给票据合规结论。**
 
 ## 数据获取（MCP）
 
@@ -39,45 +38,64 @@ metadata:
 取数后：
 
 1. `get_permit_document` 返回「<许可证编号>.docx」和「<许可证编号>.permit.json」两个下载链接（60 分钟内有效），按原文件名下载到同一个新建目录。
-2. docx 按操作步骤交外部技能 work-permit-precheck 的 docx2text.js 抽文本，再按其抽取规则生成 permit.json 后预检。工具附带的 permit.json 是演示数据的票面真值，只用于核对抽取结果，不能代替抽取。
+2. docx 交本技能的 `scripts/docx2text.js` 抽文本，再按 `references/extraction-guide.md` 抽取 permit.json 后预检（操作步骤 1~3）。工具附带的 permit.json 是演示数据的票面真值，只用于核对抽取结果，不能代替抽取。
 3. 只有用火、受限空间、高处、吊装、盲板抽堵五类作业票有 Word 原件；临时用电、动土、断路作业暂无，需请用户上传。
 
 ## 操作步骤
-1. **检查依赖** —— 运行：
+1. **读取票面** —— 用户给 `.docx` 时先转成文本：
    ```bash
-   node "<技能目录绝对路径>/scripts/check-dependency.js" [--skill-root "<work-permit-precheck 根目录>"] --out "<工作目录>/作业票预检"
+   node "<技能目录>/scripts/docx2text.js" --input "<作业票.docx>" --out "<工作目录>/作业票预检/permit.txt"
    ```
-   读取末行 JSON：`available` 为 `true` 才能继续；`root`/`script`/`docx2text` 给出依赖技能路径。`available:false` → 告知用户并终止。
-2. **补全车间侧前置信息** —— 按 `references/intake-questions.md` 核对票据之外的车间信息：设备是否已交出（可接 `equipment-handover-check`）、同区域是否有交叉作业（可接 `cross-operation-conflict`）、承包商资质是否已核验（可接 `contractor-qualification-check`）。把核实情况整理成 `notes.json`（格式见 `references/input-spec.md`），**状态只认 已核实 / 未核实 / 不适用，不得替用户推测**。**这些信息不进入规则判定。**
-3. **调用 work-permit-precheck** —— 按其 SKILL.md 的操作步骤执行：docx → `docx2text.js` 转文本 → 抽取 `permit.json` 并向用户复述确认 → `precheck.js` 生成 `result.json`。**不得改写 result.json 中任何判定项、等级或结论。**
-4. **合并转达** —— 运行：
+   表格每行以 `|` 分隔，`[x]`/`[ ]` 为勾选状态，`[×]` 为叉选（含义需人工判断），`‹›` 为横向合并占位（不是留白），空单元格才是票面留白；`【文本框】…` 为文本框内容，页眉/页脚在末尾单列；末行 JSON 摘要（表格数、勾选框数、文本框数）用于核对是否读全，出错时末行为 `{"ok":false,"error":…}`。用户给图片或扫描件转出的文件时直接读图；给文字描述时直接按对照表映射。
+2. **抽取 permit.json 并向用户复述确认** —— 复制 `assets/templates/permit.json`，按 `references/extraction-guide.md` 的字段对照表逐项填写，并对照 `references/permit-schema.md` 校对键名。票面标题为"用火作业许可证 / 用火安全作业证 / 用火票"时 `type` 填「动火」。**看不清、空白、票面无此栏一律填 `null`，不得猜测**；时间一律 ISO 8601 带时区（如 `2026-08-28T09:00:00+08:00`）；每处 null、推断、换算都在 `extraction_notes[]` 记一条（格式"字段：票面情况 → 填了什么"）。按手册第 5 节 10 项自检后，**向用户复述关键字段并请其确认**：作业类型与级别、起止时间、气体分析（次数、最近一次时间与 O₂/LEL）、监护人、已勾选措施数/总数、抽取备注条数。用户确认（或更正）后再进入第 3 步；一张票同时涉及多类作业时，以主票类型为 `type`，其余记入 `cross_jobs`，并提醒用户每类作业应各自办票。
+3. **规则引擎判定** —— 运行：
    ```bash
-   node "<技能目录绝对路径>/scripts/merge-report.js" --result "<源技能输出目录>/result.json" --notes "<notes.json>" --object "<作业票名称或票号>" --out "<工作目录>/作业票预检"
+   node "<技能目录>/scripts/precheck.js" --input "<工作目录>/作业票预检/permit.json" --out "<工作目录>/作业票预检" --now <当前时间，ISO 8601 带时区，如 2026-08-28T08:50:00+08:00>
    ```
-   读取末行 JSON 摘要（同时写入 `<out>/summary.json`）：`ok` 必须为 `true`；`warnings` 非空时逐条告知用户（源 summary 与 findings 计数不一致 / 未知级别 / 车间侧状态不合法等）。脚本把 findings 逐条深拷贝转达，重新计数但不改源数据；车间侧提示单独成节"车间侧补充提示（非规则判定）"。
-5. **撰写车间侧说明并交付** —— 读取 `permit-precheck-bridge.md`，只在 `<!-- ANALYSIS_START -->` / `<!-- ANALYSIS_END -->` 之间补充：调用了哪个技能、必须整改与未判定项数量、车间提示项、下一步整改重点；**不得复述或改写判定结论**。对照 `references/checklist.md` 自检后交付合并报告与源技能原始 `result.json`。**必须保留源技能的全部声明行，并保留本技能声明："预检为辅助自查，不替代安全部门审批；票据是否签发以审批人意见为准。"**
+   `--now` 必须带时区（用于判断是否已过有效期），省略则取系统时间。脚本写出 `result.json`、`report.md`、`summary.json`，末行输出 `{"must_fix":N,"should_improve":N,"undetermined":N,"pass":N}`；输入不合法时末行为 `{"ok":false,"error":"…"}` 并退出码 1。`undetermined`（未判定）表示规则的判定条件依赖的票面字段为空，单列一节。**不得改写 result.json 中任何判定项、等级或结论。**
+4. **补全车间侧信息（可选）** —— 按 `references/intake-questions.md` 核对票面之外的车间信息：设备是否已交出（可接 `equipment-handover-check`）、同区域是否有交叉作业（可接 `cross-operation-conflict`）、承包商资质是否已核验（可接 `contractor-qualification-check`）。把核实情况整理成 `notes.json`（格式见 `references/input-spec.md`），**状态只认 已核实 / 未核实 / 不适用，不得替用户推测**。**这些信息不进入规则判定。** 用户没有提供车间侧信息时跳过本步，第 5 步不传 `--notes`，报告第五节三项写「未核实」。
+5. **合并成车间自查报告** —— 运行：
+   ```bash
+   node "<技能目录>/scripts/merge-report.js" --result "<工作目录>/作业票预检/result.json" [--notes "<notes.json>"] --object "<作业票名称或票号>" --out "<工作目录>/作业票预检"
+   ```
+   读取末行 JSON 摘要（同时写入 `<out>/summary.json`，覆盖第 3 步的同名文件）：`ok` 必须为 `true`；`warnings` 非空时逐条告知用户（summary 与 findings 计数不一致 / 未知级别 / 车间侧状态不合法 / type 不在八大类等）。脚本把 findings 逐条深拷贝转达，重新计数但不改原数据；车间侧提示单独成节"车间侧补充提示（非规则判定）"。
+6. **撰写说明并交付** —— 读取 `permit-precheck-bridge.md`，只在 `<!-- ANALYSIS_START -->` / `<!-- ANALYSIS_END -->` 之间补充：必须整改、建议完善、未判定项数量；对每条必须整改、建议完善项用通俗语言说明"为什么是问题、现场怎么改"（例如：气体分析超 30 min → 开工前重新分析并填写新时间与分析人签字；缺受限空间票 → 先办受限空间票再在用火票关联栏填票号）；未判定项缺哪个字段、补上后可复检；因抽取为 `null` 触发的问题注明"票面缺失/未识别，请核对原件"；车间侧提示项状态与下一步整改重点。**不得改动规则编号、级别与判定结论，不得替审批人说"能过""问题不大"。** 对照 `references/checklist.md` 自检后交付。
+   另附**人工提醒清单**（不可机检，每次交付都列出，请审批人确认）：
+   - 承包商/作业单位资质与安全协议是否在有效期内；
+   - 作业票保存期限 ≥1 年（归档要求）；
+   - 一处一票、一次一票：一张票不得覆盖多个作业点或多次作业；
+   - 报告中标注"待核实 / 通行做法 / 不确定"的依据条款请对照企业制度与正式文本。
+
+   **必须保留两条声明行**：规则引擎的声明"本结果为辅助预检，不替代作业票审批；条款号以 GB 30871-2022 正式文本为准。"（交付时补充说明：条款号按记忆整理，以 GB 30871-2022 正式文本和企业制度为准），以及本技能声明："预检为辅助自查，不替代安全部门审批；票据是否签发以审批人意见为准。"
 
 ## 预期结果
-- `permit-precheck-bridge.md`：合并报告，六节 + 附：一、预检结论（引自 work-permit-precheck，含源技能字段表）；二、不符合项（必须整改 / 建议完善，逐条原文）；三、未判定项；四、通过项；五、车间侧补充提示（非规则判定）；六、整改建议；附：源技能抽取说明、数据提示（有时）。末尾依次为源技能声明行与本技能声明行，再接分析段占位。
-- `bridge.json`：`meta`（源技能、对象、声明行）、`sourceSummary`、`sourceMeta`（票号 / 类型 / 级别 / 预检时间）、`counts`（按 findings 重新计数）、`findings`（逐条深拷贝）、`workshopNotes`、`skipped`、`extractionNotes`、`warnings`；`summary.json`：脚本末行摘要；`dependency.json`：依赖检查结果。
-- 源技能产出的原始 `result.json` 一并交付，供复核。
-- 交付时向用户说明：调用了哪个技能、必须整改 / 建议完善 / 未判定数量、车间侧提示项状态、下一步整改重点。
+- `permit-precheck-bridge.md`：车间自查报告，六节 + 附：一、预检结论（引自规则引擎 precheck.js，含字段表与八大类加注）；二、不符合项（必须整改 / 建议完善，逐条原文）；三、未判定项；四、通过项；五、车间侧补充提示（非规则判定）；六、整改建议；附：抽取备注（有时）、数据提示（有时）。末尾依次为规则引擎声明行与本技能声明行，再接分析段占位。
+- `bridge.json`：`meta`（`source`=`precheck.js`、对象、声明行）、`sourceSummary`、`sourceMeta`（票号 / 类型 / 八大类 / 级别 / 预检时间）、`counts`（按 findings 重新计数）、`findings`（逐条深拷贝）、`workshopNotes`、`skipped`、`extractionNotes`、`warnings`。
+- `result.json`：规则引擎的原始结构化结果（可回填到 OA/审批系统），`report.md`：规则引擎报告（必须整改 / 建议完善 / 未判定 / 通过项）；两者一并交付，供复核。`summary.json`：最后一个脚本的末行摘要。
+- 中间产物：`permit.txt`（docx 转文本）、`permit.json`（抽取结果，已经用户确认）。
+- 交付时向用户说明：必须整改 / 建议完善 / 未判定数量，前 3 条最紧急的必须整改项，未判定项缺哪些字段，哪些字段因看不清填了 null，车间侧提示项状态，人工提醒清单，下一步整改重点。
 
 ## 不适用范围
-- 不自行判定作业票合规性，不重复实现或修改规则引擎，不判定用火 / 高处 / 吊装级别。
-- 不替代安全部门审批与作业许可签发，不替代属地监护人、作业单位监护人的现场职责。
+- 不替代安全部门审批与作业许可签发，不替代属地监护人、作业单位监护人的现场职责；不出具正式审批意见。
+- 不判定用火 / 高处 / 吊装级别（规则引擎只核对级别与票面要素是否相符），不修改规则库与判定结果。
 - 不做检修方案的安全措施核查，不做设备交出条件核对（分别用对应技能）。
-- 源技能不可用时不降级为人工判断，须终止并告知用户。
+- 跨票一致性（如两张关联票的起止时间、气体分析时间是否对得上）规则引擎不比对，由模型对照两份结果人工指出，并标明是人工比对。
 
 ## 参考资料（按需读取，路径相对技能根目录）
 | 文件 | 内容 | 何时读取 |
 |---|---|---|
+| `references/extraction-guide.md` | 抽取手册：三步流程、字段对照表（栏目别名→字段，含用火票映射）、勾选/气体分析/时间规则、完整示例、10 项自检 | 第 2 步抽取前 |
+| `references/permit-schema.md` | permit.json 字段定义与 measures 键名 | 第 2 步抽取时 |
+| `references/rules-gb30871.md` | 规则人读版（表格、分级、阈值、不确定/待核实条款清单） | 第 6 步解释问题时 |
+| `references/rules.json` | 规则机器版，`precheck.js` 自动读取 | 需要核对规则时 |
 | `references/intake-questions.md` | 车间侧前置信息清单与追问话术 | 信息不全时 |
-| `references/input-spec.md` | 源技能 `result.json` 字段、车间侧 `notes.json` 格式、作业许可系统列名对照 | 准备 notes.json / 核对输入时 |
-| `references/bridge-rules.md` | 与 work-permit-precheck 的衔接口径、八大类术语、结果转达规范、禁止改写清单 | 合并结果前 |
-| `references/checklist.md` | 交付自检清单（含双重声明行核对） | 交付前 |
-| `scripts/README.md` | 两个脚本的参数与产出说明 | 运行脚本前 |
-| `scripts/selftest.js` | 自测：依赖探测、源 JSON 逐条转达不改写、车间侧状态校验等（仅开发包含有，发布包不含） | 修改脚本后（开发包）；文件不存在则跳过 |
-| `assets/templates/bridge-template.md` | 合并报告模板（与 merge-report.js 产出结构一致） | 用户要求调整版式时 |
+| `references/input-spec.md` | 输入规格：作业票文件、`result.json` 字段、车间侧 `notes.json` 格式、作业许可系统列名对照 | 准备 notes.json / 核对输入时 |
+| `references/bridge-rules.md` | 转达口径：两个脚本的分工、八大类术语、结果转达规范、禁止改写清单 | 合并结果前 |
+| `references/checklist.md` | 交付自检清单（含两条声明行核对） | 交付前 |
 | `references/sample-output.md` | 风格示范产出（内容均为虚构） | 拿不准报告风格时 |
-| `examples/`（仅开发包；仓库内在 `演示case/02-缺陷报修与检修管理/permit-precheck-bridge/`） | 回归测试数据（虚构的源技能 result.json 与车间侧 notes.json；仅开发包含有，发布包不含） | 目录不存在则跳过 |
+| `assets/templates/permit.json` | permit.json 空模板 | 第 2 步 |
+| `assets/templates/report-template.md` | 规则引擎报告模板 | `precheck.js` 自动使用 |
+| `assets/templates/bridge-template.md` | 车间自查报告模板（与 merge-report.js 产出结构一致） | 用户要求调整版式时 |
+| `scripts/README.md` | 全部脚本的参数、产出与退出码 | 运行脚本前 |
+| `scripts/selftest.js` | 自测：规则引擎边界用例、docx 读取、端到端回归、逐条转达不改写、车间侧状态校验等（仅开发包含有，发布包不含） | 修改脚本或规则后（开发包）；文件不存在则跳过 |
+| `examples/`（仅开发包；仓库内在 `演示case/02-缺陷报修与检修管理/permit-precheck-bridge/`） | 回归与演示数据（虚构的作业票 docx、抽取结果 json、期望报告，合并报告样例与车间侧 notes.json；仅开发包含有，发布包不含） | 目录不存在则跳过 |
