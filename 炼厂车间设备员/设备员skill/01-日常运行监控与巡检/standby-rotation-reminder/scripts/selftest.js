@@ -535,6 +535,71 @@ eq(r.rot.turningNormal[0].periodDays, 7, '22.9 「每周」解析为 7 天');
   ok((listing.match(/^\d+\. /gm) || []).length >= 15 && /工艺确认/.test(listing), '23.23 上架信息 5 题 + 样例问题 10 题，并写明切换条件由工艺确认');
 }
 
+// ---- 车间范围核对（D007）：备用设备台账/切换盘车记录混入其他车间时剔除；空车间保留；全不一致不筛并开头【注意】；无车间列/维护工厂不筛；台账外位号检测保留
+{
+  const ws = (x) => ((x.rot && x.rot.meta && x.rot.meta.workshopScope) || []);
+  const W = (x) => ((x.summary && x.summary.warnings) || []);
+  let plantBook = null;
+  const mkP = (n, b) => { plantBook = b; return mk(n, b); };
+  const LW = LED_HDR.concat(['车间']);
+  const mixF = mk('ws-mix.xlsx', {
+    '备用设备台账': [LW,
+      ['P-01A', 'P-01B', '泵1', 'P-01', '3个月', '14天', '', back(120), back(2), '', '测试车间'],
+      ['P-03A', 'P-03B', '泵3', 'P-03', '1年', '14天', '', back(30), back(1), '', ''],
+      ['P-91A', 'P-91B', '外车间泵', 'P-91', '3个月', '14天', '', back(200), back(2), '', '催化车间'],
+      ['P-92A', 'P-92B', '外车间泵', 'P-92', '3个月', '14天', '', back(200), back(2), '', '催化车间'],
+    ],
+    '切换盘车记录': [REC_HDR.concat(['车间']),
+      [back(120), 'P-01A', '主备切换', '张班', '', '测试车间'],
+      [back(10), 'P-91A', '主备切换', '王班', '', '催化车间'],
+      [back(10), 'Z-99A', '主备切换', '王班', '', ''],
+    ],
+  });
+  r = run(mixF, [], 'ws-mix');
+  eq(r.summary.ok, true, 'WS.1 车间混合输入运行成功');
+  eq((r.summary.counts || {}).pairs, 2, 'WS.2 剔除其他车间后主备组 2（P-01/P-03）');
+  eq((r.summary.counts || {}).switchOverdue, 1, 'WS.3 切换逾期只计本车间 P-01（不含催化车间 P-91/P-92）');
+  ok(!((r.rot && r.rot.pairs) || []).some((x) => /^P-9/.test(x.mainTag)), 'WS.4 主备组不含其他车间位号');
+  ok(W(r).some((w) => w.includes('工作表「备用设备台账」按 --workshop「测试车间」剔除其他车间 2 行') && w.includes('催化车间 2 行')), 'WS.5 warning 写明剔除行数与车间名');
+  const s0 = ws(r).find((x) => x.sheet === '备用设备台账') || {};
+  eq(s0.status, 'checked', 'WS.6 meta.workshopScope 台账状态 checked');
+  eq(s0.droppedRows, 2, 'WS.7 meta.workshopScope 记录剔除 2 行');
+  eq((s0.dropped || {})['催化车间'], 2, 'WS.8 dropped 按车间名记行数');
+  eq(s0.blank, 1, 'WS.9 车间为空 1 行计入 blank');
+  ok(((r.rot && r.rot.pairs) || []).some((x) => x.mainTag === 'P-03A'), 'WS.10 车间为空的 P-03 按本车间保留');
+  ok(W(r).some((w) => w.includes('工作表「备用设备台账」车间列为空 1 行，按本车间保留')), 'WS.11 车间为空 warning 写明行数');
+  ok(/车间范围：已按车间列核对「测试车间」，剔除其他车间的行：「备用设备台账」2 行（催化车间 2 行）；「切换盘车记录」1 行（催化车间 1 行）/.test(r.md || ''), 'WS.12 md 口径处写明两张表的剔除情况');
+  ok(ws(r).some((x) => x.sheet === '切换盘车记录' && x.status === 'checked' && x.droppedRows === 1), 'WS.13 meta.workshopScope 含切换盘车记录核对结果');
+  const noMatch = W(r).filter((w) => w.includes('无对应机组'));
+  ok(noMatch.some((w) => w.includes('Z-99A')) && !noMatch.some((w) => w.includes('P-91A')), 'WS.14 其他车间记录按车间列剔除，车间为空的台账外位号仍按「无对应机组」提示');
+
+  const misF = mk('ws-mis.xlsx', { '备用设备台账': [LW,
+    ['P-91A', 'P-91B', '外车间泵', 'P-91', '3个月', '14天', '', back(200), back(2), '', '催化车间'],
+    ['P-92A', 'P-92B', '外车间泵', 'P-92', '3个月', '14天', '', back(200), back(2), '', '催化车间']] });
+  r = run(misF, [], 'ws-mis');
+  eq((r.summary.counts || {}).pairs, 2, 'WS.15 车间列全不一致时不筛');
+  eq((ws(r)[0] || {}).status, 'mismatch', 'WS.16 meta.workshopScope 状态 mismatch');
+  ok(W(r).some((w) => w.startsWith('【注意】') && w.includes('催化车间')), 'WS.17 全不一致 warning 以【注意】开头');
+  ok(/^# [^\n]*\n\n【注意】工作表「备用设备台账」的车间列取值与 --workshop「测试车间」不一致，未按车间筛选，请核对输入。/.test(r.md || ''), 'WS.18 md 标题后紧跟【注意】提示');
+  ok(((r.md || '').split('## 一、')[0]).includes('车间列取值与 --workshop'), 'WS.19 【注意】在正文第一节之前');
+
+  r = run(base, [], 'ws-nocol');
+  eq((ws(r)[0] || {}).status, 'noColumn', 'WS.20 无车间列 status 为 noColumn');
+  ok(/车间范围：输入未含车间列，车间范围以取数条件为准。/.test(r.md || ''), 'WS.21 无车间列时 md 口径写明以取数条件为准');
+  eq((r.summary.counts || {}).pairs, 3, 'WS.22 无车间列不筛');
+
+  const plantF = mkP('ws-plant.xlsx', { '备用设备台账': [LED_HDR.concat(['维护工厂']),
+    ['P-01A', 'P-01B', '泵1', 'P-01', '3个月', '14天', '', back(120), back(2), '', '1100'],
+    ['P-02A', 'P-02B', '泵2', 'P-02', '90天', '7天', '', back(88), back(13), '', '1200']] });
+  r = run(plantF, [], 'ws-plant');
+  eq((ws(r)[0] || {}).status, 'noColumn', 'WS.23 「维护工厂」不当车间列（noColumn）');
+  ok((ws(r)[0] || {}).column === null && !(ws(r)[0] || {}).ignoredColumn, 'WS.24 「维护工厂」不读入车间字段（column 为 null，无 ignoredColumn）');
+  eq((r.summary.counts || {}).pairs, 2, 'WS.25 「维护工厂」列不参与筛选');
+  // 人员列「车间负责人」不当车间列（common.js 只认 车间/所属车间/属地车间/运行部 及其后加「名称」）
+  r = run(mk('ws-person.xlsx', JSON.parse(JSON.stringify(plantBook).split('维护工厂').join('车间负责人'))), [], 'ws-person');
+  ok((ws(r)[0] || {}).status === 'noColumn' && (ws(r)[0] || {}).ignoredColumn === '车间负责人' && r.summary.ok === true, 'WS.26 「车间负责人」人员列判 noColumn，ignoredColumn 记下，不筛');
+}
+
 // ---- 输出
 console.log(`\n${'='.repeat(56)}`);
 console.log(`standby-rotation-reminder 自测：${pass} 通过，${fail} 失败`);

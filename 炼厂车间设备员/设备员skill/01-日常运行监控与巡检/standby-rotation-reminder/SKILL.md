@@ -50,6 +50,7 @@ metadata:
    - 周期或上次执行日期缺失：归入 `undetermined` 单列一节并 warning，**不得按默认周期（如一月一次）替用户设定**。
    - 主备位号无法配对：warning 单列，**不得自行猜测配对关系**。
    - 当前主用：按切换记录中最近一次带「切换后主用」的记录推导；记录无方向列时按台账展示，**不得按切换次数奇偶猜测**。
+   - 车间范围：脚本只在输入带车间列时按 `--workshop` 核对（备用设备台账、切换盘车记录各自核对，剔除其他车间的行；车间列全不一致时不筛并在报告开头提示）；MCP 导出多数不带车间列，取数时仍必须带 `workshop`。没有车间列的记录仍按「台账中无对应机组」兜底不计执行率。报告开头出现【注意】车间不一致提示时，先请用户核对是否传错了文件。
    - 备机状态为「检修中/停用」：不进到期清单，单列一节；状态未填或无法识别时仍提醒但不算备机完好率。
 3. **读取 rotation.json** —— 从 `<输出目录>/rotation.json` 获取：`switchOverdue`、`switchDueSoon`、`turningOverdue`、`turningDueSoon`、`trialOverdue`、`trialDueSoon`（到期清单，含机组、当前主用/备用、逾期天数）、`longIdle`（长期未切换，含阈值依据）、`standbyUnavailable`（检修中/停用备机）、`standbyAvailability`（备机完好台数与比率）、`pairs`（每个机组的当前主用与角色来源 `roleSource`）、`undetermined`、`pairingIssues`、`executionRate`、`counts`。
 4. **撰写"备用设备管理说明"** —— 读 `references/rotation-rules.md` 的表述口径，撰写 200~350 字，按"到期概览 → 逾期项与启动失败风险 → 长期未切换与检修中备机 → 执行率情况 → 下一步安排"结构，替换 `rotation-report.md` 中 `<!-- ANALYSIS_START -->` 与 `<!-- ANALYSIS_END -->` 之间的占位文字。**数量、天数、执行率一律引用 rotation.json。**

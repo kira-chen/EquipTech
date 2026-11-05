@@ -61,9 +61,12 @@ const ALIASES = C.mergeAliases({
   '责任人': ['责任人', '修复责任人', '负责人', '责任者'],
   '备注': ['备注', '说明', '情况说明'],
 });
+// 车间范围核对（D007）：「车间」只认 车间/所属车间/属地车间/运行部（及其后加「名称」），覆盖共享别名，
+// 不让维护工厂/属地单位/使用单位/作业部占用「车间」字段；'车间' 放在各表 optional 列最后，避免抢走别的列
+ALIASES['车间'] = [...C.WORKSHOP_COLS, ...C.WORKSHOP_COLS.map((c) => c + '名称')];
 const OPTIONAL_COLS = ['位号', '设备编号', '装置', '组件类型', '组件子类型', '密封类型', '介质', '介质状态', '检测方法', '检测值', '本底值',
   '检测时间', '发现人', '泄漏形态', '不可达点', '状态', '首次修复日期', '最终修复日期', '复测日期', '复测值',
-  '延迟修复批准日期', '延迟修复批准人', '责任人', '备注'];
+  '延迟修复批准日期', '延迟修复批准人', '责任人', '备注', '车间'];
 
 // ---- 介质状态归一：gas（气体/轻液）/ heavy（重液）；无法归类 → unknown（阈值不确定 → undetermined）
 const MED_HEAVY = ['重液', '重油', '渣油', '蜡油', '重质液', '稠油', '沥青', '重组分', 'heavy'];
@@ -164,7 +167,7 @@ function posNum(v, name) {
  *   2) 密封点台账 xlsx（工作表「密封点台账 / 密封点清单 / 密封点」，一行一密封点，按「密封类型」列或组件类型推定计数）
  * 返回 { static, dynamic, unclassified, source }；无法得到的项为 null
  */
-function loadSealPoints(v) {
+function loadSealPoints(v, workshop, scopes) {
   const s = C.str(v);
   const m = s.match(/(静密封|静|static)\s*[:：=]\s*(\d+)/i);
   const n = s.match(/(动密封|动|dynamic)\s*[:：=]\s*(\d+)/i);
@@ -189,7 +192,11 @@ function loadSealPoints(v) {
     return { static: st, dynamic: dy, unclassified: 0, source: `密封点台账汇总（${path.basename(s)}）` };
   }
   // 形式 2b：一行一密封点
-  const recs = C.toRecords(rows, ['密封点编号'], sheet, ['组件类型', '密封类型'], warnings, ALIASES);
+  const recs0 = C.toRecords(rows, ['密封点编号'], sheet, ['组件类型', '密封类型', '车间'], warnings, ALIASES);
+  // 逐点计数的密封点台账是泄漏率分母，混入其他车间会摊薄泄漏率，同样按车间核对
+  const sws = C.workshopScope(recs0, workshop, sheet, warnings);
+  scopes.push(sws.scope);
+  const recs = sws.records;
   let st = 0, dy = 0, un = 0;
   for (const r of recs) {
     const t = classifySealType(r['密封类型'], r['组件类型']).type;
@@ -224,7 +231,8 @@ function main() {
 
   // ---- 密封点总数（泄漏率分母）
   let sealPoints = null;
-  if (a['seal-points'] !== undefined) sealPoints = loadSealPoints(a['seal-points']);
+  const sealScopes = [];   // 车间范围核对：密封点台账（逐点形式时）
+  if (a['seal-points'] !== undefined) sealPoints = loadSealPoints(a['seal-points'], a.workshop, sealScopes);
   else warnings.push('未提供密封点总数（--seal-points），静/动密封点泄漏率无法计算，已单列「未提供密封点总数」');
 
   // ---- 读取本期检测/漏点记录
@@ -233,7 +241,11 @@ function main() {
   const sheetName = pickSheetName(book, '检测记录', '漏点记录', '泄漏点记录', 'LDAR检测记录', '密封点检测', '泄漏', 'LDAR', '检测数据', '检测明细');
   const rows = sheetName ? book[sheetName] : null;
   if (!rows) throw new Error('未在输入中找到「检测记录」或「漏点记录」工作表');
-  const recs = C.toRecords(rows, ['密封点编号'], sheetName, OPTIONAL_COLS, warnings, ALIASES);
+  const scopes = [];   // 车间范围核对结果：检测记录、历史台账、密封点台账
+  const recs0 = C.toRecords(rows, ['密封点编号'], sheetName, OPTIONAL_COLS, warnings, ALIASES);
+  const iws = C.workshopScope(recs0, a.workshop, sheetName, warnings);
+  scopes.push(iws.scope);
+  const recs = iws.records;
   const num = C.makeNum(warnings);
 
   // ---- 历史台账（可选，用于续跟踪）
@@ -247,7 +259,10 @@ function main() {
     if (!ledgerSheetName) warnings.push(`历史漏点台账「${path.basename(a.ledger)}」中未找到「漏点台账」工作表，本期按全新登记处理`);
     else {
       ledgerProvided = true;
-      const lrecs = C.toRecords(lb[ledgerSheetName], ['密封点编号'], ledgerSheetName, OPTIONAL_COLS, warnings, ALIASES);
+      const lrecs0 = C.toRecords(lb[ledgerSheetName], ['密封点编号'], ledgerSheetName, OPTIONAL_COLS, warnings, ALIASES);
+      const hws = C.workshopScope(lrecs0, a.workshop, ledgerSheetName, warnings);
+      scopes.push(hws.scope);
+      const lrecs = hws.records;
       for (const r of lrecs) {
         const no = C.str(r['密封点编号']);
         if (!no) { warnings.push(`历史台账「${ledgerSheetName}」第${r._row}行 密封点编号为空，已跳过`); continue; }
@@ -515,6 +530,8 @@ function main() {
   const ledgerRows = buildLedger(items, history, date);
 
   // ---- 产出
+  scopes.push(...sealScopes);
+  const wsNote = C.workshopScopeNote(scopes, a.workshop);
   C.ensureDir(outDir);
   const leaksJson = {
     // 供 equipment-weekly-monthly-report 读取的静/动密封点总数与泄漏点数（与 metrics.leakRate 同源）
@@ -528,6 +545,7 @@ function main() {
       ledger: a.ledger ? path.basename(a.ledger) : null, ledgerProvided,
       sealPoints: a['seal-points'] !== undefined ? String(a['seal-points']) : null,
       rulesSource, sourceLine: SOURCE_LINE, thresholds: metrics.thresholds, limits: metrics.limits,
+      workshopScope: scopes,
     },
     counts, metrics,
     newLeaks: newLeaks.map(slim),
@@ -557,6 +575,7 @@ function main() {
   const L = [];
   L.push(`# ${a.workshop} 泄漏点登记与修复跟踪（截至 ${date}）`);
   L.push('');
+  if (wsNote.alert) { L.push(wsNote.alert); L.push(''); }
   const alerts = [];
   if (overdue.length) {
     const worst = overdue[0];
@@ -575,6 +594,7 @@ function main() {
     L.push('');
   }
   L.push(`统计截止：${date} ｜ 数据来源：${path.basename(a.input)}（工作表「${sheetName}」）${ledgerProvided ? ` ｜ 历史台账：${path.basename(a.ledger)}` : ' ｜ 未提供历史台账'}`);
+  if (wsNote.note) L.push(wsNote.note);
   L.push(`认定口径：${rulesSource}`);
   L.push(`泄漏认定阈值：气体/轻液 ${thVoc} μmol/mol；重液 ${thLiquid} μmol/mol；现场可见泄漏按滴漏或成股流出定性认定`);
   if (backgroundFilled) L.push(`本底值：${BG_NOTE}（本期 ${backgroundFilled} 行填了本底值）`);

@@ -464,6 +464,98 @@ eq((r.summary.counts || {}).unknown, 1, '24.6 未判定计 E-31');
 ok(((r.summary && r.summary.warnings) || []).some((w) => w.includes('E-31') && w.includes('待查')), '24.7 warning 点名部分检查项未判定的设备');
 ok(/E-31/.test(((r.md || '').split('## 五、未判定项')[1] || '').split('\n## ')[0]), '24.8 报告「五、未判定项」一节列出 E-31');
 
+// ---- 25. 车间范围核对（D007）：车间列混入其他车间时剔除；空车间保留；全不一致不筛并在开头【注意】；无车间列/维护工厂不筛
+{
+  const ws = (x) => ((x.status && x.status.meta && x.status.meta.workshopScope) || []);
+  const W = (x) => ((x.summary && x.summary.warnings) || []);
+  let plantBook = null;
+  const mkP = (n, b) => { plantBook = b; return mk(n, b); };
+  const mixW = mk('ws-mix.xlsx', {
+    '巡检记录': [
+      ['位号', '设备名称', '车间', '检查结果', '异常描述', '检查时间', '检查人'],
+      ['P-01', '泵1', '测试车间', '正常', '', `${DATE} 08:00`, '张'],
+      ['P-02', '泵2', '测试车间', '异常', '机封漏', `${DATE} 08:10`, '张'],
+      ['P-91', '外车间泵', '催化车间', '异常', '振动高', `${DATE} 08:20`, '王'],
+      ['P-92', '外车间泵', '催化车间', '正常', '', `${DATE} 08:25`, '王'],
+      ['P-04', '泵4', '', '正常', '', `${DATE} 08:30`, '张'],
+    ],
+  });
+  r = run(mixW, [], 'ws-mix');
+  eq(r.summary.ok, true, '25.1 车间混合输入运行成功');
+  eq((r.summary.counts || {}).equipment, 3, '25.2 剔除其他车间后设备数 3（P-01/P-02/P-04）');
+  eq((r.summary.counts || {}).abnormal, 1, '25.3 异常只计本车间 P-02，不含催化车间 P-91');
+  ok(!((r.status && r.status.byEquipment) || []).some((x) => /^P-9/.test(x.tag)), '25.4 状态一览不含其他车间位号');
+  ok(W(r).some((w) => w.includes('剔除其他车间 2 行') && w.includes('催化车间 2 行')), '25.5 warning 写明剔除行数与车间名');
+  const s0 = ws(r)[0] || {};
+  eq(s0.status, 'checked', '25.6 meta.workshopScope 状态 checked');
+  eq(s0.droppedRows, 2, '25.7 meta.workshopScope 记录剔除 2 行');
+  eq((s0.dropped || {})['催化车间'], 2, '25.8 meta.workshopScope.dropped 按车间名记行数');
+  eq(s0.blank, 1, '25.9 车间列为空 1 行计入 blank');
+  ok(((r.status && r.status.byEquipment) || []).some((x) => x.tag === 'P-04'), '25.10 车间列为空的行按本车间保留');
+  ok(W(r).some((w) => w.includes('车间列为空 1 行，按本车间保留')), '25.11 车间为空的行 warning 写明行数');
+  ok(/车间范围：已按车间列核对「测试车间」，剔除其他车间的行/.test(r.md || ''), '25.12 md 口径处写明剔除情况');
+  ok(!/^【注意】.*车间列取值/m.test(r.md || ''), '25.13 有本车间行时开头不出【注意】车间提示');
+
+  const misW = mk('ws-mismatch.xlsx', {
+    '巡检记录': [
+      ['位号', '设备名称', '车间', '检查结果', '检查时间'],
+      ['P-91', '外车间泵', '催化车间', '异常', `${DATE} 08:20`],
+      ['P-92', '外车间泵', '催化车间', '正常', `${DATE} 08:25`],
+    ],
+  });
+  r = run(misW, [], 'ws-mismatch');
+  eq((r.summary.counts || {}).equipment, 2, '25.14 车间列全不一致时不筛（设备数 2）');
+  eq((ws(r)[0] || {}).status, 'mismatch', '25.15 meta.workshopScope 状态 mismatch');
+  ok(W(r).some((w) => w.startsWith('【注意】') && w.includes('催化车间') && w.includes('测试车间')), '25.16 全不一致 warning 以【注意】开头');
+  const head = (r.md || '').split('## 一、')[0];
+  ok(/^# .*\n\n【注意】工作表「ws-mismatch\.xlsx\/巡检记录」的车间列取值与 --workshop「测试车间」不一致，未按车间筛选，请核对输入。/.test(r.md || ''), '25.17 md 标题后紧跟【注意】提示');
+  ok(head.includes('【注意】'), '25.18 【注意】提示在正文第一节之前');
+
+  r = run(base, [], 'ws-nocol');
+  eq((ws(r)[0] || {}).status, 'noColumn', '25.19 无车间列 status 为 noColumn');
+  ok(/车间范围：输入未含车间列，车间范围以取数条件为准。/.test(r.md || ''), '25.20 无车间列时 md 口径写明以取数条件为准');
+  eq((r.summary.counts || {}).equipment, 3, '25.21 无车间列不筛');
+
+  const plantW = mkP('ws-plant.xlsx', {
+    '巡检记录': [
+      ['位号', '设备名称', '维护工厂', '检查结果', '检查时间'],
+      ['P-01', '泵1', '1100', '正常', `${DATE} 08:00`],
+      ['P-02', '泵2', '1200', '异常', `${DATE} 08:10`],
+    ],
+  });
+  r = run(plantW, [], 'ws-plant');
+  eq((ws(r)[0] || {}).status, 'noColumn', '25.22 「维护工厂」不当车间列（noColumn）');
+  ok((ws(r)[0] || {}).column === null && !(ws(r)[0] || {}).ignoredColumn, '25.23 「维护工厂」不读入车间字段（column 为 null，无 ignoredColumn）');
+  eq((r.summary.counts || {}).equipment, 2, '25.24 「维护工厂」列不参与筛选');
+  // 人员列「车间负责人」不当车间列（common.js 只认 车间/所属车间/属地车间/运行部 及其后加「名称」）
+  r = run(mk('ws-person.xlsx', JSON.parse(JSON.stringify(plantBook).split('维护工厂').join('车间负责人'))), [], 'ws-person');
+  ok((ws(r)[0] || {}).status === 'noColumn' && (ws(r)[0] || {}).ignoredColumn === '车间负责人' && r.summary.ok === true, '25.30 「车间负责人」人员列判 noColumn，ignoredColumn 记下，不筛');
+
+  const ownW = mk('ws-own.xlsx', {
+    '巡检记录': [
+      ['位号', '维护工厂', '所属车间', '检查结果', '检查时间'],
+      ['P-01', '1100', '测试车间', '正常', `${DATE} 08:00`],
+      ['P-91', '1100', '催化车间', '异常', `${DATE} 08:10`],
+    ],
+  });
+  r = run(ownW, [], 'ws-own');
+  eq((ws(r)[0] || {}).column, '所属车间', '25.25 维护工厂与所属车间并存时取「所属车间」为车间列');
+  eq((r.summary.counts || {}).equipment, 1, '25.26 按「所属车间」剔除其他车间');
+
+  // 台账（第二张主表）混入其他车间设备：不得误报漏检
+  const ledW = mk('ws-ledger.xlsx', {
+    '设备台账': [
+      ['位号', '设备名称', '车间', '是否需巡检'],
+      ['P-01', '泵1', '测试车间', '是'], ['P-02', '泵2', '测试车间', '是'], ['P-03', '泵3', '测试车间', '是'],
+      ['P-05', '泵5', '测试车间', '是'], ['P-95', '外车间泵', '催化车间', '是'],
+    ],
+  });
+  r = run(base, ['--ledger', ledW], 'ws-ledger');
+  eq((r.summary.counts || {}).missed, 1, '25.27 台账剔除其他车间后漏检只计 P-05');
+  ok(!(((r.status && r.status.missed) || []).some((x) => x.tag === 'P-95')), '25.28 其他车间台账设备不进漏检清单');
+  ok(ws(r).some((x) => x.sheet === '设备台账' && x.status === 'checked' && x.droppedRows === 1), '25.29 meta.workshopScope 含设备台账核对结果');
+}
+
 // ---- 输出
 console.log(`\n${'='.repeat(56)}`);
 console.log(`inspection-data-digest 自测：${pass} 通过，${fail} 失败`);

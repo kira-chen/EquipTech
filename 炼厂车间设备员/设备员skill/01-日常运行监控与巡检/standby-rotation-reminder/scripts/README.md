@@ -28,7 +28,7 @@ node "<技能目录>/scripts/rotation.js" \
 
 | 文件 | 内容 |
 |---|---|
-| `rotation.json` | `meta` / `counts` / `pairs`（每机组当前主用、备用、角色来源 `roleSource`、备机状态）/ `switchOverdue` `switchDueSoon` `switchNormal` / `turningOverdue` `turningDueSoon` `turningNormal` / `trialOverdue` `trialDueSoon` `trialNormal` / `longIdle` / `standbyUnavailable` / `standbyAvailability` / `undetermined` / `pairingIssues` / `executionRate` / `records` / `warnings` |
+| `rotation.json` | `meta`（含 `workshopScope` 车间范围核对结果数组：备用设备台账、切换盘车记录各一条 sheet/status/column/total/kept/dropped/droppedRows/blank） / `counts` / `pairs`（每机组当前主用、备用、角色来源 `roleSource`、备机状态）/ `switchOverdue` `switchDueSoon` `switchNormal` / `turningOverdue` `turningDueSoon` `turningNormal` / `trialOverdue` `trialDueSoon` `trialNormal` / `longIdle` / `standbyUnavailable` / `standbyAvailability` / `undetermined` / `pairingIssues` / `executionRate` / `records` / `warnings` |
 | `rotation-report.md` | 八节报告（到期概览、切换逾期与临期、盘车逾期与临期、长期未切换、备机检修中与停用、执行率统计、无法判定与配对异常、管理说明），分析段留 `<!-- ANALYSIS_START/END -->` 占位；头尾各一次硬性说明行，末尾通用声明行 |
 | `summary.json` | 末行摘要落盘（Windows 控制台乱码兜底） |
 
@@ -43,6 +43,7 @@ node "<技能目录>/scripts/rotation.js" \
 - **长期未切换** → 距上次切换天数 ≥ `--overdue-factor` × 切换周期（默认 2 倍）；`--long-idle-days` 给出时按绝对天数。无切换周期的机组不判（已在未判定）。
 - **执行率 = 实际执行次数 / 计划次数**；计划次数 = 区间天数 ÷ 周期天数（向下取整）。**分母为 0 或无法计算时执行率为 `null`（md 显示「—」），绝不写 0%**；分母 > 0 而实际为 0 时才是 `0.0%`。
 - **记录表位号在台账中无对应机组 / 作业类型无法归入切换·盘车·试运** → 不计入执行率并 warning；台账外位号多条时合并为一条 warning（列位号与条数），记录表是全厂导出时不逐行刷屏。记录表无「位号」列而有「设备编号」列时用设备编号兜底并 warning（SAP 设备编号与位号不同）。
+- **车间范围核对（D007）**：备用设备台账、切换盘车记录各自按「车间」列核对 `--workshop`（`C.workshopScope`）：有本车间行时剔除其他车间的行并 warning（逐车间写行数），车间列为空的行按本车间保留；车间列取值全不一致时不筛，warning 与报告标题后均以【注意】提示；无车间列或命中的是「车间负责人」等人员列时不筛（「维护工厂」等不读入车间字段），口径行写「输入未含车间列，车间范围以取数条件为准」。记录表先按车间列剔除，再做台账外位号检测，两者叠加。口径行写在报告头「数据来源」之后。
 - **缺「切换盘车记录」表** → 不统计执行率，`counts.records` 与各执行率为 `null`（不是 0），报告该节写「未提供」。
 - 试运周期与上次试运日期**都为空**时，视为该机组不做试运，不计入未判定；只缺其一才进 `undetermined`。
 
@@ -65,4 +66,4 @@ seed 改变数值但不改变结论：主样例恒为 2 切换逾期、1 切换�
 node scripts/selftest.js
 ```
 
-230 条断言，覆盖：到期分档、lead-days 窗口、五类未判定、三类主备不配对、机组键与重复机组号、当前主用推导（最近记录/方向越界/晚于基准日/无方向列）、备机状态五种取值与完好率不默认、班次级周期（每班/每2小时）、半年/每月/每周解析、运行小时周期指向 runtime-hours-tracker、长期未切换倍数与显式阈值、执行率分母为 0 与不可计算、记录归属与类型不可归类、台账外位号合并提示、设备编号兜底、别名口径（设备编号不归位号、项目不作作业类型、SAP 设备描述/功能位置/功能位置描述）、日期越界、缺记录表、合计行与标题行、空位号、设备范围、缺台账、参数校验、默认输出临时目录、产出结构与两条声明行、无 emoji、样例可再生、文档与上架信息一致性（references/模板/README 与脚本口径一致、md 八节、模板占位符可在 rotation.json 取到、附件存在）。全绿退出 0。
+256 条断言，覆盖：到期分档、lead-days 窗口、五类未判定、三类主备不配对、机组键与重复机组号、当前主用推导（最近记录/方向越界/晚于基准日/无方向列）、备机状态五种取值与完好率不默认、班次级周期（每班/每2小时）、半年/每月/每周解析、运行小时周期指向 runtime-hours-tracker、长期未切换倍数与显式阈值、执行率分母为 0 与不可计算、记录归属与类型不可归类、台账外位号合并提示、设备编号兜底、别名口径（设备编号不归位号、项目不作作业类型、SAP 设备描述/功能位置/功能位置描述）、日期越界、缺记录表、合计行与标题行、空位号、设备范围、缺台账、参数校验、默认输出临时目录、产出结构与两条声明行、无 emoji、样例可再生、文档与上架信息一致性（references/模板/README 与脚本口径一致、md 八节、模板占位符可在 rotation.json 取到、附件存在）、车间范围核对（台账混合剔除、空车间保留、全不一致不筛并开头【注意】、无车间列、维护工厂与车间负责人不当车间列、切换盘车记录剔除其他车间并与台账外位号检测叠加）。全绿退出 0。

@@ -61,6 +61,9 @@ const ALIASES = C.mergeAliases({
   '运行状态': ['运行状态', '运转状态', '开停状态', '启停状态'],
   '使用状态': ['使用状态', '设备状态', '状态'],
 });
+// 车间范围核对（D007）：「车间」只认 车间/所属车间/属地车间/运行部（及其后加「名称」），覆盖共享别名，
+// 不让维护工厂/属地单位/使用单位/作业部占用「车间」字段；'车间' 放在各表 optional 列最后，避免抢走别的列
+ALIASES['车间'] = [...C.WORKSHOP_COLS, ...C.WORKSHOP_COLS.map((c) => c + '名称')];
 
 /** R² 分档的置信提示 */
 const CONF = [
@@ -140,8 +143,9 @@ function wideToLong(rows, det, wideParam) {
   const dateSet = new Set(det.dateCols.map((x) => x.j));
   const col = (name) => { const j = C.findCol(hdr, name, ALIASES, dateSet); return j; };
   const jTag = col('位号'), jPt = col('测点号'), jName = col('设备名称'), jParam = col('参数名'), jUnit = col('单位');
+  const jWs = col('车间');   // 车间列原样带到长表（保留原表头，供车间范围核对识别「维护工厂」等非车间列）
   if (jParam < 0 && !wideParam) throw new Error('宽表没有「参数名」列，请用 --wide-param "<参数名>" 指定该表记录的是哪个参数（脚本不猜）');
-  const out = [['位号', '测点号', '设备名称', '参数名', '单位', '采集时间', '数值']];
+  const out = [['位号', '测点号', '设备名称', '参数名', '单位', '采集时间', '数值'].concat(jWs >= 0 ? [hdr[jWs]] : [])];
   const origin = new Map();
   for (let i = det.headerIdx + 1; i < rows.length; i++) {
     const r = rows[i] || [];
@@ -153,7 +157,7 @@ function wideToLong(rows, det, wideParam) {
     for (const dc of det.dateCols) {
       const v = r[dc.j];
       if (v === undefined || v === null || C.str(v) === '') continue;   // 宽表空格 = 该期未测，不是 0
-      out.push([tag, pt, name, param, unit, dc.label, v]);
+      out.push([tag, pt, name, param, unit, dc.label, v].concat(jWs >= 0 ? [r[jWs]] : []));
       origin.set(out.length, `第${i + 1}行 列「${dc.label}」`);
     }
   }
@@ -314,7 +318,11 @@ function main() {
   } else if (a['wide-param']) {
     warnings.push('--wide-param 仅在宽表时生效，本次输入为长表，已忽略');
   }
-  const recs = C.toRecords(recSheet, ['采集时间', '数值'], '参数记录', ['位号', '测点号', '设备名称', '参数名', '单位', '额定值', '量程上限'], warnings, ALIASES);
+  const recs0 = C.toRecords(recSheet, ['采集时间', '数值'], '参数记录', ['位号', '测点号', '设备名称', '参数名', '单位', '额定值', '量程上限', '车间'], warnings, ALIASES);
+  // 车间范围核对：参数记录是唯一主表（报警限值表、--status 按位号查找，不核对）；宽表按展开后的行计数
+  const pws = C.workshopScope(recs0, a.workshop, '参数记录', warnings);
+  const scopes = [pws.scope];
+  const recs = pws.records;
   if (!recs.hasCol('采集时间')) throw new Error('「参数记录」没有采集时间列（长表须有采集时间列；宽表的日期列头须含年份，如 2026-09-01，脚本不猜年份）');
   if (!recs.hasCol('数值')) throw new Error('「参数记录」没有数值（测值/测量值/PV）列');
   if (!recs.hasCol('位号') && !recs.hasCol('测点号')) throw new Error('「参数记录」既无位号（功能位置/设备位号）列也无测点号（仪表位号）列，无法构成序列');
@@ -738,7 +746,7 @@ function main() {
       confidenceRule: 'R²≥0.8 趋势明显；0.5≤R²<0.8 趋势一般；R²<0.5 数据离散，趋势不明显；有效期数<5 期再降一档',
       limitRule: '越限先判高高报/低低报（HH/LL），再判高报/低报（H/L）；两级都给时先向最近一级外推到限时间；限值以 DCS 组态或厂内限值表为准，脚本不自定限值',
       r2Min: R2_MIN, horizonDays: HORIZON,
-      statusProvided: !!status, statusSheets: status ? status.sheets : [],
+      statusProvided: !!status, statusSheets: status ? status.sheets : [], workshopScope: scopes,
       runStateRule: '停运设备（备用/停运/停用/检修）低值不判越低报/低低报、不做劣化趋势判定，越高报/高高报照常判；运行状态按 启停记录（该设备最新数据采集时刻前最近一段）> 设备台账（使用状态/运行状态，「在用」不说明在运行）> 数据自判（同设备电流/转速最新值≈0：≤额定或量程的 2%，无基准时电流 ≤0.5 A、转速 =0，判疑似停运）；只对有设备位号的序列生效',
     },
     counts, overLimit, deteriorating, stable, insufficientData, stopped, items, warnings,
@@ -750,8 +758,11 @@ function main() {
   const L = [];
   L.push(`# ${a.workshop} 参数越限与劣化趋势预警（截至 ${date}）`);
   L.push('');
+  const wsNote = C.workshopScopeNote(scopes, a.workshop);
+  if (wsNote.alert) { L.push(wsNote.alert); L.push(''); }
   L.push(`回溯窗口：最近 ${periods} 期${from ? `　｜　起始日期：${from}` : ''}${slopeThreshold !== null ? `　｜　斜率告警阈值：${slopeThreshold}/天` : ''}　｜　R² 下限：${R2_MIN}　｜　到限关注窗口：${HORIZON} 天`);
   L.push(`数据形态：${inputShape === 'wide' ? '宽表（已转长表）' : '长表'}　｜　限值：${!limSheet ? '未提供' : twoLevel ? '两级（高报/高高报）' : '单级'}`);
+  if (wsNote.note) L.push(wsNote.note);
   L.push(`生成时间：${C.localDateTime()}（北京时间）`);
   L.push('');
   L.push('## 一、预警概览');

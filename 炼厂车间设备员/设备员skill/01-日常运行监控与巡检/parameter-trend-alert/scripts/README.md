@@ -33,7 +33,7 @@ node "<技能目录>/scripts/trend.js" \
 
 | 文件 | 内容 |
 |---|---|
-| `trends.json` | 逐序列趋势结果（含 `runState`/`runStateSource`/`runStateBasis`/`lowIgnored`/`excludedStoppedPeriods`/`excludedStoppedSource`）+ `overLimit`/`deteriorating`/`stable`/`insufficientData`/`stopped`/`counts`（含 `overHighHigh`、`overHigh`、`twoLevelLimits`、`stopped`、`stoppedEquipment`、`suspectedStoppedEquipment`、`excludedStoppedPoints`、`seriesWithExcludedStopped`）+ `meta`（`r2Min`、`horizonDays`、`inputShape`、`statusProvided`、`statusSheets`、`runStateRule`、两条声明） |
+| `trends.json` | 逐序列趋势结果（含 `runState`/`runStateSource`/`runStateBasis`/`lowIgnored`/`excludedStoppedPeriods`/`excludedStoppedSource`）+ `overLimit`/`deteriorating`/`stable`/`insufficientData`/`stopped`/`counts`（含 `overHighHigh`、`overHigh`、`twoLevelLimits`、`stopped`、`stoppedEquipment`、`suspectedStoppedEquipment`、`excludedStoppedPoints`、`seriesWithExcludedStopped`）+ `meta`（`r2Min`、`horizonDays`、`inputShape`、`statusProvided`、`statusSheets`、`runStateRule`、两条声明、`workshopScope` 车间范围核对结果数组：参数记录一条 sheet/status/column/total/kept/dropped/droppedRows/blank） |
 | `alert.md` | 六节报告（有停运设备时第五节下加「### 停运中（不判定）」小节），分析段留占位符，末尾两条声明行 |
 | `summary.json` | 末行摘要落盘 |
 
@@ -62,6 +62,7 @@ node "<技能目录>/scripts/trend.js" \
     - 该设备在 `--status` 启停记录里有记录：采集时刻不在任何运行段内（此前有停机记录，或此后有开机记录）→ 该期停机；首段开机之前的点也按停机（开机即说明此前停机，导出只含窗口内的运行段）；
     - 没有启停记录：同一采集时刻同设备所有电流/转速位号读数都≈0（阈值同第 11 条）→ 该期停机；该时刻没有电流/转速读数不判；没有电流/转速位号的设备维持原逻辑。
     - 停机期点不参与回归、劣化判定与到限外推，记在 `excludedStoppedPeriods`（`excludedStoppedSource` 为依据），`periodsUsed` 为剔除后期数；窗口内有停机期（发生过停机/切泵）的序列（停机时不记读数的参数如轴承温度，自身无点可剔，但同设备在其首期之前的窗口内有停机期的，同样按此处理，item 记 `stopInWindow`），剔除后少于 4 期 → `insufficientData`，说明写「数据不足（切泵后运行期数偏少，剩 N 期）」，不做劣化判定、不预测到限，并入「数据不足（含停机期）」warning 一起点名；窗口内无停机期的序列最低仍为 3 期；越限（HH/H/L/LL）照常用剩余点判。warning 汇总点名剔除的序列，md 第六节研判段上方写「已剔除停机期 N 个点」；`counts.excludedStoppedPoints`、`counts.seriesWithExcludedStopped` 计数。
+13. **车间范围核对（D007）**。只核对「参数记录」（报警限值表、`--status` 是按位号查找的表，不核对）：按「车间」列核对 `--workshop`（`C.workshopScope`），有本车间行时剔除其他车间的行并 warning（逐车间写行数），车间列为空的行按本车间保留；车间列取值全不一致时不筛，warning 与报告标题后均以【注意】提示；无车间列或命中的是「车间负责人」等人员列时不筛（「维护工厂」等不读入车间字段），口径行写「输入未含车间列，车间范围以取数条件为准」。宽表的车间列原样带到展开后的长表再核对，剔除行数按展开后的行计。口径行写在报告头「数据形态」之后。
 
 ### 置信提示分档
 
@@ -91,4 +92,4 @@ node scripts/make-sample.js [--seed <n>]
 node scripts/selftest.js
 ```
 
-328 条断言，覆盖基础回归与四类分档、期数不足 3 期不算趋势不预测、数值不可解析不按 0、未提供限值表不判越限、方向不对不预测、采集时间重复不去重、R² 分档与置信文案、预测免责声明行、回溯期数与范围过滤、参数校验、产出落盘、别名与合计行、样例可再生（长表与宽表）、**两级限值 H/HH/L/LL 判定与外推顺序、英文列头、HH<H 核实提示**、**宽表自动识别与转换（空格不按 0、带单位、--wide-param、无年份列头不猜）**、**--r2-min / --horizon 参数化**、**SAP/DCS 列名别名（功能位置、设备描述、测点号、采样时间、测量值、PH/PHH）、设备编号不作位号、仅仪表位号导出**、通用声明行、默认输出目录在系统临时目录、md 无 emoji、**停运设备（S 组）：电流/转速≈0 自判疑似停运（0.5 A、量程 2%、转速 0 三种阈值）、低值不判越低报/低低报、不判劣化、高限照常判、只有测点号的不套用、--status 启停记录优先于台账、停机晚于采集时间按运行、台账「在用」回落自判、xlsx/csv 目录/单个 csv 三种形态、路径不存在或认不出时报错**、**切泵后停机期点剔出回归（T 组）：同期电流≈0 剔除（含电流位号自身）、启停记录停机段与首段开机之前剔除、剔除后不足 3 期判数据不足（含停机期）、窗口内有停机期时剔除后少于 4 期不判劣化（越限照常判）、一直运行与无判据设备不剔除、真实上升照常判恶化、md 说明剔除点数**。
+355 条断言，覆盖基础回归与四类分档、期数不足 3 期不算趋势不预测、数值不可解析不按 0、未提供限值表不判越限、方向不对不预测、采集时间重复不去重、R² 分档与置信文案、预测免责声明行、回溯期数与范围过滤、参数校验、产出落盘、别名与合计行、样例可再生（长表与宽表）、**两级限值 H/HH/L/LL 判定与外推顺序、英文列头、HH<H 核实提示**、**宽表自动识别与转换（空格不按 0、带单位、--wide-param、无年份列头不猜）**、**--r2-min / --horizon 参数化**、**SAP/DCS 列名别名（功能位置、设备描述、测点号、采样时间、测量值、PH/PHH）、设备编号不作位号、仅仪表位号导出**、通用声明行、默认输出目录在系统临时目录、md 无 emoji、**停运设备（S 组）：电流/转速≈0 自判疑似停运（0.5 A、量程 2%、转速 0 三种阈值）、低值不判越低报/低低报、不判劣化、高限照常判、只有测点号的不套用、--status 启停记录优先于台账、停机晚于采集时间按运行、台账「在用」回落自判、xlsx/csv 目录/单个 csv 三种形态、路径不存在或认不出时报错**、**切泵后停机期点剔出回归（T 组）：同期电流≈0 剔除（含电流位号自身）、启停记录停机段与首段开机之前剔除、剔除后不足 3 期判数据不足（含停机期）、窗口内有停机期时剔除后少于 4 期不判劣化（越限照常判）、一直运行与无判据设备不剔除、真实上升照常判恶化、md 说明剔除点数**、**车间范围核对（WS 组）：混合剔除、空车间保留、全不一致不筛并开头【注意】、无车间列、维护工厂与车间负责人不当车间列、宽表带车间列展开后核对**。

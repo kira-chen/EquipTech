@@ -53,6 +53,7 @@ metadata:
    可选：`--lead-days <提前提醒天数>`、`--lead-hours <运行小时周期提前提醒小时数>`、`--equipment "<位号,位号>"`、`--price "<油品单价表xlsx>"`、`--run-hours "<runtime.json 或 累计运行小时xlsx>"`、`--ref-standard "<参考限值表xlsx>"`、`--oil-analysis`（不是开关：输入里有「油液分析」工作表就照常出油液分析章节，不加也一样；加了而缺表时多一条 warning 提醒）。
    读取末行 JSON 摘要（同时写入 `<out>/summary.json`）：`ok` 必须为 `true`，`ok:false` 时把 `error` 告知用户并终止；`warnings` 非空时逐条告知用户（缺表/缺列/周期无法解析/上次加换油日期缺失/缺责任人列/油品牌号写法不一致等）。脚本用法详见 `scripts/README.md`。
    - 周期或上次加换油日期缺失、运行小时周期缺累计小时的设备：归入 `undetermined`（无法判定到期）单列一节并 warning，**不得默认按最常见周期处理，也不得把运行小时折算成日历天**。
+   - 车间范围：脚本只在输入带车间列时按 `--workshop` 核对（润滑台账、加换油记录、油液分析各自核对，剔除其他车间的行；车间列全不一致时不筛并在报告开头提示）；MCP 导出多数不带车间列，取数时仍必须带 `workshop`。没有车间列的油样仍按「台账外油样」兜底单列。报告开头出现【注意】车间不一致提示时，先请用户核对是否传错了文件。
    - 油液分析指标无厂内限值时：只列示数值不判异常，warning 说明缺少判定限值，**不得引用通用限值替代厂内标准**；仅当用户明确给出参考限值表并用 `--ref-standard` 显式启用时，才按参考限值做"参考比对"，结果单列并标注"非厂内标准，仅供参考"，不计入异常项。
 3. **读取 lube.json** —— 从 `<输出目录>/lube.json` 获取：`counts`、`wuding`（五定齐备率）、`overdue`（已逾期，含逾期天数或逾期小时）、`dueSoon`（临期）、`normal`（周期内）、`undetermined`（无法判定）、`consumption`（按油品/按设备的消耗统计）、`oilAnalysis`（`abnormal` 超厂内限值、`refChecked` 参考比对、`noLimit` 无限值、`normal`、`outOfLedger` 台账外油样，不计入统计）、`oilNameConflicts`。
 4. **撰写"润滑管理情况说明"** —— 读 `references/lube-rules.md` 的表述口径，撰写 200~350 字，按"到期情况 → 五定落实与逾期项 → 油品消耗情况 → 油液分析异常 → 下一步安排"结构，替换 `lube-report.md` 中 `<!-- ANALYSIS_START -->` 与 `<!-- ANALYSIS_END -->` 之间的占位文字。**数量、逾期天数/小时、齐备率、消耗量一律引用 lube.json；油液分析结论以化验报告为准，不得改写。**

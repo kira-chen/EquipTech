@@ -512,6 +512,76 @@ ok(sExp.lube.normal.concat(sExp.lube.overdue, sExp.lube.dueSoon).every((x) => /^
   ok(sj2.ok === true && sj2.out.startsWith(os.tmpdir()), '24.1 未给 --out 时默认写系统临时目录');
 }
 
+// ---- 车间范围核对（D007）：润滑台账/加换油记录/油液分析混入其他车间时剔除；空车间保留；全不一致不筛并开头【注意】；无车间列/维护工厂不筛；台账外油样检测保留
+{
+  const ws = (x) => ((x.lube && x.lube.meta && x.lube.meta.workshopScope) || []);
+  const W = (x) => ((x.summary && x.summary.warnings) || []);
+  let plantBook = null;
+  const mkP = (n, b) => { plantBook = b; return mk(n, b); };
+  const LW = ['位号', '设备名称', '车间', '润滑部位', '油品名称', '润滑方式', '润滑周期', '上次加换油日期', '加油量', '油品规格'];
+  const mixF = mk('ws-mix.xlsx', {
+    '润滑台账': [LW,
+      ['P-01', '泵1', '测试车间', '轴承箱', 'L-TSA46 透平油', '换油', '3个月', back(120), 8, 'VG46'],
+      ['P-02', '泵2', '测试车间', '轴承箱', 'L-TSA46 透平油', '换油', '90天', back(87), 8, 'VG46'],
+      ['P-03', '泵3', '', '轴承箱', 'L-CKD220 齿轮油', '换油', '1年', back(30), 12, 'VG220'],
+      ['P-91', '外车间泵', '催化车间', '轴承箱', 'L-TSA46 透平油', '换油', '3个月', back(200), 8, 'VG46'],
+      ['P-92', '外车间泵', '催化车间', '轴承箱', 'L-TSA46 透平油', '换油', '3个月', back(200), 8, 'VG46'],
+    ],
+    '加换油记录': [['日期', '位号', '车间', '油品名称', '类型', '数量', '单位', '执行人'],
+      [back(3), 'P-01', '测试车间', 'L-TSA46 透平油', '补油', 2, 'L', '张'],
+      [back(3), 'P-91', '催化车间', 'L-TSA46 透平油', '换油', 50, 'L', '王']],
+    '油液分析': [['位号', '车间', '取样日期', '检测项', '检测值', '限值', '结论'],
+      ['P-01', '测试车间', back(5), '水分(mg/kg)', 120, '≤300', ''],
+      ['P-91', '催化车间', back(5), '水分(mg/kg)', 900, '≤300', ''],
+      ['Z-99', '', back(5), '水分(mg/kg)', 800, '≤300', '']],
+  });
+  r = run(mixF, [], 'ws-mix');
+  eq(r.summary.ok, true, 'WS.1 车间混合输入运行成功');
+  eq((r.summary.counts || {}).ledgerItems, 3, 'WS.2 剔除其他车间后台账润滑项 3');
+  eq((r.summary.counts || {}).overdue, 1, 'WS.3 逾期只计本车间 P-01（不含催化车间 P-91/P-92）');
+  ok(!((r.lube && r.lube.overdue) || []).some((x) => /^P-9/.test(x.tag)), 'WS.4 逾期清单不含其他车间位号');
+  ok(W(r).some((w) => w.includes('工作表「润滑台账」按 --workshop「测试车间」剔除其他车间 2 行') && w.includes('催化车间 2 行')), 'WS.5 warning 写明剔除行数与车间名');
+  const s0 = ws(r).find((x) => x.sheet === '润滑台账') || {};
+  eq(s0.status, 'checked', 'WS.6 meta.workshopScope 台账状态 checked');
+  eq(s0.droppedRows, 2, 'WS.7 meta.workshopScope 记录剔除 2 行');
+  eq((s0.dropped || {})['催化车间'], 2, 'WS.8 dropped 按车间名记行数');
+  eq(s0.blank, 1, 'WS.9 车间为空 1 行计入 blank');
+  eq((r.summary.counts || {}).normal, 1, 'WS.10 车间为空的 P-03 按本车间保留（周期内 1 项）');
+  ok(W(r).some((w) => w.includes('工作表「润滑台账」车间列为空 1 行，按本车间保留')), 'WS.11 车间为空 warning 写明行数');
+  ok(/车间范围：已按车间列核对「测试车间」，剔除其他车间的行：「润滑台账」2 行（催化车间 2 行）/.test(r.md || ''), 'WS.12 md 口径处写明剔除情况');
+  eq((r.summary.counts || {}).consumptionRecords, 1, 'WS.13 加换油记录剔除其他车间后消耗只计 1 条');
+  ok(ws(r).some((x) => x.sheet === '加换油记录' && x.status === 'checked' && x.droppedRows === 1), 'WS.14 meta.workshopScope 含加换油记录核对结果');
+  ok(ws(r).some((x) => x.sheet === '油液分析' && x.status === 'checked' && x.droppedRows === 1), 'WS.15 meta.workshopScope 含油液分析核对结果');
+  const ool = ((r.lube && r.lube.oilAnalysis && r.lube.oilAnalysis.outOfLedger) || []).map((x) => x.tag);
+  ok(ool.includes('Z-99') && !ool.includes('P-91'), 'WS.16 其他车间油样按车间列剔除，车间为空的台账外位号仍单列为台账外油样');
+  eq((r.summary.counts || {}).oaAbnormal, 0, 'WS.17 其他车间超限油样不计入本车间异常');
+
+  const misF = mk('ws-mis.xlsx', { '润滑台账': [LW,
+    ['P-91', '外车间泵', '催化车间', '轴承箱', 'L-TSA46 透平油', '换油', '3个月', back(200), 8, 'VG46'],
+    ['P-92', '外车间泵', '催化车间', '轴承箱', 'L-TSA46 透平油', '换油', '3个月', back(200), 8, 'VG46']] });
+  r = run(misF, [], 'ws-mis');
+  eq((r.summary.counts || {}).ledgerItems, 2, 'WS.18 车间列全不一致时不筛');
+  eq((ws(r)[0] || {}).status, 'mismatch', 'WS.19 meta.workshopScope 状态 mismatch');
+  ok(W(r).some((w) => w.startsWith('【注意】') && w.includes('催化车间')), 'WS.20 全不一致 warning 以【注意】开头');
+  ok(/^# [^\n]*\n\n【注意】工作表「润滑台账」的车间列取值与 --workshop「测试车间」不一致，未按车间筛选，请核对输入。/.test(r.md || ''), 'WS.21 md 标题后紧跟【注意】提示');
+  ok(((r.md || '').split('## 一、')[0]).includes('车间列取值与 --workshop'), 'WS.22 【注意】在正文第一节之前');
+
+  r = run(base, [], 'ws-nocol');
+  eq((ws(r)[0] || {}).status, 'noColumn', 'WS.23 无车间列 status 为 noColumn');
+  ok(/车间范围：输入未含车间列，车间范围以取数条件为准。/.test(r.md || ''), 'WS.24 无车间列时 md 口径写明以取数条件为准');
+  eq((r.summary.counts || {}).ledgerItems, 3, 'WS.25 无车间列不筛');
+
+  const plantF = mkP('ws-plant.xlsx', { '润滑台账': [['位号', '维护工厂', '润滑部位', '油品名称', '润滑周期', '上次加换油日期'],
+    ['P-01', '1100', '轴承箱', 'L-TSA46 透平油', '3个月', back(120)], ['P-02', '1200', '轴承箱', 'L-TSA46 透平油', '90天', back(87)]] });
+  r = run(plantF, [], 'ws-plant');
+  eq((ws(r)[0] || {}).status, 'noColumn', 'WS.26 「维护工厂」不当车间列（noColumn）');
+  ok((ws(r)[0] || {}).column === null && !(ws(r)[0] || {}).ignoredColumn, 'WS.27 「维护工厂」不读入车间字段（column 为 null，无 ignoredColumn）');
+  eq((r.summary.counts || {}).ledgerItems, 2, 'WS.28 「维护工厂」列不参与筛选');
+  // 人员列「车间负责人」不当车间列（common.js 只认 车间/所属车间/属地车间/运行部 及其后加「名称」）
+  r = run(mk('ws-person.xlsx', JSON.parse(JSON.stringify(plantBook).split('维护工厂').join('车间负责人'))), [], 'ws-person');
+  ok((ws(r)[0] || {}).status === 'noColumn' && (ws(r)[0] || {}).ignoredColumn === '车间负责人' && r.summary.ok === true, 'WS.29 「车间负责人」人员列判 noColumn，ignoredColumn 记下，不筛');
+}
+
 // ---- 输出
 console.log(`\n${'='.repeat(56)}`);
 console.log(`lubrication-manager 自测：${pass} 通过，${fail} 失败`);

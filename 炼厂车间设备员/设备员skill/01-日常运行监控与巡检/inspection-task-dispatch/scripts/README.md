@@ -31,9 +31,13 @@ node "<技能目录>/scripts/dispatch.js" \
 
 | 文件 | 内容 |
 |---|---|
-| `tasks.json` | `meta`（含 `shiftText`/`dueSoonRule`/`disclaimer`/`routeNote`）、`counts`、任务清单 `tasks`、特护 `special`、逾期 `overdue`、临期 `dueSoon`、周期待确认 `unscheduled`、无标准 `noStandard`、标准仅适用其他班次的设备 `otherShiftOnly`、不属本班的检查项 `otherShift`、排除 `excluded`/`filteredOut`、路线 `route`、工具 `tools`、`warnings` |
+| `tasks.json` | `meta`（含 `shiftText`/`dueSoonRule`/`disclaimer`/`routeNote`，以及 `workshopScope` 车间范围核对结果数组：台账、上次巡检记录各一条 sheet/status/column/total/kept/dropped/droppedRows/blank）、`counts`、任务清单 `tasks`、特护 `special`、逾期 `overdue`、临期 `dueSoon`、周期待确认 `unscheduled`、无标准 `noStandard`、标准仅适用其他班次的设备 `otherShiftOnly`、不属本班的检查项 `otherShift`、排除 `excluded`/`filteredOut`、路线 `route`、工具 `tools`、`warnings` |
 | `tasklist.md` | 五节清单，执行提示段留 `<!-- NOTES_START/END -->` 占位，末尾带路线声明与声明行 |
 | `summary.json` | 末行摘要落盘（Windows 控制台乱码兜底） |
+
+### 车间范围核对（D007）
+
+「设备台账」「上次巡检记录」各自按「车间」列核对 `--workshop`（`C.workshopScope`）：有本车间行时剔除其他车间的行并 warning（逐车间写行数），车间列为空的行按本车间保留；车间列取值全不一致时不筛，warning 与报告标题后均以【注意】提示；无车间列或命中的是「车间负责人」等人员列时不筛（「维护工厂」等不读入车间字段），口径行写「输入未含车间列，车间范围以取数条件为准」。「巡检标准」是查找表，不核对。口径行写在报告头「筛选条件」之后。
 
 ### 任务项字段（tasks[]）
 
@@ -75,4 +79,4 @@ seed 改变上次巡检日期/时间但不改变结论：主样例（`--shift �
 node scripts/selftest.js
 ```
 
-212 条断言，覆盖：周期缺失/运行小时不默认日检、无巡检标准单列、标「否」排除、特护强制 P1（特护列与重要度值两种识别）、六级优先级排序、三种过滤器、路线编排、合计行、EM 别名与 SAP PM 列名（功能位置/设备/设备描述/ABC标识/对象类型/特护）、设备编号不当位号、智能巡检一行一检查项按位号聚合与是否报警判异常、班次级周期按小时判逾期与无时间时的处理、临期阈值默认 10% 与 `--due-soon` 按天/百分比、`--shift` 可选与适用班次过滤、数字级别不默认映射、参数校验、默认输出目录为临时目录、声明行与【注意】、模板占位符与 tasks.json 键一致、SKILL/references/README/上架信息与脚本口径一致（互指排除语、旧术语不出现、md 五节、附件存在）。全绿退出 0。
+239 条断言，覆盖：周期缺失/运行小时不默认日检、无巡检标准单列、标「否」排除、特护强制 P1（特护列与重要度值两种识别）、六级优先级排序、三种过滤器、路线编排、合计行、EM 别名与 SAP PM 列名（功能位置/设备/设备描述/ABC标识/对象类型/特护）、设备编号不当位号、智能巡检一行一检查项按位号聚合与是否报警判异常、班次级周期按小时判逾期与无时间时的处理、临期阈值默认 10% 与 `--due-soon` 按天/百分比、`--shift` 可选与适用班次过滤、数字级别不默认映射、参数校验、默认输出目录为临时目录、声明行与【注意】、模板占位符与 tasks.json 键一致、SKILL/references/README/上架信息与脚本口径一致（互指排除语、旧术语不出现、md 五节、附件存在）、车间范围核对（台账混合剔除、空车间保留、全不一致不筛并开头【注意】、无车间列、维护工厂与车间负责人不当车间列、上次巡检记录剔除其他车间行不冲掉逾期判定）。全绿退出 0。

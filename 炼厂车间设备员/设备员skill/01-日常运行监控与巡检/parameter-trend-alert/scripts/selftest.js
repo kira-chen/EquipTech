@@ -852,6 +852,67 @@ r = run(SWITCH, ['--status', SWITCH_RUNS2], 'switch-runs2');
 eq(exN(stItem(r.j, 'P-33', '驱动端振动')), 3, 'T23a 首段开机之前的采集点按停机剔除（开机即说明此前停机）');
 ok(!/已剔除停机期/.test(run(BASE, [], 'switch-none').md || 'x已剔除停机期'), 'T24 无停机期时 md 不出剔除说明');
 
+// ============ WS. 车间范围核对（D007）：参数记录混入其他车间时剔除；空车间保留；全不一致不筛并开头【注意】；无车间列/维护工厂不筛；宽表带车间列 ============
+{
+  const ws = (x) => ((x.j && x.j.meta && x.j.meta.workshopScope) || []);
+  const W = (x) => ((x.s && x.s.warnings) || []);
+  let plantBook = null;
+  const mkP = (n, b) => { plantBook = b; return mk(n, b); };
+  const HW = ['设备位号', '设备名称', '车间', '参数名', '采集时间', '数值', '单位'];
+  const pts = (tag, ws0, param, vals) => vals.map((v, i) => [tag, tag, ws0, param, `2026-09-0${1 + 2 * i} 08:00`, v, 'mm/s']);
+  const MIX = mk('ws-mix.xlsx', { '参数记录': [HW]
+    .concat(pts('P-01', '测试车间', '振动速度', [4, 5, 6, 7, 8]))
+    .concat(pts('P-02', '', '振动速度', [3, 3, 3, 3]))
+    .concat(pts('P-91', '催化车间', '振动速度', [10, 12, 14]))
+    .concat(pts('P-92', '催化车间', '振动速度', [2, 2, 2])),
+  '报警限值': [['设备位号', '参数名', '报警上限'], ['P-01', '振动速度', 12], ['P-02', '振动速度', 12], ['P-91', '振动速度', 11], ['P-92', '振动速度', 11]] });
+  r = run(MIX, [], 'ws-mix');
+  eq(r.s.ok, true, 'WS1 车间混合参数记录运行成功');
+  eq((r.s.counts || {}).series, 2, 'WS2 剔除其他车间后序列数 2（P-01/P-02）');
+  eq((r.s.counts || {}).overLimit, 0, 'WS3 其他车间 P-91 越限不计入本车间');
+  ok(!((r.j && r.j.items) || []).some((x) => /^P-9/.test(x.tag)), 'WS4 结果不含其他车间位号');
+  ok(W(r).some((w) => w.includes('工作表「参数记录」按 --workshop「测试车间」剔除其他车间 6 行') && w.includes('催化车间 6 行')), 'WS5 warning 写明剔除行数与车间名');
+  const s0 = ws(r)[0] || {};
+  eq(s0.status, 'checked', 'WS6 meta.workshopScope 状态 checked');
+  eq(s0.droppedRows, 6, 'WS7 meta.workshopScope 记录剔除 6 行');
+  eq((s0.dropped || {})['催化车间'], 6, 'WS8 dropped 按车间名记行数');
+  eq(s0.blank, 4, 'WS9 车间为空 4 行计入 blank');
+  ok(!!find(r.j || { items: [] }, 'P-02', '振动速度'), 'WS10 车间为空的 P-02 按本车间保留');
+  ok(W(r).some((w) => w.includes('车间列为空 4 行，按本车间保留')), 'WS11 车间为空 warning 写明行数');
+  ok(/车间范围：已按车间列核对「测试车间」，剔除其他车间的行：「参数记录」6 行（催化车间 6 行）/.test(r.md || ''), 'WS12 md 口径处写明剔除情况');
+
+  const MIS = mk('ws-mis.xlsx', { '参数记录': [HW].concat(pts('P-91', '催化车间', '振动速度', [10, 12, 14])) });
+  r = run(MIS, [], 'ws-mis');
+  eq((r.s.counts || {}).series, 1, 'WS13 车间列全不一致时不筛');
+  eq((ws(r)[0] || {}).status, 'mismatch', 'WS14 meta.workshopScope 状态 mismatch');
+  ok(W(r).some((w) => w.startsWith('【注意】') && w.includes('催化车间')), 'WS15 全不一致 warning 以【注意】开头');
+  ok(/^# [^\n]*\n\n【注意】工作表「参数记录」的车间列取值与 --workshop「测试车间」不一致，未按车间筛选，请核对输入。/.test(r.md || ''), 'WS16 md 标题后紧跟【注意】提示');
+  ok(((r.md || '').split('## 一、')[0]).includes('车间列取值与 --workshop'), 'WS17 【注意】在正文第一节之前');
+
+  r = run(BASE, [], 'ws-nocol');
+  eq((ws(r)[0] || {}).status, 'noColumn', 'WS18 无车间列 status 为 noColumn');
+  ok(/车间范围：输入未含车间列，车间范围以取数条件为准。/.test(r.md || ''), 'WS19 无车间列时 md 口径写明以取数条件为准');
+  eq((r.s.counts || {}).series, 3, 'WS20 无车间列不筛');
+
+  const PLANT = mkP('ws-plant.xlsx', { '参数记录': [['设备位号', '维护工厂', '参数名', '采集时间', '数值']]
+    .concat([1, 3, 5].map((d) => ['P-01', '1100', '振动速度', `2026-09-0${d} 08:00`, 4])).concat([1, 3, 5].map((d) => ['P-02', '1200', '振动速度', `2026-09-0${d} 08:00`, 4])) });
+  r = run(PLANT, [], 'ws-plant');
+  eq((ws(r)[0] || {}).status, 'noColumn', 'WS21 「维护工厂」不当车间列（noColumn）');
+  ok((ws(r)[0] || {}).column === null && !(ws(r)[0] || {}).ignoredColumn, 'WS22 「维护工厂」不读入车间字段（column 为 null，无 ignoredColumn）');
+  eq((r.s.counts || {}).series, 2, 'WS23 「维护工厂」列不参与筛选');
+  // 人员列「车间负责人」不当车间列（common.js 只认 车间/所属车间/属地车间/运行部 及其后加「名称」）
+  r = run(mk('ws-person.xlsx', JSON.parse(JSON.stringify(plantBook).split('维护工厂').join('车间负责人'))), [], 'ws-person');
+  ok((ws(r)[0] || {}).status === 'noColumn' && (ws(r)[0] || {}).ignoredColumn === '车间负责人' && r.s.ok === true, 'WS27 「车间负责人」人员列判 noColumn，ignoredColumn 记下，不筛');
+
+  // 宽表（DCS 一列一期）带车间列：展开为长表后照样核对
+  const WIDE = mk('ws-wide.xlsx', { '参数记录': [['设备位号', '车间', '参数名', '2026-09-01', '2026-09-03', '2026-09-05'],
+    ['P-01', '测试车间', '振动速度', 4, 5, 6], ['P-91', '催化车间', '振动速度', 10, 12, 14]] });
+  r = run(WIDE, [], 'ws-wide');
+  eq(r.s.inputShape, 'wide', 'WS24 带车间列的宽表仍识别为宽表');
+  eq((r.s.counts || {}).series, 1, 'WS25 宽表按车间列剔除其他车间序列');
+  ok((ws(r)[0] || {}).status === 'checked' && (ws(r)[0] || {}).droppedRows === 3, 'WS26 宽表剔除行数按展开后的行计（3 行）');
+}
+
 console.log(`\n${'='.repeat(56)}`);
 console.log(`parameter-trend-alert 自测：${pass} 通过，${fail} 失败`);
 if (failures.length) { console.log('\n失败项：'); failures.forEach((f) => console.log('  ✗ ' + f)); }

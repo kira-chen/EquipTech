@@ -51,6 +51,7 @@ metadata:
    - 同一设备同一检查项结论冲突（一条正常一条异常）：脚本按 `references/digest-rules.md` 的就严原则取异常，并在 `conflicts` 中单列，**不得静默取其一**；不同检查项一正常一异常不算冲突，是正常的"一台设备多项检查"。
    - 同一设备没有异常项、但有检查项未判定（如「法兰泄漏 待查」）：整机判未判定，进 `unknownState` 单列并写明哪一项，**不得按其余检查项正常就判设备正常**。
    - 未提供设备台账时不输出漏检清单，改为 warning 提示"未提供台账，无法识别漏检"，**不得按记录表倒推设备总数**。
+   - 车间范围：脚本只在输入带车间列时按 `--workshop` 核对（巡检/点检/监测记录表和台账各自核对，剔除其他车间的行；车间列全不一致时不筛并在报告开头提示）；MCP 导出多数不带车间列，取数时仍必须带 `workshop`。报告开头出现【注意】车间不一致提示时，先请用户核对是否传错了文件。
 3. **读取 status.json** —— 从 `<输出目录>/status.json` 获取：`byEquipment`（逐台设备：位号、设备编号、名称、特护标记、`state` 正常/异常/未判定、`stateCn` 六档显示、检查项数与异常项数、逐条结果与判定依据）、`abnormal`（异常项清单，含异常检查项明细）、`missed`（漏检清单）、`conflicts`（记录冲突，定位到检查项）、`counts`（含 `sixTier` 六档计数、`special`/`specialAbnormal` 特护计数）、`changed`（有 --prev 时的状态变化）。
 4. **撰写"设备状态分析"** —— 读 `references/digest-rules.md` 的表述口径，撰写 200~400 字，按"总体状态 → 异常项与影响（特护设备优先）→ 漏检与数据缺口 → 需上报或跟进事项"结构，替换 `digest.md` 中 `<!-- ANALYSIS_START -->` 与 `<!-- ANALYSIS_END -->` 之间的占位文字。**设备数量、异常计数一律引用 status.json，不得自行统计。**
 5. **交付前自检** —— 对照 `references/checklist.md` 逐项检查；通过后交付 `digest.md` 与 `status.json`。异常项需要登记缺陷、开维修通知单时，提示用户可接 `defect-intake-grading` 技能；异常需要初判原因时接 `anomaly-triage-advisor`。

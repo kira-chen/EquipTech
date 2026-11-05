@@ -58,6 +58,9 @@ const ALIASES = C.mergeAliases({
   '执行人': ['执行人', '操作人', '记录人', '作业人', '实施人'],
   '备注': ['备注', '说明', '情况'],
 });
+// 车间范围核对（D007）：「车间」只认 车间/所属车间/属地车间/运行部（及其后加「名称」），覆盖共享别名，
+// 不让维护工厂/属地单位/使用单位/作业部占用「车间」字段；'车间' 放在各表 optional 列最后，避免抢走别的列
+ALIASES['车间'] = [...C.WORKSHOP_COLS, ...C.WORKSHOP_COLS.map((c) => c + '名称')];
 
 /** 三类周期性工作 */
 const KINDS = [
@@ -142,9 +145,13 @@ function main() {
   // ---------------------------------------------------------------- 一、备用设备台账
   const ledgerRows = C.pickSheet(book, '备用设备台账', '备用设备', '主备设备台账', '机泵切换台账', '备机台账', '台账');
   if (!ledgerRows) throw new Error('未在输入中找到「备用设备台账」工作表，无法做到期判定');
-  const ledger = C.toRecords(ledgerRows, ['主用位号', '备用位号'], '备用设备台账',
-    ['设备名称', '机组', '装置', '备机状态', '切换周期', '盘车周期', '试运周期', '上次切换日期', '上次盘车日期', '上次试运日期'],
+  const scopes = [];   // 车间范围核对结果：备用设备台账、切换盘车记录
+  const ledger0 = C.toRecords(ledgerRows, ['主用位号', '备用位号'], '备用设备台账',
+    ['设备名称', '机组', '装置', '备机状态', '切换周期', '盘车周期', '试运周期', '上次切换日期', '上次盘车日期', '上次试运日期', '车间'],
     warnings, ALIASES);
+  const lws = C.workshopScope(ledger0, a.workshop, '备用设备台账', warnings);
+  scopes.push(lws.scope);
+  const ledger = lws.records;
   const hasStatusCol = ledger.hasCol('备机状态');
   const hasGroupCol = ledger.hasCol('机组');
 
@@ -152,8 +159,11 @@ function main() {
   const recRows = C.pickSheet(book, '切换盘车记录', '切换记录', '盘车记录', '执行记录', '机泵切换记录');
   let recs = null, recHasDirection = false, recHasTag = true;
   if (recRows) {
-    recs = C.toRecords(recRows, ['日期', '位号', '作业类型'], '切换盘车记录',
-      ['切换后主用', '执行人', '备注', '设备名称', '设备编号'], warnings, ALIASES);
+    // 先按车间列剔除其他车间的记录，剩下的台账外位号仍按原逻辑合并 warning（两者叠加）
+    const rws = C.workshopScope(C.toRecords(recRows, ['日期', '位号', '作业类型'], '切换盘车记录',
+      ['切换后主用', '执行人', '备注', '设备名称', '设备编号', '车间'], warnings, ALIASES), a.workshop, '切换盘车记录', warnings);
+    scopes.push(rws.scope);
+    recs = rws.records;
     recHasDirection = recs.hasCol('切换后主用');
     recHasTag = recs.hasCol('位号');
     if (!recHasTag && recs.hasCol('设备编号')) warnings.push('工作表「切换盘车记录」无位号列，已用「设备编号」列作位号匹配（SAP 设备编号与位号不同，请核对）');
@@ -521,6 +531,7 @@ function main() {
       source: path.basename(a.input), equipmentScope: scope,
       recordsProvided: records !== null, generatedAt: C.localDateTime(),
       declaration: DECLARATION, generalDeclaration: GENERAL_DECLARATION,
+      workshopScope: scopes,
     },
     counts,
     pairs,
@@ -541,7 +552,10 @@ function renderMd(a, R) {
   const L = [];
   L.push(`# ${a.workshop} 备用设备切换盘车报告（基准日 ${R.meta.date}）`);
   L.push('');
+  const wsNote = C.workshopScopeNote(R.meta.workshopScope, a.workshop);
+  if (wsNote.alert) { L.push(wsNote.alert); L.push(''); }
   L.push(`数据来源：${R.meta.source}${R.meta.equipmentScope ? ` ｜ 设备范围：${R.meta.equipmentScope.join('、')}` : ''} ｜ 提前提醒天数：${R.meta.leadDays} 天 ｜ 长期未切换阈值：${R.meta.longIdleBasis}`);
+  if (wsNote.note) L.push(wsNote.note);
   L.push(`生成时间：${R.meta.generatedAt}（北京时间） ｜ 编制：车间设备员 ｜ 报送：车间设备主任 / 公司设备管理部门（机动部/设备部）`);
   L.push('');
   L.push(`> **${R.meta.declaration}。**`);

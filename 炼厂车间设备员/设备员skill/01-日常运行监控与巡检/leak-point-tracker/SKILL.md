@@ -56,6 +56,7 @@ metadata:
    - 状态为「延迟修复」：有批准日期的单列「延迟修复（经批准）」不计超期；**无批准日期的进未判定**，既不按已批准也不按超期。
    - 不可达点无检测值：进未判定，不按不泄漏。
    - 未提供 `--seal-points`：泄漏率为 null，报告单列「未提供密封点总数」，不得写 0‰。
+   - 车间范围：脚本只在输入带车间列时按 `--workshop` 核对（检测记录、`--ledger` 历史台账、逐点形式的密封点台账各自核对，剔除其他车间的行；车间列全不一致时不筛并在报告开头提示）；MCP 导出多数不带车间列，取数时仍必须带 `workshop`。报告开头出现【注意】车间不一致提示时，先请用户核对是否传错了文件。
 3. **读取 leaks.json** —— 从 `<输出目录>/leaks.json` 获取：`counts`、`metrics.leakRate`（静/动泄漏率、分母来源、考核线与判定）、`newLeaks`、`open`、`overdue`、`delayed`、`repaired`、`undetermined`、`unreachable`、`ledger`（更新后的全量台账）。
 4. **撰写"泄漏管理情况说明"** —— 读 `references/ldar-rules.md` 的表述口径，撰写 200~400 字，按"总体情况 → 新增漏点 → 超期未修与延迟修复 → 修复闭环与泄漏率 → 下一步安排"结构，替换 `leak-report.md` 中 `<!-- ANALYSIS_START -->` 与 `<!-- ANALYSIS_END -->` 之间的占位文字。**漏点数量、超期天数、泄漏率一律引用 leaks.json。** 交付对象写车间设备主任 / 公司设备管理部门。
 5. **交付前自检** —— 对照 `references/checklist.md` 逐项检查；通过后交付 `leak-report.md`、`leaks.json` 与更新后的台账 `ledger.xlsx`。**报告中的合规提示行与制度出处行不得删除或改写。**

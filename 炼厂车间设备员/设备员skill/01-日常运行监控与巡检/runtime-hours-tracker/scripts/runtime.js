@@ -49,6 +49,9 @@ const ALIASES = C.mergeAliases({
   '期初累计小时': ['期初累计小时', '期初累计', '上次大修后累计', '上次大检修后累计', '基数小时', '累计基数', '期初小时', '累计运行小时基数'],
   '期初累计启停': ['期初累计启停', '期初启停次数', '启停基数', '累计启停基数'],
 });
+// 车间范围核对（D007）：「车间」只认 车间/所属车间/属地车间/运行部（及其后加「名称」），覆盖共享别名，
+// 不让维护工厂/属地单位/使用单位/作业部占用「车间」字段；'车间' 放在各表 optional 列最后，避免抢走别的列
+ALIASES['车间'] = [...C.WORKSHOP_COLS, ...C.WORKSHOP_COLS.map((c) => c + '名称')];
 
 function loadBook(p) { return fs.statSync(p).isDirectory() ? readCsvDir(p) : readXlsx(p); }
 /** 时间戳 → 毫秒；无法解析返回 null */
@@ -143,6 +146,8 @@ function main() {
   if (runRows && (runRows === seriesRows || runRows === startEnd)) runRows = null;
   if (!startEnd && !seriesRows && !runRows) throw new Error('未找到「启停记录」「运行状态记录」或「运行记录」工作表');
 
+  const scopes = [];   // 车间范围核对结果：启停记录/运行状态记录/运行记录/阈值表各一条（有该表时）
+  const scoped = (recs, sheet) => { const w = C.workshopScope(recs, a.workshop, sheet, warnings); scopes.push(w.scope); return w.records; };
   const perEquip = new Map();   // tag -> {name, code, segments:[], starts:0, incomplete:[]}
   const ensure = (tag, name, code) => {
     if (!perEquip.has(tag)) perEquip.set(tag, { tag, name: name || '', code: code || '', segments: [], starts: 0, incomplete: [], rawHours: null, sources: new Set() });
@@ -153,7 +158,7 @@ function main() {
   };
 
   if (startEnd) {
-    const recs = C.toRecords(startEnd, ['位号'], '启停记录', ['设备名称', '设备编号', '开机时间', '停机时间'], warnings, ALIASES);
+    const recs = scoped(C.toRecords(startEnd, ['位号'], '启停记录', ['设备名称', '设备编号', '开机时间', '停机时间', '车间'], warnings, ALIASES), '启停记录');
     // --running-until 只认每台设备时间上最后一段：开机时间最晚、且其后该台再无任何开机记录（含同一时刻）或停机记录（不含同一时刻）的那一条空停机行
     // 上一段停机时刻正好等于本段开机时刻（同一时刻停机又开机、或只写日期）是首尾相接，本段仍是最后一段
     const lastOpenRow = new Map();   // tag -> _row
@@ -210,7 +215,7 @@ function main() {
 
   // ---- 运行状态记录（时序）：按状态变化折算区间
   if (seriesRows) {
-    const recs = C.toRecords(seriesRows, ['位号', '时间', '运行状态'], '运行状态记录', ['设备名称', '设备编号'], warnings, ALIASES);
+    const recs = scoped(C.toRecords(seriesRows, ['位号', '时间', '运行状态'], '运行状态记录', ['设备名称', '设备编号', '车间'], warnings, ALIASES), '运行状态记录');
     const byTag = new Map();
     for (const r of recs) {
       const tag = C.str(r['位号']);
@@ -256,7 +261,7 @@ function main() {
   }
 
   if (runRows) {
-    const recs = C.toRecords(runRows, ['位号'], '运行记录', ['设备名称', '设备编号', '运行时长'], warnings, ALIASES);
+    const recs = scoped(C.toRecords(runRows, ['位号'], '运行记录', ['设备名称', '设备编号', '运行时长', '车间'], warnings, ALIASES), '运行记录');
     for (const r of recs) {
       const tag = C.str(r['位号']);
       if (!tag) { warnings.push(`工作表「运行记录」第${r._row}行 位号为空，已跳过`); continue; }
@@ -311,7 +316,8 @@ function main() {
   const thresholds = new Map();   // tag -> [{kind, type, value, base, part, baseHours, baseStarts, ...}]
   const thNames = new Map();      // tag -> 阈值表里的设备名称（给本期无运行记录的设备用）
   if (thRows) {
-    const recs = C.toRecords(thRows, ['位号'], '阈值表', ['设备名称', '阈值类型', '阈值', '上次归零日期', '部件', '期初累计小时', '期初累计启停'], warnings, ALIASES);
+    // 阈值表不只是查找表：表里有、本期无运行记录的设备也会列入明细，所以同样按车间核对
+    const recs = scoped(C.toRecords(thRows, ['位号'], '阈值表', ['设备名称', '阈值类型', '阈值', '上次归零日期', '部件', '期初累计小时', '期初累计启停', '车间'], warnings, ALIASES), '阈值表');
     for (const r of recs) {
       const tag = C.str(r['位号']); if (!tag) continue;
       if (only && !only.has(tag)) continue;
@@ -490,7 +496,7 @@ function main() {
   const disclaimer = '本材料由脚本汇总、模型成文，仅供设备员复核参考，不替代审批、定性、验收与签字；厂内制度与系统数据为准。';
   const result = {
     meta: { workshop: a.workshop, date, from, warnRatio, runningUntil, generatedAt: C.localDateTime(),
-      prevProvided: !!prevMap, thresholdsProvided: !!thRows, statement, disclaimer },
+      prevProvided: !!prevMap, thresholdsProvided: !!thRows, statement, disclaimer, workshopScope: scopes },
     counts, items, byEquipment, exceeded, dueSoon, undetermined, incomplete, warnings,
   };
   fs.writeFileSync(path.join(outDir, 'runtime.json'), JSON.stringify(result, null, 2), 'utf8');
@@ -500,7 +506,10 @@ function main() {
   const L = [];
   L.push(`# ${a.workshop} 运行小时与启停次数统计（截至 ${date}）`);
   L.push('');
+  const wsNote = C.workshopScopeNote(scopes, a.workshop);
+  if (wsNote.alert) { L.push(wsNote.alert); L.push(''); }
   L.push(`统计区间：${from ? `${from} ~ ${date}` : `截至 ${date}`}　｜　预警比例：${(warnRatio * 100).toFixed(0)}%${runningUntil ? `　｜　停机时间为空的运行段按截至 ${runningUntil} 仍在运行计入` : ''}`);
+  if (wsNote.note) L.push(wsNote.note);
   L.push(`生成时间：${C.localDateTime()}（北京时间）`);
   L.push('');
   L.push('## 一、统计概览');

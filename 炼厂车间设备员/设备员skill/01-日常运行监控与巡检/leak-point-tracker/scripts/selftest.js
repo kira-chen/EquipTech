@@ -600,6 +600,85 @@ eq(r.summary.counts.overdue, 1, '21.5 超期数只含真正未修的一条');
   ok(!r.summary.warnings.some((w) => w.includes(BG_NOTE)) && !r.md.includes(BG_NOTE), '23.12 无本底值列不提示');
 }
 
+// ================= 车间范围核对（D007）：检测记录/历史台账/密封点台账混入其他车间时剔除；空车间保留；全不一致不筛并开头【注意】；无车间列/维护工厂不筛 =================
+{
+  const ws = (x) => ((x.lk && x.lk.meta && x.lk.meta.workshopScope) || []);
+  const W = (x) => ((x.summary && x.summary.warnings) || []);
+  let plantBook = null;
+  const mkP = (n, b) => { plantBook = b; return mk(n, b); };
+  const HW = ['密封点编号', '位号', '车间', '组件类型', '介质', '介质状态', '检测值', '检测时间', '发现人', '泄漏形态', '状态', '首次修复日期', '最终修复日期', '复测值', '责任人', '备注'];
+  const mixF = mk('ws-mix.xlsx', {
+    '检测记录': [
+      HW,
+      ['MFD-001', 'P-1', '测试车间', '泵密封', '汽油', '气体', 5200, D(-30), '李', '', '未修复', '', '', '', '王', ''],
+      ['MFD-002', 'V-2', '测试车间', '阀门', '瓦斯', '气体', 2600, D(-2), '李', '', '未修复', '', '', '', '王', ''],
+      ['MFD-003', 'V-3', '', '阀门', '瓦斯', '气体', 900, D(-2), '李', '', '', '', '', '', '', ''],
+      ['MFD-091', 'P-91', '催化车间', '泵密封', '汽油', '气体', 8000, D(-40), '赵', '', '未修复', '', '', '', '赵', ''],
+      ['MFD-092', 'V-92', '催化车间', '阀门', '瓦斯', '气体', 3000, D(-2), '赵', '', '未修复', '', '', '', '赵', ''],
+    ],
+  });
+  r = run(mixF, [], 'ws-mix');
+  eq(r.summary.ok, true, 'WS.1 车间混合检测记录运行成功');
+  eq((r.summary.counts || {}).records, 3, 'WS.2 剔除其他车间后记录数 3');
+  eq((r.summary.counts || {}).leaks, 2, 'WS.3 认定泄漏只计本车间 2 处');
+  eq((r.summary.counts || {}).overdue, 1, 'WS.4 超期未修只计本车间（不含催化车间 MFD-091）');
+  ok(!((r.lk && r.lk.items) || []).some((x) => /^MFD-09/.test(x.no)), 'WS.5 漏点清单不含其他车间密封点');
+  ok(W(r).some((w) => w.includes('工作表「检测记录」按 --workshop「测试车间」剔除其他车间 2 行') && w.includes('催化车间 2 行')), 'WS.6 warning 写明剔除行数与车间名');
+  const s0 = ws(r)[0] || {};
+  eq(s0.status, 'checked', 'WS.7 meta.workshopScope 状态 checked');
+  eq(s0.droppedRows, 2, 'WS.8 meta.workshopScope 记录剔除 2 行');
+  eq((s0.dropped || {})['催化车间'], 2, 'WS.9 dropped 按车间名记行数');
+  eq(s0.blank, 1, 'WS.10 车间为空 1 行计入 blank');
+  ok(((r.lk && r.lk.items) || []).some((x) => x.no === 'MFD-003'), 'WS.11 车间为空的行按本车间保留');
+  ok(W(r).some((w) => w.includes('车间列为空 1 行，按本车间保留')), 'WS.12 车间为空 warning 写明行数');
+  ok(/车间范围：已按车间列核对「测试车间」，剔除其他车间的行：「检测记录」2 行（催化车间 2 行）/.test(r.md || ''), 'WS.13 md 口径处写明剔除情况');
+
+  const misF = mk('ws-mis.xlsx', { '检测记录': [HW,
+    ['MFD-091', 'P-91', '催化车间', '泵密封', '汽油', '气体', 8000, D(-40), '赵', '', '未修复', '', '', '', '赵', ''],
+    ['MFD-092', 'V-92', '催化车间', '阀门', '瓦斯', '气体', 3000, D(-2), '赵', '', '未修复', '', '', '', '赵', '']] });
+  r = run(misF, [], 'ws-mis');
+  eq((r.summary.counts || {}).records, 2, 'WS.14 车间列全不一致时不筛');
+  eq((ws(r)[0] || {}).status, 'mismatch', 'WS.15 meta.workshopScope 状态 mismatch');
+  ok(W(r).some((w) => w.startsWith('【注意】') && w.includes('催化车间')), 'WS.16 全不一致 warning 以【注意】开头');
+  ok(/^# [^\n]*\n\n【注意】工作表「检测记录」的车间列取值与 --workshop「测试车间」不一致，未按车间筛选，请核对输入。/.test(r.md || ''), 'WS.17 md 标题后紧跟【注意】提示');
+  ok(((r.md || '').split('## 一、')[0]).includes('车间列取值与 --workshop'), 'WS.18 【注意】在正文第一节之前');
+
+  r = run(base, [], 'ws-nocol');
+  eq((ws(r)[0] || {}).status, 'noColumn', 'WS.19 无车间列 status 为 noColumn');
+  ok(/车间范围：输入未含车间列，车间范围以取数条件为准。/.test(r.md || ''), 'WS.20 无车间列时 md 口径写明以取数条件为准');
+  eq((r.summary.counts || {}).records, 6, 'WS.21 无车间列不筛');
+
+  const plantF = mkP('ws-plant.xlsx', { '检测记录': [
+    ['密封点编号', '位号', '维护工厂', '组件类型', '介质状态', '检测值', '检测时间'],
+    ['MFD-001', 'P-1', '1100', '泵密封', '气体', 5200, D(-2)],
+    ['MFD-002', 'V-2', '1200', '阀门', '气体', 2600, D(-2)]] });
+  r = run(plantF, [], 'ws-plant');
+  eq((ws(r)[0] || {}).status, 'noColumn', 'WS.22 「维护工厂」不当车间列（noColumn）');
+  ok((ws(r)[0] || {}).column === null && !(ws(r)[0] || {}).ignoredColumn, 'WS.23 「维护工厂」不读入车间字段（column 为 null，无 ignoredColumn）');
+  eq((r.summary.counts || {}).records, 2, 'WS.24 「维护工厂」列不参与筛选');
+  // 人员列「车间负责人」不当车间列（common.js 只认 车间/所属车间/属地车间/运行部 及其后加「名称」）
+  r = run(mk('ws-person.xlsx', JSON.parse(JSON.stringify(plantBook).split('维护工厂').join('车间负责人'))), [], 'ws-person');
+  ok((ws(r)[0] || {}).status === 'noColumn' && (ws(r)[0] || {}).ignoredColumn === '车间负责人' && r.summary.ok === true, 'WS.29 「车间负责人」人员列判 noColumn，ignoredColumn 记下，不筛');
+
+  // 历史台账（第二张主表）混入其他车间：其他车间的历史漏点不进全量台账
+  const ledWs = mk('ws-ledger.xlsx', { '漏点台账': [
+    ['密封点编号', '位号', '车间', '组件类型', '介质状态', '检测值', '检测时间', '状态'],
+    ['MFD-900', 'P-9', '测试车间', '泵密封', '气体', 2800, D(-45), '已修复'],
+    ['MFD-990', 'P-99', '催化车间', '泵密封', '气体', 6000, D(-45), '未修复']] });
+  r = run(base, ['--ledger', ledWs], 'ws-ledger');
+  ok(((r.lk && r.lk.ledger) || []).some((x) => x['密封点编号'] === 'MFD-900') && !((r.lk && r.lk.ledger) || []).some((x) => x['密封点编号'] === 'MFD-990'), 'WS.25 历史台账剔除其他车间漏点，不进全量台账');
+  ok(ws(r).some((x) => x.sheet === '漏点台账' && x.status === 'checked' && x.droppedRows === 1), 'WS.26 meta.workshopScope 含历史台账核对结果');
+
+  // 密封点台账（泄漏率分母）混入其他车间：分母只计本车间
+  const spWs = mk('ws-seal.xlsx', { '密封点台账': [
+    ['密封点编号', '车间', '组件类型', '密封类型'],
+    ['MFD-R01', '测试车间', '泵密封', '动密封'], ['MFD-R03', '测试车间', '阀门', '静密封'], ['MFD-R04', '测试车间', '阀门', '静密封'],
+    ['MFD-X01', '催化车间', '阀门', '静密封'], ['MFD-X02', '催化车间', '阀门', '静密封']] });
+  r = run(rateFile, ['--seal-points', spWs], 'ws-seal');
+  eq(((r.lk && r.lk.metrics && r.lk.metrics.leakRate && r.lk.metrics.leakRate.static) || {}).total, 2, 'WS.27 密封点台账剔除其他车间后静密封分母 2');
+  ok(ws(r).some((x) => x.sheet === '密封点台账' && x.status === 'checked' && x.droppedRows === 2), 'WS.28 meta.workshopScope 含密封点台账核对结果');
+}
+
 // ================= 输出 =================
 console.log(`\n${'='.repeat(56)}`);
 console.log(`leak-point-tracker 自测：${pass} 通过，${fail} 失败`);

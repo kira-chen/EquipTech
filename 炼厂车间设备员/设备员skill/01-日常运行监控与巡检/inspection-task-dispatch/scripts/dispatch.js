@@ -39,6 +39,9 @@ const ALIASES = C.mergeAliases({
   '上次巡检日期': ['上次巡检日期', '上次巡检', '上次检查日期', '最近巡检日期', '上次日期', '巡检时间', '巡检日期', '点检时间', '检查时间', '记录时间', '完成时间'],
   '结果': ['结果', '上次结果', '检查结果', '巡检结果', '点检结果', '结论', '判定'],
 });
+// 车间范围核对（D007）：「车间」只认 车间/所属车间/属地车间/运行部（及其后加「名称」），覆盖共享别名，
+// 不让维护工厂/属地单位/使用单位/作业部占用「车间」字段；'车间' 放在各表 optional 列最后，避免抢走别的列
+ALIASES['车间'] = [...C.WORKSHOP_COLS, ...C.WORKSHOP_COLS.map((c) => c + '名称')];
 
 // 重要度归一：关键设备 A / 主要设备 B / 一般设备 C；特护归 A 并单列 special；无法归类 → null（不猜测，1/2/3 数字级别厂内可配置不默认映射）
 function normCrit(v) {
@@ -120,8 +123,12 @@ function main() {
   // ---- 1. 设备台账（唯一必需数据源）
   const ledgerRows = C.pickSheet(book, '设备台账', '台账', '设备清单', '技术对象清单', '功能位置清单');
   if (!ledgerRows) throw new Error('未在输入中找到「设备台账」工作表，无法生成任务清单');
-  const ledger = C.toRecords(ledgerRows, ['位号'], '设备台账',
-    ['设备编号', '设备名称', '区域', '专业', '特护', '重要度', '是否需巡检', '设备类型'], warnings, ALIASES);
+  const scopes = [];   // 车间范围核对结果（台账、上次巡检记录各一条）
+  const ledger0 = C.toRecords(ledgerRows, ['位号'], '设备台账',
+    ['设备编号', '设备名称', '区域', '专业', '特护', '重要度', '是否需巡检', '设备类型', '车间'], warnings, ALIASES);
+  const lws = C.workshopScope(ledger0, a.workshop, '设备台账', warnings);
+  scopes.push(lws.scope);
+  const ledger = lws.records;
   const hasCritCol = ledger.hasCol('重要度');
   const hasSpecialCol = ledger.hasCol('特护');
   const hasEquipNoCol = ledger.hasCol('设备编号');
@@ -198,7 +205,10 @@ function main() {
     warnings.push('未找到工作表「上次巡检记录」，全部设备按「从未巡检」处理，到期状态为未检');
   } else {
     lastProvided = true;
-    const lasts = C.toRecords(lastRows, ['位号'], '上次巡检记录', ['上次巡检日期', '结果', '是否报警', '设备名称'], warnings, ALIASES);
+    const lasts0 = C.toRecords(lastRows, ['位号'], '上次巡检记录', ['上次巡检日期', '结果', '是否报警', '设备名称', '车间'], warnings, ALIASES);
+    const sws = C.workshopScope(lasts0, a.workshop, '上次巡检记录', warnings);
+    scopes.push(sws.scope);
+    const lasts = sws.records;
     const hasResult = lasts.hasCol('结果'), hasAlarm = lasts.hasCol('是否报警');
     for (const r of lasts) {
       const tag = C.str(r['位号']);
@@ -381,9 +391,10 @@ function main() {
   const fdesc = [filters.area && `区域=${filters.area}`, filters.discipline && `专业=${filters.discipline}`, filters.criticality && `重要度=${filters.criticality}`].filter(Boolean);
   const disclaimer = '本清单由脚本按台账、巡检标准与上次记录生成，模型只成文说明，仅供车间设备员复核与下发参考；不判定设备状况，不替代巡检标准与检修规程；厂内制度与系统数据为准。';
   const routeNote = '建议顺序按区域聚类后位号排序生成，仅供参考，实际巡检路线由车间确定。';
+  const wsNote = C.workshopScopeNote(scopes, a.workshop);
   const out = {
     meta: {
-      workshop: a.workshop, date, shift, shiftText, refTime, group: filters.group,
+      workshop: a.workshop, date, shift, shiftText, refTime, group: filters.group, workshopScope: scopes,
       source: path.basename(a.input), filters, filtersText: fdesc.length ? fdesc.join('、') : '无（全车间）',
       dueSoonRule: dueSoonRule.text,
       lastRecordProvided: lastProvided, standardProvided: !!stdRows,
@@ -402,8 +413,10 @@ function main() {
   const L = [];
   L.push(`# ${a.workshop} 巡检任务清单（${date} ${shiftText}）`);
   L.push('');
+  if (wsNote.alert) { L.push(wsNote.alert); L.push(''); }
   L.push(`数据来源：${out.meta.source}${filters.group ? ` ｜ 人员分组：${filters.group}` : ''}`);
   L.push(`筛选条件：${out.meta.filtersText}`);
+  if (wsNote.note) L.push(wsNote.note);
   L.push(`班次：${shift ? `${shift}（巡检标准「适用班次」不含本班的检查项已剔除 ${counts.otherShift} 项）` : '未指定（按全天排，不按适用班次过滤）'}${refTime ? ` ｜ 班次开始时间：${refTime}` : ''}`);
   L.push(`临期阈值：距到期 ≤ ${dueSoonRule.text}`);
   L.push(`生成时间：${generatedAt}（北京时间）`);

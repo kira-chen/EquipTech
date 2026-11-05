@@ -53,6 +53,9 @@ const ALIASES = C.mergeAliases({
   '标准号': ['标准号', '标准', '依据', '出处', '参考标准'],
   '油品类型': ['油品类型', '油品种类', '适用油品', '油类'],
 });
+// 车间范围核对（D007）：「车间」只认 车间/所属车间/属地车间/运行部（及其后加「名称」），覆盖共享别名，
+// 不让维护工厂/属地单位/使用单位/作业部占用「车间」字段；'车间' 放在各表 optional 列最后，避免抢走别的列
+ALIASES['车间'] = [...C.WORKSHOP_COLS, ...C.WORKSHOP_COLS.map((c) => c + '名称')];
 
 // 五定：每一定对应的台账列
 const WUDING = [
@@ -189,9 +192,13 @@ function main() {
   // ---------------------------------------------------------------- 一、润滑台账 → 到期判定
   const ledgerRows = C.pickSheet(book, '润滑台账', '润滑计划', '润滑点台账', '五定表', '润滑五定', '台账');
   if (!ledgerRows) throw new Error('未在输入中找到「润滑台账」工作表，无法做到期判定');
-  const ledger = C.toRecords(ledgerRows, ['位号', '油品名称'], '润滑台账',
+  const scopes = [];   // 车间范围核对结果：润滑台账、加换油记录、油液分析
+  const ledger0 = C.toRecords(ledgerRows, ['位号', '油品名称'], '润滑台账',
     ['设备名称', '设备编号', '润滑部位', '润滑方式', '润滑周期', '上次加换油日期', '加油量', '油品规格', '责任人',
-      '累计运行小时', '上次加换油时累计小时', '自上次加换油运行小时'], warnings, ALIASES);
+      '累计运行小时', '上次加换油时累计小时', '自上次加换油运行小时', '车间'], warnings, ALIASES);
+  const lws = C.workshopScope(ledger0, a.workshop, '润滑台账', warnings);
+  scopes.push(lws.scope);
+  const ledger = lws.records;
 
   const overdue = [], dueSoon = [], normal = [], undetermined = [];
   const oilNames = new Map();       // oilKey → Set(原始写法)
@@ -333,8 +340,11 @@ function main() {
   if (!recRows) {
     warnings.push('输入中未找到「加换油记录」工作表，不输出油品消耗统计');
   } else {
-    const recs = C.toRecords(recRows, ['日期', '位号', '油品名称', '数量'], '加换油记录',
-      ['类型', '单位', '执行人', '设备名称'], warnings, ALIASES);
+    const recs0 = C.toRecords(recRows, ['日期', '位号', '油品名称', '数量'], '加换油记录',
+      ['类型', '单位', '执行人', '设备名称', '车间'], warnings, ALIASES);
+    const rws = C.workshopScope(recs0, a.workshop, '加换油记录', warnings);
+    scopes.push(rws.scope);
+    const recs = rws.records;
     const byOil = new Map(), byEquip = new Map();
     let used = 0, skipped = 0;
     for (const r of recs) {
@@ -445,8 +455,12 @@ function main() {
     warnings.push('已指定 --oil-analysis，但输入中未找到「油液分析」工作表，该节写「未提供」');
   }
   if (oaRows) {
-    const recs = C.toRecords(oaRows, ['位号', '检测项', '检测值'], '油液分析',
-      ['取样日期', '限值', '结论', '油品名称', '设备名称'], warnings, ALIASES);
+    const recs0 = C.toRecords(oaRows, ['位号', '检测项', '检测值'], '油液分析',
+      ['取样日期', '限值', '结论', '油品名称', '设备名称', '车间'], warnings, ALIASES);
+    // 先按车间列核对，再做「台账外油样」检测（无车间列时仍靠台账外检测兜底）
+    const ows = C.workshopScope(recs0, a.workshop, '油液分析', warnings);
+    scopes.push(ows.scope);
+    const recs = ows.records;
     const abnormal = [], normalItems = [], noLimit = [], refChecked = [], outOfLedger = [];
     const notInLedger = new Set();
     for (const r of recs) {
@@ -537,6 +551,7 @@ function main() {
       workshop: a.workshop, date, leadDays, leadHours, source: path.basename(a.input),
       equipmentScope: scope, priceProvided: !!a.price, runHoursProvided: !!runHoursMap, refStandardProvided: !!refStd,
       oilAnalysisProvided: oilAnalysis.provided, generatedAt: C.localDateTime(), declaration: DECLARATION,
+      workshopScope: scopes,
     },
     counts, wuding, overdue, dueSoon, normal, undetermined,
     consumption, oilAnalysis, oilNameConflicts, warnings,
@@ -588,7 +603,10 @@ function renderMd(a, R) {
   const L = [];
   L.push(`# ${a.workshop} 设备润滑管理报告（基准日 ${R.meta.date}）`);
   L.push('');
+  const wsNote = C.workshopScopeNote(R.meta.workshopScope, a.workshop);
+  if (wsNote.alert) { L.push(wsNote.alert); L.push(''); }
   L.push(`数据来源：${R.meta.source}${R.meta.equipmentScope ? ` ｜ 设备范围：${R.meta.equipmentScope.join('、')}` : ''} ｜ 提前提醒：${R.meta.leadDays} 天 / 运行小时周期 ${C.fmt(R.meta.leadHours)} h`);
+  if (wsNote.note) L.push(wsNote.note);
   L.push(`生成时间：${R.meta.generatedAt}（北京时间）`);
   L.push('');
   L.push(`> ${R.meta.declaration}`);

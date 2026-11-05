@@ -46,6 +46,9 @@ const ALIASES = C.mergeAliases({
   '是否需巡检': ['是否需巡检', '需巡检', '是否巡检', '巡检范围'],
   '特护': ['特护', '是否特护', '特护设备', '特护标记', '特护机组'],
 });
+// 车间范围核对（D007）：「车间」只认 车间/所属车间/属地车间/运行部（及其后加「名称」），覆盖共享别名，
+// 不让维护工厂/属地单位/使用单位/作业部占用「车间」字段；'车间' 放在各表 optional 列最后，避免抢走别的列
+ALIASES['车间'] = [...C.WORKSHOP_COLS, ...C.WORKSHOP_COLS.map((c) => c + '名称')];
 
 /**
  * 特护单列（中石化口径：重要度 A/B/C 与特护标记是两回事，关键设备 A 不等于特护）：
@@ -127,6 +130,7 @@ function main() {
   const foundSources = [];
   const basisUsed = new Set();
   const unrecognized = [];
+  const scopes = [];   // 车间范围核对结果（每张主表一条）
   for (const p of inputs) {
     let book;
     try { book = loadBook(p); } catch (e) { throw new Error(`读取失败 ${p}: ${e.message}`); }
@@ -149,9 +153,12 @@ function main() {
       const label = SOURCE_TYPES[job.type].label;
       foundSources.push(`${path.basename(p)}/${job.sheetName}→${label}${job.forced ? '（--source-type 指定）' : ''}`);
       // 「特护」排在「重要度」前：共享别名「重要度」含「特护」，表头恰好是「特护」时不能被重要度抢走
-      const recs = C.toRecords(job.rows, ['位号'], `${path.basename(p)}/${job.sheetName}`,
-        ['设备名称', '设备编号', '检查结果', '运行状态', '异常描述', '检查时间', '检查人', '区域', '专业', '参数名', '参数值', '上限', '下限', '是否报警', '特护', '重要度'], warnings, ALIASES);
       const sheetTag = `${path.basename(p)}/${job.sheetName}`;
+      const raw = C.toRecords(job.rows, ['位号'], sheetTag,
+        ['设备名称', '设备编号', '检查结果', '运行状态', '异常描述', '检查时间', '检查人', '区域', '专业', '参数名', '参数值', '上限', '下限', '是否报警', '特护', '重要度', '车间'], warnings, ALIASES);
+      const ws = C.workshopScope(raw, a.workshop, sheetTag, warnings);
+      scopes.push(ws.scope);
+      const recs = ws.records;
       const has = (c) => recs.hasCol(c);
       if (!has('检查结果') && !has('是否报警') && !(has('参数值') && (has('上限') || has('下限'))) && !has('运行状态')) {
         warnings.push(`工作表「${sheetTag}」无「检查结果」「是否报警」「测值+限值」「运行状态」任一判定列，全部记录将进入未判定`);
@@ -293,7 +300,11 @@ function main() {
     const rows = C.pickSheet(lb, '设备台账', '台账', '设备清单', '技术对象', '功能位置清单');
     if (!rows) { warnings.push('台账文件中未找到「设备台账」工作表，无法识别漏检'); }
     else {
-      const lr = C.toRecords(rows, ['位号'], '设备台账', ['设备名称', '区域', '专业', '是否需巡检', '特护', '重要度'], warnings, ALIASES);   // 「特护」在「重要度」前，理由同上
+      const lr0 = C.toRecords(rows, ['位号'], '设备台账', ['设备名称', '区域', '专业', '是否需巡检', '特护', '重要度', '车间'], warnings, ALIASES);   // 「特护」在「重要度」前，理由同上
+      // 台账混入其他车间设备会被误报漏检，同样按车间核对
+      const lws = C.workshopScope(lr0, a.workshop, '设备台账', warnings);
+      scopes.push(lws.scope);
+      const lr = lws.records;
       missed = [];
       for (const r of lr) {
         const tag = C.str(r['位号']);
@@ -348,9 +359,10 @@ function main() {
   };
 
   // ---- 产出
+  const wsNote = C.workshopScopeNote(scopes, a.workshop);
   C.ensureDir(outDir);
   const status = {
-    meta: { workshop: a.workshop, date, shift: a.shift || null, shiftWindow, sourceType, sources: foundSources, basisUsed: [...basisUsed], generatedAt: C.localDateTime(), ledgerProvided: !!a.ledger },
+    meta: { workshop: a.workshop, date, shift: a.shift || null, shiftWindow, sourceType, sources: foundSources, basisUsed: [...basisUsed], generatedAt: C.localDateTime(), ledgerProvided: !!a.ledger, workshopScope: scopes },
     counts, byEquipment, abnormal, missed, conflicts, unknownState, changed, warnings,
   };
   fs.writeFileSync(path.join(outDir, 'status.json'), JSON.stringify(status, null, 2), 'utf8');
@@ -359,8 +371,10 @@ function main() {
   const L = [];
   L.push(`# ${a.workshop} 设备状态一览（${date}）`);
   L.push('');
+  if (wsNote.alert) { L.push(wsNote.alert); L.push(''); }
   L.push(`数据来源：${foundSources.join('、')}${a.shift ? ` ｜ 班次：${a.shift}` : ''}${shiftWindow ? ` ｜ 班次日起算 ${shiftWindow}（夜班跨 0 点记录归前一班次日）` : ''}`);
   L.push(`判定依据：${[...basisUsed].join('、') || '—'} ｜ 生成时间：${C.localDateTime()}（北京时间）`);
+  if (wsNote.note) L.push(wsNote.note);
   L.push('');
   L.push('## 一、状态概览');
   L.push('');

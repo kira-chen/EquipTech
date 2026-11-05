@@ -30,7 +30,7 @@ node "<技能目录>/scripts/lube.js" \
 
 | 文件 | 内容 |
 |---|---|
-| `lube.json` | `meta`（含 `declaration` 声明行）/`counts`/`wuding`（五定齐备率）/`overdue`/`dueSoon`/`normal`/`undetermined`/`consumption`/`oilAnalysis`（`abnormal`/`refChecked`/`noLimit`/`normal`/`outOfLedger`）/`oilNameConflicts`/`warnings` |
+| `lube.json` | `meta`（含 `declaration` 声明行、`workshopScope` 车间范围核对结果数组：润滑台账、加换油记录、油液分析各一条 sheet/status/column/total/kept/dropped/droppedRows/blank）/`counts`/`wuding`（五定齐备率）/`overdue`/`dueSoon`/`normal`/`undetermined`/`consumption`/`oilAnalysis`（`abnormal`/`refChecked`/`noLimit`/`normal`/`outOfLedger`）/`oilNameConflicts`/`warnings` |
 | `lube-report.md` | 八节报告（到期概览、五定齐备率、逾期、临期、无法判定、油品消耗、油液分析、情况说明），分析段留 `<!-- ANALYSIS_START/END -->` 占位，开头带声明行 |
 | `summary.json` | 末行摘要落盘（Windows 控制台乱码兜底） |
 
@@ -40,6 +40,7 @@ node "<技能目录>/scripts/lube.js" \
 - **五定齐备率**：定点=润滑部位、定质=油品名称、定量=加油量、定期=润滑周期、定人=责任人，按列填写比例计算；台账无该列 → 齐备率 `null`（不按齐备处理）并 warning。三过滤（领油、转桶、加油）属现场作业要求，不从台账判定。
 - **油液分析无厂内限值**（或限值无法解析、检测值无法解析）→ 进 `oilAnalysis.noLimit`，只列数值不判异常，**不引用通用限值**；仅 `--ref-standard` 显式提供时进 `refChecked` 做参考比对并标注非厂内标准。
 - **台账外油样**：油液分析里位号不在本次润滑台账内的（全厂导出混入其他车间、或台账漏登），进 `oilAnalysis.outOfLedger` 单列（照样按厂内限值标出是否超限供核实），不计入 `oaAbnormal`/`oaNormal`/`oaNoLimit`，`counts.oaOutOfLedger` 计数，warning 一次点名。
+- **车间范围核对（D007）**：润滑台账、加换油记录、油液分析各自按「车间」列核对 `--workshop`（`C.workshopScope`）：有本车间行时剔除其他车间的行并 warning（逐车间写行数），车间列为空的行按本车间保留；车间列取值全不一致时不筛，warning 与报告标题后均以【注意】提示；无车间列或命中的是「车间负责人」等人员列时不筛（「维护工厂」等不读入车间字段），口径行写「输入未含车间列，车间范围以取数条件为准」。油液分析先按车间列剔除，再做台账外油样检测，两者叠加。口径行写在报告头「数据来源」之后。
 - **油品牌号归一**：去品牌词（长城/昆仑/壳牌/美孚等）、空格、横杠与标点后比对，用于疑似同一油品提示与单价匹配；统计与展示仍按原写法，**不自动合并**。
 - **消耗统计单位混用** → 按单位分别统计并 warning，**不做任何量纲换算**。
 - **数量/检测值无法解析** → `null`（显示「—」），**不按 0 计**；带单位数值（"12L" "78℃"）剥离单位取数值并提示核对。
@@ -65,4 +66,4 @@ seed 改变数值但不改变结论：主样例恒为 4 逾期、3 临期、4 �
 node scripts/selftest.js
 ```
 
-215 条断言，覆盖：到期分档、lead-days 窗口、四类未判定、油液无限值/限值不可解析/检测值不可解析/台账外位号单列不计数、缺油液分析表、单位混用不换算、数量缺失不按 0、油品牌号品牌词归一与不自动合并、缺加换油记录表、单价折算有无匹配、合计行与别名列头、「半年/每班」可解析、带单位数值、空位号、设备范围、缺台账、参数校验、八节结构与声明行、SAP/EM 列名与设备编号不当位号、五定齐备率与缺列不按齐备、运行小时周期（逾期/临期/正常/三类未判定/`--lead-hours`/`--run-hours` 两种形态、台账累计与 `--run-hours` 不一致提示、runtime.json 本期运行小时为空时提示累计偏小）、`--ref-standard` 参考比对单列不计异常、默认输出目录为临时目录、样例可再生。全绿退出 0。
+244 条断言，覆盖：到期分档、lead-days 窗口、四类未判定、油液无限值/限值不可解析/检测值不可解析/台账外位号单列不计数、缺油液分析表、单位混用不换算、数量缺失不按 0、油品牌号品牌词归一与不自动合并、缺加换油记录表、单价折算有无匹配、合计行与别名列头、「半年/每班」可解析、带单位数值、空位号、设备范围、缺台账、参数校验、八节结构与声明行、SAP/EM 列名与设备编号不当位号、五定齐备率与缺列不按齐备、运行小时周期（逾期/临期/正常/三类未判定/`--lead-hours`/`--run-hours` 两种形态、台账累计与 `--run-hours` 不一致提示、runtime.json 本期运行小时为空时提示累计偏小）、`--ref-standard` 参考比对单列不计异常、默认输出目录为临时目录、样例可再生、车间范围核对（台账混合剔除、空车间保留、全不一致不筛并开头【注意】、无车间列、维护工厂与车间负责人不当车间列、加换油记录与油液分析剔除其他车间、与台账外油样检测叠加）。全绿退出 0。

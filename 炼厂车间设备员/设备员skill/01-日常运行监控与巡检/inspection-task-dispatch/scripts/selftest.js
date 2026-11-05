@@ -586,6 +586,67 @@ r = run(units, [], 'units');
   ok(!/巡检排班|动火|EAM/.test(listing), '18.19 上架信息不含互抢词与旧术语');
 }
 
+// ---- 19. 车间范围核对（D007）：台账/上次巡检记录混入其他车间时剔除；空车间保留；全不一致不筛并开头【注意】；无车间列/维护工厂不筛
+{
+  const ws = (x) => ((x.tasks && x.tasks.meta && x.tasks.meta.workshopScope) || []);
+  const W = (x) => ((x.summary && x.summary.warnings) || []);
+  let plantBook = null;
+  const mkP = (n, b) => { plantBook = b; return mk(n, b); };
+  const tags = (x) => ((x.tasks && x.tasks.tasks) || []).map((t) => t.tag);
+  const LED_WS = [
+    ['位号', '设备名称', '车间', '区域', '专业', '重要度', '设备类型', '是否需巡检'],
+    ['P-01', '泵1', '测试车间', '一区', '动设备', 'A', '离心泵', '是'],
+    ['P-02', '泵2', '测试车间', '一区', '动设备', 'B', '离心泵', '是'],
+    ['E-01', '换热器1', '', '二区', '静设备', 'C', '换热器', '是'],
+    ['P-91', '外车间泵', '催化车间', '九区', '动设备', 'A', '离心泵', '是'],
+    ['P-92', '外车间泵', '催化车间', '九区', '动设备', 'B', '离心泵', '是'],
+  ];
+  const STD_WS = STD.concat([['P-91', '', '机封泄漏检查', '无可见滴漏', '手电筒', '1天'], ['P-92', '', '机封泄漏检查', '无可见滴漏', '手电筒', '1天']]);
+  r = run(mk('ws-mix.xlsx', { '设备台账': LED_WS, '巡检标准': STD_WS, '上次巡检记录': LAST }), [], 'ws-mix');
+  eq(r.summary.ok, true, '19.1 车间混合台账运行成功');
+  eq((r.summary.counts || {}).ledgerEquipment, 3, '19.2 剔除其他车间后台账设备数 3');
+  ok(!tags(r).some((t) => /^P-9/.test(t)), '19.3 任务清单不含其他车间位号');
+  eq((r.summary.counts || {}).tasks, 2, '19.4 任务项只含本车间（P-01、P-02）');
+  ok(W(r).some((w) => w.includes('工作表「设备台账」按 --workshop「测试车间」剔除其他车间 2 行') && w.includes('催化车间 2 行')), '19.5 warning 写明剔除行数与车间名');
+  const s0 = ws(r).find((x) => x.sheet === '设备台账') || {};
+  eq(s0.status, 'checked', '19.6 meta.workshopScope 台账状态 checked');
+  eq(s0.droppedRows, 2, '19.7 meta.workshopScope 记录剔除 2 行');
+  eq((s0.dropped || {})['催化车间'], 2, '19.8 dropped 按车间名记行数');
+  eq(s0.blank, 1, '19.9 车间为空 1 行计入 blank');
+  eq((r.summary.counts || {}).inScopeEquipment, 3, '19.10 车间为空的 E-01 按本车间保留在范围内（范围内 3 台）');
+  ok(W(r).some((w) => w.includes('车间列为空 1 行，按本车间保留')), '19.11 车间为空 warning 写明行数');
+  ok(/车间范围：已按车间列核对「测试车间」，剔除其他车间的行：「设备台账」2 行（催化车间 2 行）/.test(r.md || ''), '19.12 md 口径处写明剔除情况');
+  ok(!/【注意】.*车间列取值/.test(r.md || ''), '19.13 有本车间行时无车间不一致【注意】');
+
+  const LED_MIS = [['位号', '设备名称', '车间', '设备类型'], ['P-91', '外车间泵', '催化车间', '离心泵'], ['P-92', '外车间泵', '催化车间', '离心泵']];
+  r = run(mk('ws-mis.xlsx', { '设备台账': LED_MIS, '巡检标准': STD_WS }), [], 'ws-mis');
+  eq((r.summary.counts || {}).ledgerEquipment, 2, '19.14 车间列全不一致时不筛');
+  eq((ws(r)[0] || {}).status, 'mismatch', '19.15 meta.workshopScope 状态 mismatch');
+  ok(W(r).some((w) => w.startsWith('【注意】') && w.includes('催化车间')), '19.16 全不一致 warning 以【注意】开头');
+  ok(/^# [^\n]*\n\n【注意】工作表「设备台账」的车间列取值与 --workshop「测试车间」不一致，未按车间筛选，请核对输入。/.test(r.md || ''), '19.17 md 标题后紧跟【注意】提示');
+  ok(((r.md || '').split('## 一、')[0]).includes('【注意】'), '19.18 【注意】在正文第一节之前');
+
+  r = run(base, [], 'ws-nocol');
+  ok(ws(r).length === 2 && ws(r).every((x) => x.status === 'noColumn'), '19.19 无车间列：台账与上次巡检记录均为 noColumn');
+  ok(/车间范围：输入未含车间列，车间范围以取数条件为准。/.test(r.md || ''), '19.20 无车间列时 md 口径写明以取数条件为准');
+  eq((r.summary.counts || {}).ledgerEquipment, 4, '19.21 无车间列不筛');
+
+  const LED_PLANT = [['位号', '设备名称', '维护工厂', '设备类型'], ['P-01', '泵1', '1100', '离心泵'], ['P-02', '泵2', '1200', '离心泵']];
+  r = run(mkP('ws-plant.xlsx', { '设备台账': LED_PLANT, '巡检标准': STD }), [], 'ws-plant');
+  eq((ws(r)[0] || {}).status, 'noColumn', '19.22 「维护工厂」不当车间列（noColumn）');
+  ok((ws(r)[0] || {}).column === null && !(ws(r)[0] || {}).ignoredColumn, '19.23 「维护工厂」不读入车间字段（column 为 null，无 ignoredColumn）');
+  eq((r.summary.counts || {}).ledgerEquipment, 2, '19.24 「维护工厂」列不参与筛选');
+  // 人员列「车间负责人」不当车间列（common.js 只认 车间/所属车间/属地车间/运行部 及其后加「名称」）
+  r = run(mk('ws-person.xlsx', JSON.parse(JSON.stringify(plantBook).split('维护工厂').join('车间负责人'))), [], 'ws-person');
+  ok((ws(r)[0] || {}).status === 'noColumn' && (ws(r)[0] || {}).ignoredColumn === '车间负责人' && r.summary.ok === true, '19.27 「车间负责人」人员列判 noColumn，ignoredColumn 记下，不筛');
+
+  // 上次巡检记录（第二张主表）混入其他车间同位号记录：不得冲掉本车间的逾期判定
+  const LAST_WS = [['位号', '车间', '上次巡检日期', '结果'], ['P-01', '测试车间', back(5), '正常'], ['P-01', '催化车间', DATE, '正常'], ['P-02', '测试车间', back(8), '异常'], ['E-01', '测试车间', back(3), '正常']];
+  r = run(mk('ws-last.xlsx', { '设备台账': LEDGER, '巡检标准': STD, '上次巡检记录': LAST_WS }), [], 'ws-last');
+  eq((((r.tasks && r.tasks.overdue) || []).find((t) => t.tag === 'P-01') || {}).overdueDays, 4, '19.25 上次巡检记录剔除其他车间行后 P-01 仍逾期 4 天');
+  ok(ws(r).some((x) => x.sheet === '上次巡检记录' && x.status === 'checked' && x.droppedRows === 1), '19.26 meta.workshopScope 含上次巡检记录核对结果');
+}
+
 // ---- 输出
 console.log(`\n${'='.repeat(56)}`);
 console.log(`inspection-task-dispatch 自测：${pass} 通过，${fail} 失败`);

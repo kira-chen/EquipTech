@@ -33,11 +33,15 @@ node "<技能目录>/scripts/digest.js" \
 
 四者都没有 → 该设备**未判定**，不默认。同一位号多行（一行一检查项）按位号聚合，任一检查项异常则设备异常；没有异常项但有检查项未判定（如「待查」）→ 设备未判定（`unknownState[].partial: true`，`pendingItems` 列出未判定的检查项），不判正常，warning 点名。
 
+### 车间范围核对（D007）
+
+各来源记录表与 `--ledger` 台账各自按「车间」列核对 `--workshop`（`C.workshopScope`）：有本车间行时剔除其他车间的行并 warning（逐车间写行数），车间列为空的行按本车间保留；车间列取值全不一致时不筛，warning 与报告标题后均以【注意】提示；无车间列或命中的是「车间负责人」等人员列时不筛（「维护工厂」等不读入车间字段），口径行写「输入未含车间列，车间范围以取数条件为准」。结果写 `status.json` 的 `meta.workshopScope`，口径行写在报告头「判定依据」之后。
+
 ### 产出
 
 | 文件 | 内容 |
 |---|---|
-| `status.json` | `meta`（来源、判定依据、shiftWindow）、`counts`（records/equipment/normal/abnormal/unknown/missed/conflicts/changed/special/specialAbnormal/sixTier）、`byEquipment`、`abnormal`、`missed`、`conflicts`、`unknownState`、`changed`、`warnings` |
+| `status.json` | `meta`（来源、判定依据、shiftWindow、`workshopScope` 车间范围核对结果数组：每张表一条 sheet/status/column/total/kept/dropped/droppedRows/blank）、`counts`（records/equipment/normal/abnormal/unknown/missed/conflicts/changed/special/specialAbnormal/sixTier）、`byEquipment`、`abnormal`、`missed`、`conflicts`、`unknownState`、`changed`、`warnings` |
 | `digest.md` | 七节报告 + 附数据提示 + 声明行，分析段留 `<!-- ANALYSIS_START/END -->` 占位；醒目提示用「【注意】」，不用 emoji |
 | `summary.json` | 末行摘要落盘（Windows 控制台乱码兜底） |
 
@@ -60,4 +64,4 @@ seed 改变数值但不改变结论：主样例恒为 8 台设备、2 异常（�
 node scripts/selftest.js
 ```
 
-135 条断言，覆盖：三来源合并、就严冲突（定位到检查项）、未判定、漏检有无台账、跨日跳过、合计行、空位号、参数校验、状态变化、多文件、产出结构、结果归一（无异常/Running 为正常）、一行一检查项聚合、是否报警与测值对限值判定、备注不作异常描述、班次日归属、`--source-type`、六档状态、特护标记（特护列为准，重要度 A/关键不算特护，台账特护补到异常清单，表头恰好为「特护」时不被重要度列抢走）、SAP 列名别名合并、声明行与无 emoji、部分检查项「待查」且无异常项时整机判未判定。全绿退出 0。
+165 条断言，覆盖：三来源合并、就严冲突（定位到检查项）、未判定、漏检有无台账、跨日跳过、合计行、空位号、参数校验、状态变化、多文件、产出结构、结果归一（无异常/Running 为正常）、一行一检查项聚合、是否报警与测值对限值判定、备注不作异常描述、班次日归属、`--source-type`、六档状态、特护标记（特护列为准，重要度 A/关键不算特护，台账特护补到异常清单，表头恰好为「特护」时不被重要度列抢走）、SAP 列名别名合并、声明行与无 emoji、部分检查项「待查」且无异常项时整机判未判定、车间范围核对（混合剔除、空车间保留、全不一致不筛并开头【注意】、无车间列、维护工厂与车间负责人不当车间列、所属车间优先于维护工厂、台账剔除其他车间不误报漏检）。全绿退出 0。

@@ -561,6 +561,75 @@ ok(((r.j && r.j.items) || []).some((x) => x.tag === 'P-01B' && x.cumulativeHours
 r = run(NOREC, ['--equipment', 'P-01A'], 'no-record-only');
 eq((r.s.counts || {}).listed, 1, 'X16 --equipment 限定范围时不补范围外的无记录设备');
 
+// ============ WS. 车间范围核对（D007）：启停记录/运行状态记录/运行记录/阈值表混入其他车间时剔除；空车间保留；全不一致不筛并开头【注意】；无车间列/维护工厂不筛 ============
+{
+  const ws = (x) => ((x.j && x.j.meta && x.j.meta.workshopScope) || []);
+  const W = (x) => ((x.s && x.s.warnings) || []);
+  let plantBook = null;
+  const mkP = (n, b) => { plantBook = b; return mk(n, b); };
+  const MIX = mk('ws-mix.xlsx', {
+    '启停记录': [['位号', '设备名称', '车间', '开机时间', '停机时间'],
+      ['P-01', '泵1', '测试车间', '2026-09-01 08:00', '2026-09-03 08:00'],
+      ['P-02', '泵2', '', '2026-09-01 00:00', '2026-09-02 00:00'],
+      ['P-91', '外车间泵', '催化车间', '2026-09-01 00:00', '2026-09-11 00:00'],
+      ['P-91', '外车间泵', '催化车间', '2026-09-12 00:00', '2026-09-13 00:00']],
+    '阈值表': [['位号', '车间', '部件', '阈值类型', '阈值', '上次归零日期'],
+      ['P-01', '测试车间', '整机', '运行小时', 100, '2026-09-01'],
+      ['P-91', '催化车间', '整机', '运行小时', 200, '2026-09-01'],
+      ['P-95', '催化车间', '整机', '运行小时', 200, '2026-09-01']],
+  });
+  r = run(MIX, [], 'ws-mix');
+  eq(r.s.ok, true, 'WS1 车间混合输入运行成功');
+  eq((r.s.counts || {}).equipment, 2, 'WS2 剔除其他车间后设备数 2（P-01/P-02）');
+  eq((r.s.counts || {}).exceeded, 0, 'WS3 其他车间 P-91 超阈值不计入本车间');
+  ok(!((r.j && r.j.byEquipment) || []).some((x) => /^P-9/.test(x.tag)), 'WS4 明细不含其他车间位号（含阈值表里的 P-95）');
+  eq((r.s.counts || {}).noRunRecord, 0, 'WS5 阈值表其他车间设备不按「本期无运行记录」列入');
+  ok(W(r).some((w) => w.includes('工作表「启停记录」按 --workshop「测试车间」剔除其他车间 2 行') && w.includes('催化车间 2 行')), 'WS6 warning 写明剔除行数与车间名');
+  const s0 = ws(r).find((x) => x.sheet === '启停记录') || {};
+  eq(s0.status, 'checked', 'WS7 meta.workshopScope 启停记录状态 checked');
+  eq(s0.droppedRows, 2, 'WS8 meta.workshopScope 记录剔除 2 行');
+  eq((s0.dropped || {})['催化车间'], 2, 'WS9 dropped 按车间名记行数');
+  eq(s0.blank, 1, 'WS10 车间为空 1 行计入 blank');
+  ok(((r.j && r.j.byEquipment) || []).some((x) => x.tag === 'P-02' && x.periodHours === 24), 'WS11 车间为空的 P-02 按本车间保留并累计');
+  ok(W(r).some((w) => w.includes('工作表「启停记录」车间列为空 1 行，按本车间保留')), 'WS12 车间为空 warning 写明行数');
+  ok(/车间范围：已按车间列核对「测试车间」，剔除其他车间的行：「启停记录」2 行（催化车间 2 行）；「阈值表」2 行（催化车间 2 行）/.test(r.md || ''), 'WS13 md 口径处写明两张表的剔除情况');
+  ok(ws(r).some((x) => x.sheet === '阈值表' && x.status === 'checked' && x.droppedRows === 2), 'WS14 meta.workshopScope 含阈值表核对结果');
+
+  const MIS = mk('ws-mis.xlsx', { '启停记录': [['位号', '车间', '开机时间', '停机时间'], ['P-91', '催化车间', '2026-09-01 00:00', '2026-09-02 00:00']] });
+  r = run(MIS, [], 'ws-mis');
+  eq((r.s.counts || {}).equipment, 1, 'WS15 车间列全不一致时不筛');
+  eq((ws(r)[0] || {}).status, 'mismatch', 'WS16 meta.workshopScope 状态 mismatch');
+  ok(W(r).some((w) => w.startsWith('【注意】') && w.includes('催化车间')), 'WS17 全不一致 warning 以【注意】开头');
+  ok(/^# [^\n]*\n\n【注意】工作表「启停记录」的车间列取值与 --workshop「测试车间」不一致，未按车间筛选，请核对输入。/.test(r.md || ''), 'WS18 md 标题后紧跟【注意】提示');
+  ok(((r.md || '').split('## 一、')[0]).includes('车间列取值与 --workshop'), 'WS19 【注意】在正文第一节之前');
+
+  r = run(BASE, [], 'ws-nocol');
+  ok(ws(r).length === 2 && ws(r).every((x) => x.status === 'noColumn'), 'WS20 无车间列：启停记录与阈值表均为 noColumn');
+  ok(/车间范围：输入未含车间列，车间范围以取数条件为准。/.test(r.md || ''), 'WS21 无车间列时 md 口径写明以取数条件为准');
+  eq((r.s.counts || {}).equipment, 2, 'WS22 无车间列不筛');
+
+  const PLANT = mkP('ws-plant.xlsx', { '启停记录': [['位号', '维护工厂', '开机时间', '停机时间'],
+    ['P-01', '1100', '2026-09-01 08:00', '2026-09-03 08:00'], ['P-02', '1200', '2026-09-01 00:00', '2026-09-02 00:00']] });
+  r = run(PLANT, [], 'ws-plant');
+  eq((ws(r)[0] || {}).status, 'noColumn', 'WS23 「维护工厂」不当车间列（noColumn）');
+  ok((ws(r)[0] || {}).column === null && !(ws(r)[0] || {}).ignoredColumn, 'WS24 「维护工厂」不读入车间字段（column 为 null，无 ignoredColumn）');
+  eq((r.s.counts || {}).equipment, 2, 'WS25 「维护工厂」列不参与筛选');
+  // 人员列「车间负责人」不当车间列（common.js 只认 车间/所属车间/属地车间/运行部 及其后加「名称」）
+  r = run(mk('ws-person.xlsx', JSON.parse(JSON.stringify(plantBook).split('维护工厂').join('车间负责人'))), [], 'ws-person');
+  ok((ws(r)[0] || {}).status === 'noColumn' && (ws(r)[0] || {}).ignoredColumn === '车间负责人' && r.s.ok === true, 'WS28 「车间负责人」人员列判 noColumn，ignoredColumn 记下，不筛');
+
+  // 运行记录（第三种来源）混入其他车间
+  const RUNW = mk('ws-run.xlsx', { '运行记录': [['位号', '车间', '运行时长'], ['P-01', '测试车间', 100], ['P-91', '催化车间', 500]] });
+  r = run(RUNW, [], 'ws-run');
+  ok(ws(r).some((x) => x.sheet === '运行记录' && x.status === 'checked' && x.droppedRows === 1) && (r.s.counts || {}).equipment === 1, 'WS26 运行记录剔除其他车间行');
+  // 运行状态记录（时序）混入其他车间
+  const SERW = mk('ws-series.xlsx', { '运行状态记录': [['位号', '车间', '时间', '运行状态'],
+    ['P-01', '测试车间', '2026-09-01 00:00', '运行'], ['P-01', '测试车间', '2026-09-02 00:00', '停机'],
+    ['P-91', '催化车间', '2026-09-01 00:00', '运行'], ['P-91', '催化车间', '2026-09-05 00:00', '停机']] });
+  r = run(SERW, [], 'ws-series');
+  ok(ws(r).some((x) => x.sheet === '运行状态记录' && x.status === 'checked' && x.droppedRows === 2) && (r.s.counts || {}).equipment === 1, 'WS27 运行状态记录剔除其他车间行');
+}
+
 console.log(`\n${'='.repeat(56)}`);
 console.log(`runtime-hours-tracker 自测：${pass} 通过，${fail} 失败`);
 if (failures.length) { console.log('\n失败项：'); failures.forEach((f) => console.log('  ✗ ' + f)); }
