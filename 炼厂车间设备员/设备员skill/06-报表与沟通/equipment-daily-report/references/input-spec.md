@@ -117,6 +117,20 @@ sheet 名匹配去空白与「表」字后包含匹配。列名先全等后前�
 | 完成比例 | 否 | 见下方处理规则 |
 | 位号 / 状态 / 计划完成 / 责任人 | 否 | |
 
+## 车间范围核对
+
+车间列（可选）：巡检汇总、特护设备、缺陷台账、工单台账、作业票、泄漏点、隐患台账、异常事件、检修进度九张表都可带「车间」列。表头认 车间 / 所属车间 / 属地车间 / 运行部（全等优先，再认以它们开头的，如「车间名称」）；「维护工厂」「计划工厂」是 SAP 工厂代码，「属地单位」「使用单位」「责任单位」「作业单位」可能是部门或承包商，「车间负责人」「车间监护人」这类人员列，都不当车间列。按 `--workshop` 核对：
+
+| 情况 | 处理 |
+|---|---|
+| 未带车间列 | 不筛；日报开头「数据来源」下的口径行写「车间范围：输入未含车间列，车间范围以取数条件为准。」（MCP 导出多数是这种情况，取数时须带 `workshop`） |
+| 有本车间的行 | 剔除其他车间的行，warning 逐车间写剔除行数；车间列为空的行按本车间保留，warning 写行数 |
+| 没有一行是本车间 | 不筛（避免整表剔空）；warning 以【注意】开头，日报标题后、第一节前加【注意】提示，多半是传错了文件 |
+
+车间名比对去空白、忽略末尾「车间 / 运行部」（「常减压」与「常减压车间」视为同一车间）。各表核对结果写进 `daily.json` 的 `meta.workshopScope`（数组，每项含 `sheet` / `status`（noWorkshop / noColumn / checked / mismatch）/ `column` / `total` / `kept` / `dropped` / `droppedRows` / `blank`）。
+
+上游 JSON 车间核对：status.json / orders.json / defects.json / leaks.json / hazard.json 以及 `--prev` 的上一日 daily.json，取 `meta.workshop`（没有再看顶层 `workshop`），与 `--workshop` 比对（规则同上）：一致的纳入；不一致的**不纳入**，warning 写明文件名和两个车间名，日报开头加【注意】；未注明车间的照常纳入，口径处写「上游 JSON 未注明车间，无法核对」。结果写进 `daily.json` 的 `meta.upstreamWorkshop`（`matched` / `unknown` / `excluded`）。上游 A 类技能新增的 `meta.workshopScope` 字段不影响识别与读取。`--prev` 车间不一致时不做环比。
+
 ## 完成比例的处理
 
 | 输入 | 处理 |

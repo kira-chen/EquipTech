@@ -346,6 +346,46 @@ ok(r.s.warnings.some((w) => /检修计划完成率/.test(w) && /需复算/.test(
   r = run([...BASE, '--duration', '8', '--audience', '车间', '--need-decision', 'P-2101A 进料泵是否提前安排检修'], 'decision-ws');
   ok(r.j.needDecision.some((d) => /P-2101A/.test(d.text)), 'T4 车间层级需决策保留位号');
 }
+
+// ============ U. 车间范围核对（D007）：给了 --workshop 时，上游 JSON 车间不一致不纳入 ============
+{
+  const OT = '二车间';
+  const ST_MINE = mkj('ws-status.json', { meta: { workshop: '测试车间', date: '2026-09-21', workshopScope: [{ sheet: 'x/巡检记录', status: 'checked', droppedRows: 2, dropped: { 二车间: 2 } }] },
+    counts: { equipment: 7, normal: 5, abnormal: 2, unknown: 0, missed: 0 }, byEquipment: [], abnormal: [{ tag: 'P-1101B', name: '回流泵B', desc: '机封滴漏' }] });
+  const ORD_OT = mkj('ws-orders-other.json', { meta: { workshop: OT }, counts: { total: 99, open: 88, overdue: 77 }, metrics: { closeRate: 11 }, byStatus: {}, overdue: [{ no: 'WO-999', tag: 'X-9', overdueDays: 9, vendor: '外车间队' }] });
+  const DAY_WS = mkj('ws-daily.json', { meta: { workshop: '测试', date: '2026-09-21', workshopScope: [{ sheet: 'x/巡检汇总', status: 'checked' }] }, counts: { equipment: 20, permits: 4 }, status: {}, orders: {} });
+  const PER_WS = mkj('ws-periodic.json', { meta: { workshop: '测试车间', period: 'weekly', workshopScope: [], upstreamWorkshop: { matched: [], unknown: [], excluded: [] } }, metrics: { intactRate: 92 }, failures: { total: 0 }, dataGaps: {} });
+  const ORD_TOP = mkj('ws-orders-top.json', { workshop: OT, counts: { total: 5, open: 5, overdue: 5 }, metrics: { closeRate: 0 }, byStatus: {}, overdue: [] });
+  const args = (input, extra = []) => ['--input', input, '--meeting', '设备例会', '--duration', '10', '--audience', '车间', '--workshop', '测试车间', ...extra];
+  let r = run(args([ST_MINE, ORD_OT, ORDERS, DAY_WS, PER_WS].join(',')), 'ws-mix');
+  eq(r.s.ok, true, 'U1 上游 JSON 车间混合时可运行');
+  ok(r.s.sources.some((x) => /ws-status\.json/.test(x)), 'U2 车间一致的 JSON 纳入（带 meta.workshopScope 照常读取）');
+  ok(!r.s.sources.some((x) => /ws-orders-other/.test(x)), 'U3 车间不一致的 JSON 不纳入数据来源');
+  ok(!r.j.metrics.some((m) => m.value === 88 || m.value === 77) && !/WO-999/.test(r.md), 'U4 不纳入的 JSON 数字与事项不进汇报稿');
+  ok(r.s.warnings.some((w) => w.includes('ws-orders-other.json') && w.includes(OT) && w.includes('测试车间')), 'U5 warning 写明文件名与两个车间名');
+  const PER_OT = mkj('ws-periodic-other.json', { meta: { workshop: OT, period: 'weekly' }, metrics: { planRate: 50 }, failures: { total: 0 }, dataGaps: { recompute: [{ metric: '检修计划完成率', algo: 'x' }] } });
+  const rx = run(args([ST_MINE, PER_OT].join(',')), 'ws-per-other');
+  ok(!rx.s.warnings.some((w) => /需复算/.test(w)) && rx.s.warnings.some((w) => w.includes('ws-periodic-other.json')), 'U5a 不纳入的 JSON 不产生抽取类提示，只留车间不一致的 warning');
+  eq((((r.j.meta.upstreamWorkshop || {}).excluded || [])[0] || {}).file, 'ws-orders-other.json', 'U6 outline.json meta.upstreamWorkshop 记不纳入的来源');
+  ok(/【注意】上游 JSON「ws-orders-other\.json」的车间「二车间」与 --workshop「测试车间」不一致/.test(r.md.split('## 一、')[0]), 'U7 汇报稿开头提示有上游 JSON 未纳入');
+  ok(/【注意】上游 JSON「ws-orders-other\.json」/.test(r.ol || ''), 'U8 要点提纲开头同样提示');
+  ok(/上游 JSON 未注明车间，无法核对（「orders\.json」），已照常纳入/.test(r.md), 'U9 无车间字段的 JSON 照常纳入并在口径处说明');
+  ok(r.s.sources.some((x) => /^orders\.json/.test(x)), 'U10 无车间字段的 orders.json 照常纳入');
+  ok(r.j.metrics.some((m) => m.label === '当日作业票' && m.value === 4), 'U11 带 meta.workshopScope 的 daily.json 照常读取（「测试」视同一致）');
+  ok(r.j.metrics.some((m) => m.label === '设备完好率' && m.value === 92), 'U12 带 meta.workshopScope 的 periodic.json 照常读取');
+  ok(/上游 JSON 车间核对：「ws-status\.json」、「ws-daily\.json」、「ws-periodic\.json」与「测试车间」一致，已纳入/.test(r.md), 'U13 口径写明一致纳入');
+  r = run(args([ST_MINE, ORD_TOP].join(',')), 'ws-top');
+  ok(!r.s.sources.some((x) => /ws-orders-top/.test(x)), 'U14 无 meta.workshop 时取顶层 workshop 核对');
+  r = run(args(ORD_OT), 'ws-all-other');
+  eq(r.s.ok, false, 'U15 上游 JSON 全部车间不一致时报错');
+  ok(/车间与 --workshop 不一致未纳入/.test(r.s.error || ''), 'U16 报错写明因车间不一致未纳入');
+  // 未给 --workshop：不核对、全部纳入；各 JSON 车间不一致时 warning
+  r = run(['--input', [ST_MINE, ORD_OT].join(','), '--meeting', '设备例会', '--duration', '10', '--audience', '车间'], 'ws-none');
+  ok(r.s.sources.some((x) => /ws-orders-other/.test(x)), 'U17 未给 --workshop 时不核对，照常纳入');
+  eq(r.j.meta.upstreamWorkshop, null, 'U18 未给 --workshop 时 meta.upstreamWorkshop 为 null');
+  ok(r.s.warnings.some((w) => w.startsWith('【注意】') && w.includes('车间不一致') && w.includes(OT)), 'U19 未给 --workshop 但上游 JSON 车间不一致时提示');
+  ok(!/上游 JSON 车间核对/.test(r.md), 'U20 未给 --workshop 时口径处不写车间核对');
+}
 console.log(`\n${'='.repeat(56)}`);
 console.log(`meeting-material-builder 自测：${pass} 通过，${fail} 失败`);
 if (failures.length) { console.log('\n失败项：'); failures.forEach((f) => console.log('  ✗ ' + f)); }

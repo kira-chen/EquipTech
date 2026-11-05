@@ -84,6 +84,48 @@ const ALIASES = C.mergeAliases({
 });
 ALIASES['设备名称'] = ALIASES['设备名称'].filter((x) => x !== '描述');
 
+// ---- 车间范围核对（D007）：表格带车间列时按 --workshop 剔除其他车间的行；上游 JSON 按 meta.workshop 核对，不一致的不纳入
+// 车间列只认 车间 / 所属车间 / 属地车间 / 运行部（共享别名里的维护工厂、属地单位、使用单位不当车间列）；
+// 「车间」放在各表 optional 末尾，前缀匹配时不抢「车间监护人」等别的字段的列
+ALIASES['车间'] = C.WORKSHOP_COLS.slice();
+/** 「车间负责人」「车间监护人」这类人员列不当车间列 */
+const NOT_WORKSHOP_COL = /(人|员|长|签字|签名|电话|意见)$/;
+function scopeRows(recs, sheet, workshop, scopes) {
+  const col = recs.hasCol && recs.hasCol('车间') ? recs.colName('车间') : null;
+  let input = recs;
+  if (col && NOT_WORKSHOP_COL.test(col)) {
+    input = recs.slice();
+    input.hasCol = (n) => n !== '车间' && recs.hasCol(n);
+    input.colName = (n) => (n === '车间' ? null : recs.colName(n));
+  }
+  const { records, scope } = C.workshopScope(input, workshop, sheet, warnings);
+  if (input !== recs) scope.ignoredColumn = col;
+  scopes.push(scope);
+  return records;
+}
+/** 上游 JSON 的车间：先取 meta.workshop，没有再看顶层 workshop */
+const jsonWorkshop = (j) => C.str(j && j.meta && j.meta.workshop) || C.str(j && j.workshop);
+/** 上游 JSON 车间与 --workshop 一致或未注明 → 纳入；不一致 → 不纳入并 warning */
+function jsonInScope(name, j, workshop, js) {
+  const w = jsonWorkshop(j);
+  if (!w) { js.unknown.push(name); return true; }
+  if (C.sameWorkshop(w, workshop)) { js.matched.push(name); return true; }
+  js.excluded.push({ file: name, workshop: w });
+  warnings.push(`上游 JSON「${name}」的车间为「${w}」，与 --workshop「${workshop}」不一致，未纳入本报告`);
+  return false;
+}
+function jsonScopeNote(js, workshop) {
+  const q = (l) => l.map((f) => `「${f}」`).join('、');
+  const parts = [];
+  if (js.matched.length) parts.push(`${q(js.matched)}与「${workshop}」一致，已纳入`);
+  if (js.excluded.length) parts.push(`${js.excluded.map((x) => `「${x.file}」（${x.workshop}）`).join('、')}车间不一致，未纳入`);
+  if (js.unknown.length) parts.push(`上游 JSON 未注明车间，无法核对（${q(js.unknown)}），已照常纳入`);
+  return {
+    note: parts.length ? `上游 JSON 车间核对：${parts.join('；')}。` : null,
+    alert: js.excluded.length ? `【注意】上游 JSON${js.excluded.map((x) => `「${x.file}」的车间「${x.workshop}」`).join('、')}与 --workshop「${workshop}」不一致，未纳入本报告，请核对输入。` : null,
+  };
+}
+
 /** 闭环判定：先否定前缀，再 SAP 六态；「已完成/完工/TECO」是待验收，不算闭环 */
 function isClosed(s) {
   const v = C.str(s);
@@ -277,10 +319,15 @@ function main() {
   let leaksJson = null, rotationJson = null;
   let defectRows = null, orderRows = null, planRows = null, faultRows = null, ledgerRows = null, spareRows = null;
   let specialRows = null, standbyRows = null, sealRows = null, shutdownRows = null;
+  const scopes = [];                                          // 各表车间范围核对结果 → meta.workshopScope
+  const jsonScope = { matched: [], unknown: [], excluded: [] };  // 上游 JSON 车间核对 → meta.upstreamWorkshop
+  const scoped = (recs, sheet) => scopeRows(recs, sheet, a.workshop, scopes);
+  const inScope = (name, j) => jsonInScope(name, j, a.workshop, jsonScope);
 
   for (const p of inputs) {
     const got = loadAny(p);
     if (got.kind === 'json') {
+      if ((isLeaks(got.data) || isRotation(got.data) || isDaily(got.data)) && !inScope(got.name, got.data)) continue;
       if (isLeaks(got.data)) { if (!leaksJson) { leaksJson = got.data; sources.push(`${got.name}→泄漏点跟踪(JSON)`); } continue; }
       if (isRotation(got.data)) { if (!rotationJson) { rotationJson = got.data; sources.push(`${got.name}→备机切换(JSON)`); } continue; }
       if (!isDaily(got.data)) { warnings.push(`${got.name} 不是 equipment-daily-report 的 daily.json（缺 meta.date 或 counts.equipment），也不是 leak-point-tracker 的 leaks.json，已忽略`); continue; }
@@ -294,54 +341,54 @@ function main() {
     const book = got.data;
     const sDef = C.pickSheet(book, '缺陷台账', '缺陷', '通知单');
     if (sDef && !defectRows) {
-      defectRows = C.toRecords(sDef, ['位号'], `${got.name}/缺陷台账`, ['设备名称', '缺陷描述', '等级', '状态', '发现时间', '闭环时间', '专业', '设备类型'], warnings, ALIASES);
+      defectRows = scoped(C.toRecords(sDef, ['位号'], `${got.name}/缺陷台账`, ['设备名称', '缺陷描述', '等级', '状态', '发现时间', '闭环时间', '专业', '设备类型', '车间'], warnings, ALIASES), `${got.name}/缺陷台账`);
       sources.push(`${got.name}→缺陷台账`);
     }
     const sOrd = C.pickSheet(book, '工单台账', '工单', '订单');
     if (sOrd && !orderRows) {
-      orderRows = C.toRecords(sOrd, ['工单号'], `${got.name}/工单台账`, ['位号', '状态', '要求完成时间', '闭环时间', '责任人', '缺陷描述', '工作中心'], warnings, ALIASES);
+      orderRows = scoped(C.toRecords(sOrd, ['工单号'], `${got.name}/工单台账`, ['位号', '状态', '要求完成时间', '闭环时间', '责任人', '缺陷描述', '工作中心', '车间'], warnings, ALIASES), `${got.name}/工单台账`);
       sources.push(`${got.name}→工单台账`);
     }
     const sPlan = C.pickSheet(book, '检修计划', '检修');
     if (sPlan && !planRows) {
-      planRows = C.toRecords(sPlan, ['项目名称'], `${got.name}/检修计划`, ['位号', '状态', '计划完成', '实际完成', '责任人', '检修类别'], warnings, ALIASES);
+      planRows = scoped(C.toRecords(sPlan, ['项目名称'], `${got.name}/检修计划`, ['位号', '状态', '计划完成', '实际完成', '责任人', '检修类别', '车间'], warnings, ALIASES), `${got.name}/检修计划`);
       sources.push(`${got.name}→检修计划`);
     }
     const sFlt = C.pickSheet(book, '故障记录', '故障');
     if (sFlt && !faultRows) {
-      faultRows = C.toRecords(sFlt, ['位号'], `${got.name}/故障记录`, ['设备名称', '设备类型', '专业', '故障描述', '故障时间', '停机时长', '修复时长', '是否停机'], warnings, ALIASES);
+      faultRows = scoped(C.toRecords(sFlt, ['位号'], `${got.name}/故障记录`, ['设备名称', '设备类型', '专业', '故障描述', '故障时间', '停机时长', '修复时长', '是否停机', '车间'], warnings, ALIASES), `${got.name}/故障记录`);
       sources.push(`${got.name}→故障记录`);
     }
     // 「台账」是宽匹配：先排除工单台账、缺陷台账、特种设备台账、润滑/巡检台账等其它台账，避免没给设备台账时把它们当成设备台账；表名含「设备台账」「技术对象」的先放行
     const ledgerBook = Object.fromEntries(Object.entries(book).filter(([k]) => !isNotLedger(k)));
     const sLdg = C.pickSheet(ledgerBook, '设备台账', '台账', '技术对象');
     if (sLdg && !ledgerRows) {
-      ledgerRows = C.toRecords(sLdg, ['位号'], `${got.name}/设备台账`, ['设备名称', '设备类型', '专业', '在用', '完好', '重要度'], warnings, ALIASES);
+      ledgerRows = scoped(C.toRecords(sLdg, ['位号'], `${got.name}/设备台账`, ['设备名称', '设备类型', '专业', '在用', '完好', '重要度', '车间'], warnings, ALIASES), `${got.name}/设备台账`);
       sources.push(`${got.name}→设备台账`);
     }
     const sSpr = C.pickSheet(book, '备件消耗', '备件', '领料');
     if (sSpr && !spareRows) {
-      spareRows = C.toRecords(sSpr, ['备件名称'], `${got.name}/备件消耗`, ['位号', '数量', '单位', '金额', '时间'], warnings, ALIASES);
+      spareRows = scoped(C.toRecords(sSpr, ['备件名称'], `${got.name}/备件消耗`, ['位号', '数量', '单位', '金额', '时间', '车间'], warnings, ALIASES), `${got.name}/备件消耗`);
       sources.push(`${got.name}→备件消耗`);
     }
     const sSpec = C.pickSheet(book, '特护设备', '特护', '特护机组');
     if (sSpec && !specialRows) {
-      specialRows = C.toRecords(sSpec, ['位号'], `${got.name}/特护设备`, ['设备名称', '状态', '运行参数', '备注'], warnings, ALIASES);
+      specialRows = scoped(C.toRecords(sSpec, ['位号'], `${got.name}/特护设备`, ['设备名称', '状态', '运行参数', '备注', '车间'], warnings, ALIASES), `${got.name}/特护设备`);
       sources.push(`${got.name}→特护设备`);
     }
     const sStb = C.pickSheet(book, '备机', '备用设备', '备机台账');
     if (sStb && !standbyRows) {
-      standbyRows = C.toRecords(sStb, ['位号'], `${got.name}/备机`, ['设备名称', '状态', '是否可投用', '备注'], warnings, ALIASES);
+      standbyRows = scoped(C.toRecords(sStb, ['位号'], `${got.name}/备机`, ['设备名称', '状态', '是否可投用', '备注', '车间'], warnings, ALIASES), `${got.name}/备机`);
       sources.push(`${got.name}→备机`);
     }
     const sSeal = C.pickSheet(book, '密封点统计', '密封点', '泄漏率', 'LDAR');
     if (sSeal && !sealRows) {
-      sealRows = C.toRecords(sSeal, ['密封点类型'], `${got.name}/密封点统计`, ['密封点总数', '泄漏点数'], warnings, ALIASES);
+      sealRows = scoped(C.toRecords(sSeal, ['密封点类型'], `${got.name}/密封点统计`, ['密封点总数', '泄漏点数', '车间'], warnings, ALIASES), `${got.name}/密封点统计`);
       sources.push(`${got.name}→密封点统计`);
     }
     const sShut = C.pickSheet(book, '停工记录', '非计划停工', '停工');
     if (sShut && !shutdownRows) {
-      shutdownRows = C.toRecords(sShut, ['停工时间'], `${got.name}/停工记录`, ['停工类别', '原因', '装置'], warnings, ALIASES);
+      shutdownRows = scoped(C.toRecords(sShut, ['停工时间'], `${got.name}/停工记录`, ['停工类别', '原因', '装置', '车间'], warnings, ALIASES), `${got.name}/停工记录`);
       sources.push(`${got.name}→停工记录`);
     }
   }
@@ -351,7 +398,7 @@ function main() {
     const sSpr = C.pickSheet(book, '备件消耗', '备件', '领料');
     if (!sSpr) warnings.push(`备件消耗表「${path.basename(a.spare)}」中未找到「备件消耗」工作表`);
     else {
-      spareRows = C.toRecords(sSpr, ['备件名称'], `${path.basename(a.spare)}/备件消耗`, ['位号', '数量', '单位', '金额', '时间'], warnings, ALIASES);
+      spareRows = scoped(C.toRecords(sSpr, ['备件名称'], `${path.basename(a.spare)}/备件消耗`, ['位号', '数量', '单位', '金额', '时间', '车间'], warnings, ALIASES), `${path.basename(a.spare)}/备件消耗`);
       sources.push(`${path.basename(a.spare)}→备件消耗`);
     }
   }
@@ -359,7 +406,7 @@ function main() {
   dailies.sort((x, y) => (x.date < y.date ? -1 : 1));
   for (const d of dailies) sources.push(`${d.file}→日报 ${d.date}(JSON)`);
   if (outOfRange.length) warnings.push(`${outOfRange.length} 份日报日期不在统计区间 ${from} ~ ${to} 内，未计入：${outOfRange.map((x) => `${x.file}(${x.date})`).join('、')}`);
-  if (!sources.length) throw new Error('未在输入中识别到任何可用数据（daily.json / leaks.json / rotation.json，或含设备台账/故障记录/检修计划/工单台账/缺陷台账/备件消耗/特护设备/备机/密封点统计/停工记录的 xlsx）');
+  if (!sources.length) throw new Error(`未在输入中识别到任何可用数据（daily.json / leaks.json / rotation.json，或含设备台账/故障记录/检修计划/工单台账/缺陷台账/备件消耗/特护设备/备机/密封点统计/停工记录的 xlsx）${jsonScope.excluded.length ? `；另有 ${jsonScope.excluded.length} 份上游 JSON 因车间与 --workshop 不一致未纳入` : ''}`);
 
   // ---- 数据缺口
   const allDates = [];
@@ -849,14 +896,19 @@ function main() {
     compare = {};
     if (a.prev) {
       const j = loadCompare(a.prev, '上期');
-      if (j.meta.period && j.meta.period !== period) warnings.push(`环比基准（${path.basename(a.prev)}）周期为 ${j.meta.period}，与本期 ${period} 不一致，对比结果仅供参考`);
-      compare.prev = buildCompare(j, '环比');
+      if (inScope(path.basename(a.prev), j)) {   // 车间不一致的基准期不做环比
+        if (j.meta.period && j.meta.period !== period) warnings.push(`环比基准（${path.basename(a.prev)}）周期为 ${j.meta.period}，与本期 ${period} 不一致，对比结果仅供参考`);
+        compare.prev = buildCompare(j, '环比');
+      }
     }
     if (a.yoy) {
       const j = loadCompare(a.yoy, '同期');
-      if (j.meta.period && j.meta.period !== period) warnings.push(`同比基准（${path.basename(a.yoy)}）周期为 ${j.meta.period}，与本期 ${period} 不一致，对比结果仅供参考`);
-      compare.yoy = buildCompare(j, '同比');
+      if (inScope(path.basename(a.yoy), j)) {   // 车间不一致的基准期不做同比
+        if (j.meta.period && j.meta.period !== period) warnings.push(`同比基准（${path.basename(a.yoy)}）周期为 ${j.meta.period}，与本期 ${period} 不一致，对比结果仅供参考`);
+        compare.yoy = buildCompare(j, '同比');
+      }
     }
+    if (!compare.prev && !compare.yoy) compare = null;
   }
 
   const counts = {
@@ -894,6 +946,7 @@ function main() {
       rulesSource, usingDefaultRules: usingDefault, notice,
       intactDenominator: intactDenom, intactSealedOut,
       sources, generatedAt: C.localDateTime(),
+      workshopScope: scopes, upstreamWorkshop: jsonScope,
     },
     counts, metrics, failures, maintenance, defects, orders: ordersSec, spare, special, standby, seal, leakPoints, shutdown,
     highlights, compare, dataGaps, warnings,
@@ -967,9 +1020,14 @@ function main() {
   const H = (t) => { L.push(`## ${CN[n++]}、${t}`); L.push(''); };
   L.push(`# ${a.workshop} 设备${P.cn}（${from} ~ ${to}）`);
   L.push('');
+  const wsNote = C.workshopScopeNote(scopes, a.workshop);
+  const jsNote = jsonScopeNote(jsonScope, a.workshop);
+  for (const al of [wsNote.alert, jsNote.alert].filter(Boolean)) { L.push(`> **${al}**`); L.push(''); }
   L.push(`统计区间：${from} ~ ${to}，共 ${spanDays} 天；${basedOn}`);
   L.push(`指标口径：${rulesSource}`);
   L.push(`数据来源：${sources.join('、')}`);
+  if (wsNote.note) L.push(wsNote.note);
+  if (jsNote.note) L.push(jsNote.note);
   L.push(`生成时间：${C.localDateTime()}（北京时间）`);
   L.push('');
   L.push(`> ${notice}`);

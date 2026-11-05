@@ -56,6 +56,30 @@ const METRIC_CN = {
 const cnLabel = (k) => (METRIC_CN[k] ? METRIC_CN[k][0] : k);
 const cnUnit = (k) => (METRIC_CN[k] ? METRIC_CN[k][1] : null);
 
+// ---- 车间范围核对（D007）：给了 --workshop 时，上游 JSON 按 meta.workshop 核对，不一致的不纳入
+/** 上游 JSON 的车间：先取 meta.workshop，没有再看顶层 workshop */
+const jsonWorkshop = (j) => C.str(j && j.meta && j.meta.workshop) || C.str(j && j.workshop);
+/** 上游 JSON 车间与 --workshop 一致或未注明 → 纳入；不一致 → 不纳入并 warning */
+function jsonInScope(name, j, workshop, js) {
+  const w = jsonWorkshop(j);
+  if (!w) { js.unknown.push(name); return true; }
+  if (C.sameWorkshop(w, workshop)) { js.matched.push(name); return true; }
+  js.excluded.push({ file: name, workshop: w });
+  warnings.push(`上游 JSON「${name}」的车间为「${w}」，与 --workshop「${workshop}」不一致，未纳入本材料`);
+  return false;
+}
+function jsonScopeNote(js, workshop) {
+  const q = (l) => l.map((f) => `「${f}」`).join('、');
+  const parts = [];
+  if (js.matched.length) parts.push(`${q(js.matched)}与「${workshop}」一致，已纳入`);
+  if (js.excluded.length) parts.push(`${js.excluded.map((x) => `「${x.file}」（${x.workshop}）`).join('、')}车间不一致，未纳入`);
+  if (js.unknown.length) parts.push(`上游 JSON 未注明车间，无法核对（${q(js.unknown)}），已照常纳入`);
+  return {
+    note: parts.length ? `上游 JSON 车间核对：${parts.join('；')}。` : null,
+    alert: js.excluded.length ? `【注意】上游 JSON${js.excluded.map((x) => `「${x.file}」的车间「${x.workshop}」`).join('、')}与 --workshop「${workshop}」不一致，未纳入本材料，请核对输入。` : null,
+  };
+}
+
 function loadAny(p) {
   if (!fs.existsSync(p)) throw new Error(`输入不存在: ${p}`);
   const st = fs.statSync(p);
@@ -193,10 +217,18 @@ function main() {
 
   // ---- 读入并抽取
   const sources = [], extracted = [];
+  const jsonScope = { matched: [], unknown: [], excluded: [] };   // 上游 JSON 车间核对 → outline.json meta.upstreamWorkshop
+  const seenWs = new Map();                                       // 未给 --workshop 时，检查各上游 JSON 车间是否一致
   for (const p of inputs) {
     for (const got of loadAny(p)) {
       if (got.kind === 'json') {
+        const wl = warnings.length;
         const e = extractFromJson(got.name, got.data);
+        if (e && a.workshop && !jsonInScope(got.name, got.data, a.workshop, jsonScope)) {
+          warnings.splice(wl, warnings.length - wl - 1);   // 不纳入的来源：丢掉抽取时产生的提示，只留车间不一致的 warning
+          continue;
+        }
+        if (e && !a.workshop && jsonWorkshop(got.data)) seenWs.set(got.name, jsonWorkshop(got.data));
         if (e) { extracted.push(e); sources.push(`${got.name}→${e.type}`); }
         else { warnings.push(`${got.name} 无法识别为已知的上游 JSON，已忽略`); }
       } else if (got.kind === 'md') {
@@ -208,7 +240,12 @@ function main() {
       }
     }
   }
-  if (!extracted.length) throw new Error('未能从输入中抽取到任何可用要点（支持上游技能 JSON 与 .md 报表）');
+  if (!extracted.length) throw new Error(`未能从输入中抽取到任何可用要点（支持上游技能 JSON 与 .md 报表）${jsonScope.excluded.length ? `；另有 ${jsonScope.excluded.length} 份上游 JSON 因车间与 --workshop 不一致未纳入` : ''}`);
+  const wsList = [...seenWs.values()];
+  if (!a.workshop && wsList.some((w) => !C.sameWorkshop(w, wsList[0]))) {
+    warnings.push(`【注意】所给上游 JSON 的车间不一致（${[...seenWs].map(([f, w]) => `${f}：${w}`).join('、')}），未给 --workshop 无法核对，请确认是否混入了其他车间的数据`);
+  }
+  const jsNote = a.workshop ? jsonScopeNote(jsonScope, a.workshop) : { note: null, alert: null };
 
   // ---- 议题与要点
   const topics = a.topics ? a.topics.split(/[,，]/).map((x) => x.trim()).filter(Boolean) : null;
@@ -285,7 +322,7 @@ function main() {
   C.ensureDir(outDir);
   const outline = {
     meta: { meeting: a.meeting, audience: a.audience, audienceName, audienceCn, audienceSpec: spec.desc, detail: spec.detail, hideTags: !!a['hide-tags'], duration,
-      weights, weightsSource, workshop: a.workshop || null, sources, generatedAt: C.localDateTime() },
+      weights, weightsSource, workshop: a.workshop || null, sources, generatedAt: C.localDateTime(), upstreamWorkshop: a.workshop ? jsonScope : null },
     counts, keyPoints, metrics: allMetrics, issues: allIssues, doneItems,
     needDecision, pending, noData, timeAllocation, slides, warnings,
   };
@@ -294,8 +331,10 @@ function main() {
   const L = [];
   L.push(`# ${a.meeting}　汇报稿`);
   L.push('');
+  if (jsNote.alert) { L.push(`> **${jsNote.alert}**`); L.push(''); }
   L.push(`${a.workshop ? a.workshop + '　｜　' : ''}听众：${audienceCn}（${spec.desc}）　｜　时长：${duration} 分钟`);
   L.push(`数据来源：${sources.join('、')}`);
+  if (jsNote.note) L.push(jsNote.note);
   L.push(`生成时间：${C.localDateTime()}（北京时间）`);
   L.push('');
   L.push('## 一、开场（一句话结论）');
@@ -371,6 +410,7 @@ function main() {
   const O = [];
   O.push(`# ${a.meeting}　要点提纲`);
   O.push('');
+  if (jsNote.alert) { O.push(`> **${jsNote.alert}**`); O.push(''); }
   O.push(`听众：${audienceCn}　｜　时长：${duration} 分钟　｜　时间权重：${weightsSource}`);
   O.push('');
   O.push('## 时间分配建议');

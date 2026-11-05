@@ -38,7 +38,7 @@ metadata:
 取数后：
 
 1. 工具返回下载链接（60 分钟内有效，过期重新调用）。csv 按原文件名放进新建的空目录，不改文件名，不与其他技能的文件混放；把目录作为“交给脚本”一列的参数值。
-2. 四个工具都要填 `workshop`：导出表里没有车间列，不填会把别的车间的设备和单据算进本车间的完好率、及时率。
+2. 四个工具都要填 `workshop`：脚本只在输入带车间列时按 `--workshop` 核对（剔除其他车间的行；车间列全不一致时不筛并在报告开头提示）；MCP 导出多数不带车间列，取数时仍必须带 `workshop`，不填会把别的车间的设备和单据算进本车间的完好率、及时率。
 3. `get_work_orders`、`get_notifications`：输出表名为「工单台账」「缺陷台账」；**不填 `start_date`**，默认返回近 12 个月及全部未关闭的单据。工具按创建/发现日期筛选，填了起始日会漏掉统计期之前创建、要求完成日期落在统计期内的工单（工单及时率分母变小），以及统计期之前发现、至今未闭环的缺陷。
 4. 备机完好率、密封点泄漏率、非计划停工、特护设备没有对应的直接导出，报告写「未提供」；需要时先跑 `standby-rotation-reminder`、`leak-point-tracker` 或逐日 `equipment-daily-report`，把产出 JSON 一并传给 `--input`。
 
@@ -53,6 +53,7 @@ metadata:
    - 区间内有缺失日期：warning 列出缺失日期，指标注明"基于 N 天数据（应为 M 天）"，**绝不按已有天数平均后外推补齐**。
    - 设备台账缺「在用」列：设备完好率输出 null（显示 —）并说明原因，**不得按在册台数算**；只有用户明确给 `--intact-denominator 在册` 才按在册计算。
    - 未提供某类表（备机、密封点统计、停工记录、特护设备）：对应指标写"未提供"，不估算。
+   - 车间范围：表格带「车间 / 所属车间 / 属地车间 / 运行部」列时，剔除其他车间的行并 warning，口径写在报告开头「车间范围：」一行（`meta.workshopScope`）；车间列全不一致时不筛，报告开头有【注意】，多半是传错了文件，须向用户确认。「维护工厂」不当车间列。daily.json / leaks.json / rotation.json 与 `--prev`、`--yoy` 的 `meta.workshop` 与 `--workshop` 不一致时不纳入并 warning（`meta.upstreamWorkshop`），未注明车间的照常纳入并注明无法核对。
    - 历史区间（`--to` 早于今天）：缺陷台账的期末未闭环按发现时间、闭环时间回推到 `--to`（`--to` 之后发现的不计，`--to` 之后才闭环的仍算未闭环），`defects.foundAfterTo` 给出被排除条数；待验收没有状态变更日期，按当前状态计，`defects.asOfNote` 注明。设备完好率、主要设备完好率来自台账当前状态，`metrics.intactSnapshotNote` 注明不是 `--to` 时点；环比、同比基准期报告若生成日晚于其期末，`compare.*.snapshotNote` 注明基准期完好率是生成时的快照。向用户交付时转述这几条说明。
 3. **读取 periodic.json** —— 从 `<输出目录>/periodic.json` 获取：`metrics`（完好率、主要设备完好率、备机完好率、静/动密封点泄漏率、检修计划完成率及分列、工单及时率、MTTR、故障停机时长与次数、非计划停工次数、`modes` 各指标计算方式）、`failures`、`maintenance`（含 `byCategory`）、`orders`、`defects`、`spare`、`special`、`standby`、`seal`、`leakPoints`、`shutdown`、`highlights`（超期工单带 `no` / `tag` / `unit`，责任方写工作中心）、`compare`、`dataGaps`（`missingDates` / `noDenominator` / `notProvided` / `recompute`）、`counts`。
 4. **撰写"设备管理分析"** —— 读 `references/metrics-rules.md` 的表述口径，撰写 400~600 字，按"总体评价 → 关键指标与环比同比 → 特护设备与故障分布 → 检修计划执行（大检修/日常维修分述） → 工单与缺陷 → 备件消耗 → 存在问题 → 下期重点"结构，替换 `periodic.md` 中 `<!-- ANALYSIS_START -->` 与 `<!-- ANALYSIS_END -->` 之间的占位文字。**所有指标引用 periodic.json；指标变化的原因只在数据支持时陈述，否则写"原因待分析"；分母缺失或需复算的指标写"未计算"。**

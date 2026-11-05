@@ -76,7 +76,7 @@ ok(!/\| 新增缺陷 \| 0 \|/.test(r.md), 'B10 未出现 0 值伪装成真实数
 
 // ============ C. 上游 JSON 对接 ============
 const ST = mkj('status.json', {
-  meta: { workshop: 'X', date: DATE }, counts: { equipment: 7, normal: 4, abnormal: 2, unknown: 1, missed: 2 },
+  meta: { workshop: '测试车间', date: DATE }, counts: { equipment: 7, normal: 4, abnormal: 2, unknown: 1, missed: 2 },
   byEquipment: [{ tag: 'P-01', state: 'normal' }],
   abnormal: [{ tag: 'P-02', name: '泵2', desc: '机封漏', area: '一区', discipline: '动设备' },
     { tag: 'P-05', name: '泵5', desc: '振动高', area: '二区', discipline: '动设备' }],
@@ -275,7 +275,7 @@ ok(r.j.warnings.some((w) => w.includes('三档')), 'K12 三档来源有 warning'
 ok(/\| 备用 \| —（未提供） \|/.test(r.md), 'K13 md 显示未提供');
 // 新版 inspection-data-digest 的 status.json 带 counts.sixTier 与 byEquipment[].special：直接用六档、特护逐台
 const ST6 = mkj('status6.json', {
-  meta: { workshop: 'X', date: DATE }, counts: { equipment: 4, normal: 2, abnormal: 1, unknown: 0, missed: 0, special: 2, specialAbnormal: 1, sixTier: { 运行: 2, 备用: 1, 检修: 0, 停用: 0, 异常: 1, 未判定: 0 } },
+  meta: { workshop: '测试车间', date: DATE }, counts: { equipment: 4, normal: 2, abnormal: 1, unknown: 0, missed: 0, special: 2, specialAbnormal: 1, sixTier: { 运行: 2, 备用: 1, 检修: 0, 停用: 0, 异常: 1, 未判定: 0 } },
   byEquipment: [{ tag: 'P-01', name: '泵1', special: true, state: 'abnormal', stateCn: '异常' }, { tag: 'K-01', name: '压缩机', special: true, state: 'normal', stateCn: '运行' },
     { tag: 'P-02', name: '泵2', special: false, state: 'normal', stateCn: '备用' }, { tag: 'P-03', name: '泵3', special: false, state: 'normal', stateCn: '运行' }],
   abnormal: [{ tag: 'P-01', name: '泵1', desc: '振动 7.3 报警' }],
@@ -442,6 +442,106 @@ eq(r.s.counts.maintProjects, 2, 'S2 「检修作业清单」仍按检修进度�
 const D3 = mk('permit-list.xlsx', { '作业票清单': [['许可证编号', '作业类别', '属地监护人'], ['YH-9', '用火作业', '王']] });
 r = run(D3, [], 'permit-list');
 eq(r.s.counts.permits, 1, 'S3 「作业票清单」可识别为作业票');
+
+// ---- T. 车间范围核对（D007）：表格带车间列时剔除其他车间的行；上游 JSON 车间不一致不纳入
+const OTHER = '二车间';
+const WS = mk('ws-mixed.xlsx', {
+  '巡检汇总': [['位号', '设备名称', '状态', '异常描述', '车间'],
+    ['P-01', '泵1', '运行', '', '测试车间'], ['P-02', '泵2', '异常', '漏', '测试'], ['P-03', '泵3', '运行', '', ''],
+    ['P-91', '外泵1', '异常', '外车间漏', OTHER], ['P-92', '外泵2', '异常', '外车间漏', OTHER]],
+  '特护设备': [['位号', '设备名称', '状态', '运行参数', '车间'], ['K-1', '压缩机', '运行', '', '测试车间'], ['K-9', '外压缩机', '异常', '', OTHER]],
+  '缺陷台账': [['位号', '设备名称', '缺陷描述', '等级', '状态', '发现时间', '车间'],
+    ['P-01', '泵1', '漏', 'II 级', '待处理', DATE, '测试车间'], ['P-91', '外泵1', '漏', 'II 级', '待处理', DATE, OTHER]],
+  '工单台账': [['工单号', '位号', '缺陷描述', '状态', '要求完成时间', '责任人', '车间'],
+    ['WO-1', 'P-01', '换机封', '施工中', '2026-09-19', '一队', '测试车间'], ['WO-9', 'P-91', '外车间', '施工中', '2026-09-19', '一队', OTHER]],
+  '作业票': [['许可证编号', '作业类别', '属地监护人', '车间'], ['YH-1', '用火作业', '王', '测试车间'], ['YH-9', '用火作业', '李', OTHER]],
+  '泄漏点': [['密封点编号', '位号', '状态', '发现时间', '整改期限', '车间'],
+    ['LD-1', 'P-01', '未修复', DATE, '2026-09-30', '测试车间'], ['LD-9', 'P-91', '未修复', DATE, '2026-09-30', OTHER]],
+  '隐患台账': [['隐患编号', '隐患描述', '等级', '整改期限', '整改状态', '车间'],
+    ['H1', '栏杆缺失', '一般', '2026-09-30', '整改中', '测试车间'], ['H9', '外车间隐患', '一般', '2026-09-30', '整改中', OTHER]],
+  '异常事件': [['时间', '位号', '事件描述', '状态', '车间'], [`${DATE} 08:00`, 'P-01', '跳停', '处理中', '测试车间'], [`${DATE} 09:00`, 'P-91', '外车间跳停', '处理中', OTHER]],
+  '检修进度': [['项目名称', '位号', '状态', '完成比例', '车间'], ['换机封', 'P-01', '施工中', 50, '测试车间'], ['外车间项目', 'P-91', '施工中', 50, OTHER]],
+});
+r = run(WS, [], 'ws-mixed');
+const sc = (name) => (r.j.meta.workshopScope || []).find((x) => x.sheet.endsWith('/' + name)) || {};
+eq(r.s.ok, true, 'T1 两车间混合输入可运行');
+eq(r.s.counts.equipment, 3, 'T2 巡检汇总只保留本车间（含「测试」写法与车间列为空的行），剔除二车间 2 行');
+eq(r.s.counts.abnormal, 1, 'T3 异常数只含本车间');
+ok(!/P-91/.test(r.md), 'T4 其他车间设备不出现在日报');
+ok(r.j.warnings.some((w) => w.includes('巡检汇总') && w.includes('剔除其他车间 2 行') && w.includes(OTHER)), 'T5 剔除行数与车间名写进 warning');
+eq(sc('巡检汇总').status, 'checked', 'T6 meta.workshopScope 记录巡检汇总已核对');
+eq(sc('巡检汇总').droppedRows, 2, 'T7 meta.workshopScope 记剔除行数');
+eq((sc('巡检汇总').dropped || {})[OTHER], 2, 'T8 meta.workshopScope 记剔除车间名');
+eq(sc('巡检汇总').blank, 1, 'T9 车间列为空的行保留并计数');
+ok(r.j.warnings.some((w) => w.includes('巡检汇总') && w.includes('车间列为空 1 行')), 'T10 车间列为空有 warning');
+ok(/车间范围：已按车间列核对「测试车间」/.test(r.md) && /「ws-mixed\.xlsx\/巡检汇总」2 行（二车间 2 行）/.test(r.md), 'T11 md 口径处写明剔除情况');
+ok(!/【注意】/.test(r.md.split('## 一、')[0]), 'T12 部分剔除时开头不加【注意】');
+eq(r.s.counts.specialEquipment, 1, 'T13 特护设备表剔除其他车间');
+eq(r.s.counts.newDefects, 1, 'T14 缺陷台账剔除其他车间');
+eq(r.s.counts.openOrders, 1, 'T15 工单台账剔除其他车间');
+eq(r.s.counts.permits, 1, 'T16 作业票剔除其他车间');
+eq(r.s.counts.openLeaks, 1, 'T17 泄漏点剔除其他车间');
+eq(r.s.counts.hazards, 1, 'T18 隐患台账剔除其他车间');
+eq(r.s.counts.events, 1, 'T19 异常事件剔除其他车间');
+eq(r.s.counts.maintProjects, 1, 'T20 检修进度剔除其他车间');
+eq((r.j.meta.workshopScope || []).length, 9, 'T21 九张主表各自核对');
+// 车间列全不一致：不筛，warning 与 md 开头【注意】
+const WSX = mk('ws-mismatch.xlsx', { '巡检汇总': [['位号', '设备名称', '状态', '车间'], ['P-91', '外泵1', '运行', OTHER], ['P-92', '外泵2', '异常', OTHER]] });
+r = run(WSX, [], 'ws-mismatch');
+eq(r.s.counts.equipment, 2, 'T22 车间列全不一致时不筛');
+eq(sc('巡检汇总').status, 'mismatch', 'T23 meta.workshopScope 记 mismatch');
+ok(r.j.warnings.some((w) => w.startsWith('【注意】') && w.includes(OTHER)), 'T24 warning 以【注意】开头');
+ok(/【注意】.*车间列取值与 --workshop「测试车间」不一致，未按车间筛选，请核对输入/.test(r.md.split('## 一、')[0]), 'T25 md 标题后、第一节前有【注意】');
+// 无车间列：不筛，口径写「以取数条件为准」
+r = run(ONLY, [], 'ws-nocol');
+eq(sc('巡检汇总').status, 'noColumn', 'T26 无车间列 status=noColumn');
+ok(/车间范围：输入未含车间列，车间范围以取数条件为准。/.test(r.md), 'T27 md 口径写明以取数条件为准');
+// 维护工厂不是车间列
+const WSF = mk('ws-plant.xlsx', { '巡检汇总': [['位号', '设备名称', '状态', '维护工厂'], ['P-01', '泵1', '运行', '1100'], ['P-02', '泵2', '运行', '1200']] });
+r = run(WSF, [], 'ws-plant');
+eq(sc('巡检汇总').status, 'noColumn', 'T28 「维护工厂」列不当车间列');
+eq(r.s.counts.equipment, 2, 'T29 维护工厂列不参与筛选');
+// 「所属车间」可识别；「车间监护人」不当车间列，也不抢属地监护人的列
+const WSO = mk('ws-alias.xlsx', {
+  '巡检汇总': [['位号', '设备名称', '状态', '所属车间'], ['P-01', '泵1', '运行', '测试车间'], ['P-91', '外泵', '运行', OTHER]],
+  '作业票': [['许可证编号', '作业类别', '车间监护人'], ['YH-1', '用火作业', '王']],
+});
+r = run(WSO, [], 'ws-alias');
+eq(sc('巡检汇总').column, '所属车间', 'T30 「所属车间」列认作车间列');
+eq(r.s.counts.equipment, 1, 'T31 按「所属车间」剔除其他车间');
+eq(r.j.permits.noGuardian, 0, 'T32 加车间列后「车间监护人」仍归属地监护人');
+eq(sc('作业票').status, 'noColumn', 'T33 「车间监护人」不当车间列');
+const WSG = mk('ws-guard.xlsx', { '作业票': [['许可证编号', '作业类别', '属地监护人', '车间监护人'], ['YH-1', '用火作业', '王', '李']] });
+r = run(WSG, [], 'ws-guard');
+eq(sc('作业票').status, 'noColumn', 'T34 属地监护人与车间监护人并存时，车间监护人不当车间列');
+ok(!/【注意】/.test(r.md), 'T35 人员列不触发车间不一致提示');
+// 上游 JSON：一致纳入、不一致不纳入、未注明照常纳入并说明；新增的 meta.workshopScope 不影响读取
+const STO = mkj('status-other.json', { meta: { workshop: OTHER, date: DATE }, counts: { equipment: 9, normal: 9, abnormal: 0, unknown: 0 }, byEquipment: [], abnormal: [] });
+r = run([STO, ORD].join(','), [], 'ws-json-mismatch');
+eq(r.s.ok, true, 'T36 上游 JSON 车间不一致时仍可运行');
+eq(r.s.counts.equipment, null, 'T37 车间不一致的 status.json 不纳入');
+ok(!r.s.sources.some((x) => x.includes('status-other')), 'T38 不纳入的 JSON 不进数据来源');
+ok(r.j.warnings.some((w) => w.includes('status-other.json') && w.includes(OTHER) && w.includes('测试车间')), 'T39 warning 写明文件名与两个车间名');
+eq((((r.j.meta.upstreamWorkshop || {}).excluded || [])[0] || {}).file, 'status-other.json', 'T40 meta.upstreamWorkshop 记不纳入的来源');
+ok(/【注意】上游 JSON「status-other\.json」的车间「二车间」/.test(r.md.split('## 一、')[0]), 'T41 md 开头提示有上游 JSON 未纳入');
+ok(/上游 JSON 未注明车间，无法核对（「orders\.json」）/.test(r.md), 'T42 无车间字段的 JSON 照常纳入并在口径处说明');
+eq(r.s.counts.overdueOrders, 3, 'T43 无车间字段的 orders.json 照常纳入');
+const STW = mkj('status-ws.json', { meta: { workshop: '测试', date: DATE, workshopScope: [{ sheet: 'x/巡检记录', status: 'checked', droppedRows: 1 }] }, counts: { equipment: 5, normal: 5, abnormal: 0, unknown: 0 }, byEquipment: [], abnormal: [] });
+r = run(STW, [], 'ws-json-scope');
+eq(r.s.counts.equipment, 5, 'T44 带 meta.workshopScope 的上游 JSON 正常读取（车间写法「测试」视同一致）');
+ok(/「status-ws\.json」与「测试车间」一致，已纳入/.test(r.md), 'T45 口径写明一致纳入');
+const STT = mkj('status-top.json', { workshop: OTHER, counts: { equipment: 5, normal: 5, abnormal: 0, unknown: 0 }, byEquipment: [], abnormal: [] });
+r = run([STT, ORD].join(','), [], 'ws-json-top');
+eq(r.s.counts.equipment, null, 'T46 无 meta.workshop 时取顶层 workshop 核对');
+// --prev 上一日 daily.json 车间不一致：不做环比
+r = run(WS, [], 'ws-prev-src');
+const wsPrev = JSON.parse(fs.readFileSync(path.join(r.out, 'daily.json'), 'utf8'));
+ok(Array.isArray(wsPrev.meta.workshopScope), 'T47 daily.json 输出 meta.workshopScope 数组');
+wsPrev.meta.workshop = OTHER;
+const wsPrevPath = mkj('prev-other.json', wsPrev);
+r = run(FULL, ['--prev', wsPrevPath], 'ws-prev');
+eq(r.j.compare, null, 'T48 上一日 daily.json 车间不一致不做环比');
+ok(r.j.warnings.some((w) => w.includes('prev-other.json') && w.includes('不一致')), 'T49 上一日车间不一致有 warning');
 
 console.log(`\n${'='.repeat(56)}`);
 console.log(`equipment-daily-report 自测：${pass} 通过，${fail} 失败`);

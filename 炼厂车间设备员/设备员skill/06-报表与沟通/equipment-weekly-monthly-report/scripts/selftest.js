@@ -726,6 +726,94 @@ eq(gi(r.j.compare.prev, 'staticLeakRate').delta, null, 'N69 基准期无该指�
   eq(r.j.orders.overdueList[0].workCenter, '检维修中心动设备班', 'V3 overdueList 带 workCenter');
 }
 
+// ---- W. 车间范围核对（D007）：表格带车间列时剔除其他车间的行；上游 JSON 车间不一致不纳入
+{
+  const OT = '二车间';
+  const scOf = (r, name) => ((r.j && r.j.meta.workshopScope) || []).find((x) => x.sheet.endsWith('/' + name)) || {};
+  const W1 = mk('ws-mixed.xlsx', {
+    '设备台账': [['位号', '在用', '完好', '车间'],
+      ['EQ-1', '是', '完好', '测试车间'], ['EQ-2', '是', '完好', '测试'], ['EQ-3', '是', '非完好', ''],
+      ['EQ-91', '是', '非完好', OT], ['EQ-92', '是', '非完好', OT], ['EQ-93', '是', '非完好', OT]],
+    '故障记录': [['位号', '故障描述', '故障时间', '停机时长', '修复时长', '车间'], ['P-1', '漏', D(1), 2, 1, '测试车间'], ['P-91', '外车间漏', D(1), 9, 9, OT]],
+    '检修计划': [['项目名称', '位号', '状态', '计划完成', '实际完成', '车间'], ['项目1', 'P-1', '已完成', D(1), D(1), '测试车间'], ['外车间项目', 'P-91', '未开工', D(2), '', OT]],
+    '工单台账': [['工单号', '位号', '状态', '要求完成时间', '闭环时间', '车间'], ['WO-1', 'P-1', '已闭环', D(1), D(1), '测试车间'], ['WO-91', 'P-91', '施工中', D(1), '', OT]],
+    '缺陷台账': [['位号', '缺陷描述', '状态', '发现时间', '车间'], ['P-1', '漏', '待处理', D(1), '测试车间'], ['P-91', '外车间漏', '待处理', D(1), OT]],
+    '备件消耗': [['备件名称', '数量', '金额', '车间'], ['机封', 1, 100, '测试车间'], ['外车间备件', 1, 9000, OT]],
+    '特护设备': [['位号', '设备名称', '状态', '车间'], ['K-1', '压缩机', '运行', '测试车间'], ['K-91', '外压缩机', '运行', OT]],
+    '备机': [['位号', '设备名称', '状态', '是否可投用', '车间'], ['P-1B', '泵B', '备用', '是', '测试车间'], ['P-91B', '外泵B', '备用', '否', OT]],
+    '密封点统计': [['密封点类型', '密封点总数', '泄漏点数', '车间'], ['静密封点', 1000, 1, '测试车间'], ['静密封点', 5000, 50, OT], ['动密封点', 100, 0, '测试车间']],
+    '停工记录': [['停工时间', '停工类别', '原因', '车间'], [D(1), '非计划', '跳电', '测试车间'], [D(2), '非计划', '外车间停工', OT]],
+  });
+  let r = run(W1, [], 'ws-mixed');
+  eq(r.s.ok, true, 'W1 两车间混合输入可运行');
+  eq(r.s.metrics.intactTotal, 3, 'W2 设备台账只保留本车间（含「测试」写法与车间列为空的行），剔除二车间 3 台');
+  eq(r.s.metrics.intactRate, 66.7, 'W3 完好率只按本车间算（2/3）');
+  ok(r.j.warnings.some((w) => w.includes('设备台账') && w.includes('剔除其他车间 3 行') && w.includes(OT)), 'W4 剔除行数与车间名写进 warning');
+  eq(scOf(r, '设备台账').status, 'checked', 'W5 meta.workshopScope 记设备台账已核对');
+  eq(scOf(r, '设备台账').droppedRows, 3, 'W6 meta.workshopScope 记剔除行数');
+  eq((scOf(r, '设备台账').dropped || {})[OT], 3, 'W7 meta.workshopScope 记剔除车间名');
+  eq(scOf(r, '设备台账').blank, 1, 'W8 车间列为空的行保留并计数');
+  ok(r.j.warnings.some((w) => w.includes('设备台账') && w.includes('车间列为空 1 行')), 'W9 车间列为空有 warning');
+  ok(/车间范围：已按车间列核对「测试车间」/.test(r.md) && /「ws-mixed\.xlsx\/设备台账」3 行（二车间 3 行）/.test(r.md), 'W10 md 口径处写明剔除情况');
+  ok(!/【注意】/.test(r.md.split('## 一、')[0]), 'W11 部分剔除时开头不加【注意】');
+  eq(r.s.counts.faults, 1, 'W12 故障记录剔除其他车间');
+  eq(r.s.metrics.planTotal, 1, 'W13 检修计划剔除其他车间');
+  eq(r.s.metrics.orderDue, 1, 'W14 工单台账剔除其他车间');
+  eq(r.s.counts.newDefects, 1, 'W15 缺陷台账剔除其他车间');
+  eq(r.j.spare.totalAmount, 100, 'W16 备件消耗剔除其他车间');
+  eq(r.s.counts.specialEquipment, 1, 'W17 特护设备剔除其他车间');
+  eq(r.s.metrics.standbyRate, 100, 'W18 备机剔除其他车间');
+  eq(r.s.metrics.staticLeakRate, 1, 'W19 密封点统计剔除其他车间行（1/1000）');
+  eq(r.s.metrics.unplannedShutdowns, 1, 'W20 停工记录剔除其他车间');
+  eq((r.j.meta.workshopScope || []).length, 10, 'W21 十张主表各自核对');
+  const SPX = mk('ws-spare.xlsx', { '备件消耗': [['备件名称', '数量', '金额', '车间'], ['机封', 1, 100, '测试车间'], ['外车间备件', 1, 9000, OT]] });
+  r = run(FULL, ['--spare', SPX], 'ws-spare');
+  eq(r.j.spare.totalAmount, 100, 'W22 --spare 备件消耗表也按车间剔除');
+  // 车间列全不一致：不筛，warning 与 md 开头【注意】
+  const W2 = mk('ws-mismatch.xlsx', { '设备台账': [['位号', '在用', '完好', '车间'], ['EQ-91', '是', '完好', OT], ['EQ-92', '是', '非完好', OT]] });
+  r = run(W2, [], 'ws-mismatch');
+  eq(r.s.metrics.intactTotal, 2, 'W23 车间列全不一致时不筛');
+  eq(scOf(r, '设备台账').status, 'mismatch', 'W24 meta.workshopScope 记 mismatch');
+  ok(r.j.warnings.some((w) => w.startsWith('【注意】') && w.includes(OT)), 'W25 warning 以【注意】开头');
+  ok(/【注意】.*车间列取值与 --workshop「测试车间」不一致，未按车间筛选，请核对输入/.test(r.md.split('## 一、')[0]), 'W26 md 标题后、第一节前有【注意】');
+  // 无车间列
+  r = run(FULL, [], 'ws-nocol');
+  eq(scOf(r, '设备台账').status, 'noColumn', 'W27 无车间列 status=noColumn');
+  ok(/车间范围：输入未含车间列，车间范围以取数条件为准。/.test(r.md), 'W28 md 口径写明以取数条件为准');
+  // 维护工厂不是车间列
+  const W3 = mk('ws-plant.xlsx', { '设备台账': [['位号', '在用', '完好', '维护工厂'], ['EQ-1', '是', '完好', '1100'], ['EQ-2', '是', '完好', '1200']] });
+  r = run(W3, [], 'ws-plant');
+  eq(scOf(r, '设备台账').status, 'noColumn', 'W29 「维护工厂」列不当车间列');
+  eq(r.s.metrics.intactTotal, 2, 'W30 维护工厂列不参与筛选');
+  // 上游 JSON：日报 / leaks.json / rotation.json 车间不一致不纳入；未注明车间照常纳入并说明；带 meta.workshopScope 照常读取
+  const WD = mkDailyDir('ws-daily', [0, 1, 2], (o, i) => { if (i === 2) o.meta.workshop = OT; if (i === 1) o.meta.workshopScope = [{ sheet: 'x/巡检汇总', status: 'checked', droppedRows: 2 }]; });
+  r = run(WD, [], 'ws-daily');
+  eq(r.s.counts.dailyFiles, 2, 'W31 车间不一致的日报不纳入，带 meta.workshopScope 的日报照常纳入');
+  ok(r.j.warnings.some((w) => w.includes(`daily-${D(2)}.json`) && w.includes(OT) && w.includes('测试车间')), 'W32 warning 写明文件名与两个车间名');
+  eq((((r.j.meta.upstreamWorkshop || {}).excluded || [])[0] || {}).file, `daily-${D(2)}.json`, 'W33 meta.upstreamWorkshop 记不纳入的来源');
+  ok(/【注意】上游 JSON「daily-2026-09-16\.json」的车间「二车间」/.test(r.md.split('## 一、')[0]), 'W34 md 开头提示有上游 JSON 未纳入');
+  ok(/上游 JSON 车间核对：「daily-2026-09-14\.json」、「daily-2026-09-15\.json」与「测试车间」一致，已纳入/.test(r.md), 'W35 口径写明一致纳入');
+  const LKO = path.join(work, 'leaks-other.json');
+  fs.writeFileSync(LKO, JSON.stringify({ meta: { workshop: OT }, counts: { leaks: 3, open: 2, overdue: 1, repaired: 1 }, repaired: [], metrics: {} }));
+  const ROTO = path.join(work, 'rotation-other.json');
+  fs.writeFileSync(ROTO, JSON.stringify({ meta: { workshop: OT }, standbyAvailability: { pairs: 10, available: 8, statusMissing: 0, statusUnknown: 0, rate: 80 } }));
+  r = run([LKO, ROTO, LEAKS2, FULL].join(','), [], 'ws-json');
+  eq(r.s.counts.leakOpen, 2, 'W36 车间不一致的 leaks.json 不纳入，改用未注明车间的 leaks2.json');
+  ok(!r.s.sources.some((x) => /leaks-other|rotation-other/.test(x)), 'W37 车间不一致的 leaks.json / rotation.json 不进数据来源');
+  eq(r.s.metrics.standbyRate, null, 'W38 车间不一致的 rotation.json 不作备机完好率来源');
+  ok(/上游 JSON 未注明车间，无法核对（「leaks2\.json」），已照常纳入/.test(r.md), 'W39 无车间字段的 JSON 照常纳入并在口径处说明');
+  // --prev 基准期车间不一致：不做环比
+  r = run(FULL, [], 'ws-prev-src');
+  const pj = JSON.parse(fs.readFileSync(path.join(r.out, 'periodic.json'), 'utf8'));
+  ok(Array.isArray(pj.meta.workshopScope), 'W40 periodic.json 输出 meta.workshopScope 数组');
+  pj.meta.workshop = OT;
+  const PO = path.join(work, 'prev-other.json');
+  fs.writeFileSync(PO, JSON.stringify(pj));
+  r = run(FULL, ['--prev', PO], 'ws-prev');
+  eq(r.j.compare, null, 'W41 基准期 periodic.json 车间不一致不做环比');
+  ok(r.j.warnings.some((w) => w.includes('prev-other.json') && w.includes('不一致')), 'W42 基准期车间不一致有 warning');
+}
+
 console.log(`\n${'='.repeat(56)}`);
 console.log(`equipment-weekly-monthly-report 自测：${pass} 通过，${fail} 失败`);
 if (failures.length) { console.log('\n失败项：'); failures.forEach((f) => console.log('  ✗ ' + f)); }

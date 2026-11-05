@@ -46,6 +46,28 @@ const ALIASES = C.mergeAliases({
 });
 ALIASES['设备名称'] = ALIASES['设备名称'].filter((x) => x !== '描述');
 
+// ---- 车间范围核对（D007）：本次记录、在修设备、上次交接未完成事项表带车间列时，按 --workshop 剔除其他车间的行
+// 车间列只认 车间 / 所属车间 / 属地车间 / 运行部（共享别名里的维护工厂、属地单位、使用单位不当车间列）；
+// 「车间」放在各表 optional 末尾，前缀匹配时不抢「车间监护人」等别的字段的列
+ALIASES['车间'] = C.WORKSHOP_COLS.slice();
+/** 核对上下文：main() 里填入 --workshop；各表核对结果收进 scopes → meta.workshopScope */
+const WS = { workshop: null, scopes: [] };
+/** 「车间负责人」「车间监护人」这类人员列不当车间列 */
+const NOT_WORKSHOP_COL = /(人|员|长|签字|签名|电话|意见)$/;
+function scopeRows(recs, sheet, workshop = WS.workshop, scopes = WS.scopes) {
+  const col = recs.hasCol && recs.hasCol('车间') ? recs.colName('车间') : null;
+  let input = recs;
+  if (col && NOT_WORKSHOP_COL.test(col)) {
+    input = recs.slice();
+    input.hasCol = (n) => n !== '车间' && recs.hasCol(n);
+    input.colName = (n) => (n === '车间' ? null : recs.colName(n));
+  }
+  const { records, scope } = C.workshopScope(input, workshop, sheet, warnings);
+  if (input !== recs) scope.ignoredColumn = col;
+  scopes.push(scope);
+  return records;
+}
+
 // ---------------------------------------------------------------- 取值归一
 const TYPE_MAP = [
   { key: 'statusChange', words: ['状态变化', '状态变更', '开停', '切换', '投用', '停运', '状态'] },
@@ -154,8 +176,8 @@ function readCurrent(inputs) {
     found = true;
     srcs.push(path.basename(p));
     const sheetName = `${path.basename(p)}/本次记录`;
-    const recs = C.toRecords(rows, ['位号', '内容'], sheetName,
-      ['设备名称', '事项类型', '处理情况', '状态', '责任人', '要求完成时间', '时间'], warnings, ALIASES);
+    const recs = scopeRows(C.toRecords(rows, ['位号', '内容'], sheetName,
+      ['设备名称', '事项类型', '处理情况', '状态', '责任人', '要求完成时间', '时间', '车间'], warnings, ALIASES), sheetName);
     for (const r of recs) {
       const tag = C.str(r['位号']);
       const content = C.str(r['内容']);
@@ -191,7 +213,7 @@ function readInRepair(book, label) {
   const rows = C.pickSheet(book, '在修设备', '在修', '检修设备');
   if (!rows) return null;
   const sheetName = `${label}/在修设备`;
-  const recs = C.toRecords(rows, ['位号'], sheetName, ['设备名称', '当前状态', '工单号', '责任人', '预计完工'], warnings, ALIASES);
+  const recs = scopeRows(C.toRecords(rows, ['位号'], sheetName, ['设备名称', '当前状态', '工单号', '责任人', '预计完工', '车间'], warnings, ALIASES), sheetName);
   const list = [];
   for (const r of recs) {
     const tag = C.str(r['位号']);
@@ -221,6 +243,10 @@ function readPrev(p) {
     let j;
     try { j = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (e) { throw new Error(`上次交接记录解析失败: ${e.message}`); }
     const meta = j.meta || {};
+    // 上次交接 JSON 的车间与本次不一致：只提示不剔除（整份不纳入会漏掉结转，结转「绝不静默丢弃」优先）
+    if (C.str(meta.workshop) && WS.workshop && !C.sameWorkshop(meta.workshop, WS.workshop)) {
+      warnings.push(`【注意】上次交接记录「${path.basename(p)}」的车间为「${C.str(meta.workshop)}」，与 --workshop「${WS.workshop}」不一致，仍按上次交接核对结转，请确认是否传错了文件`);
+    }
     const shiftLabel = [meta.workshop, meta.type || meta.shift, meta.type && meta.shift ? meta.shift : ''].filter(Boolean).join(' ') || '上次交接';
     // pending 为该班全部未完成事项（含其自身结转项，见下）
     const list = Array.isArray(j.pending) ? j.pending : [];
@@ -247,7 +273,7 @@ function readPrev(p) {
   const rows = C.pickSheet(book, '未完成事项', '遗留事项', '待办事项', '交接事项');
   if (!rows) { warnings.push(`上次交接记录「${path.basename(p)}」中未找到「未完成事项」工作表，无法核对遗留项`); return out; }
   const sheetName = `${path.basename(p)}/未完成事项`;
-  const recs = C.toRecords(rows, ['位号', '内容'], sheetName, ['设备名称', '责任人', '要求完成时间', '班次'], warnings, { ...ALIASES, '班次': ['来源交接', '来源', '班次', '来源班次', '原班次', '交接来源'] });
+  const recs = scopeRows(C.toRecords(rows, ['位号', '内容'], sheetName, ['设备名称', '责任人', '要求完成时间', '班次', '车间'], warnings, { ...ALIASES, '班次': ['来源交接', '来源', '班次', '来源班次', '原班次', '交接来源'] }), sheetName);
   for (const r of recs) {
     const content = C.str(r['内容']);
     const tag = C.str(r['位号']);
@@ -289,6 +315,7 @@ function main() {
   const inputs = a.input.split(',').map((s) => s.trim()).filter(Boolean);
   for (const p of inputs) if (!fs.existsSync(p)) throw new Error(`输入不存在: ${p}`);
   const outDir = a.out || path.join(os.tmpdir(), 'shr-out');
+  WS.workshop = a.workshop;
 
   // ---- 本次记录
   const { items, sources } = readCurrent(inputs);
@@ -487,7 +514,7 @@ function main() {
       skill: 'shift-handover-record', workshop: a.workshop, type: a.type, shift: a.shift || a.type,
       handoverAt, handoverIso, by: a.by, to: a.to || null,
       sources, prevProvided: !!a.prev, generatedAt: C.localDateTime(),
-      declaration: DECL, verified: true,
+      declaration: DECL, verified: true, workshopScope: WS.scopes,
     },
     counts, statusChanges, abnormalHandled, inRepair,
     pending, carriedOver, prevClosed, focusItems,
@@ -498,6 +525,8 @@ function main() {
   const L = [];
   L.push(`# ${a.workshop} 设备员${a.type}记录${a.shift ? `（${a.shift}）` : ''}`);
   L.push('');
+  const wsNote = C.workshopScopeNote(WS.scopes, a.workshop);
+  if (wsNote.alert) { L.push(`> **${wsNote.alert}**`); L.push(''); }
   L.push(`> ${DECL}。本记录为车间设备员的工作交接（${a.type}），不是操作班组交接班。`);
   L.push('');
   L.push('## 一、交接信息');
@@ -507,6 +536,7 @@ function main() {
     ['交接时间', `${handoverAt}（北京时间，原始入参 ${handoverIso}）`],
     ['交接人', a.by], ['接手人', a.to || TBD],
     ['数据来源', sources.join('、') || '—'],
+    ...(wsNote.note ? [['车间范围', wsNote.note.replace(/^车间范围：/, '')]] : []),
     ['生成时间', `${C.localDateTime()}（北京时间）`],
   ]));
   L.push('## 二、设备状态变化');

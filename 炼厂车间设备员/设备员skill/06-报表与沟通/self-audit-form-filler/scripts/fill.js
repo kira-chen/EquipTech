@@ -206,6 +206,28 @@ function parseForm(p) {
 
 /* ================================================================== 二、台账数据装载 */
 
+// ---- 车间范围核对（D007）：数据表带车间列时按 --workshop 剔除其他车间的行（自查表模板本身不核对）
+/** 核对上下文：main() 里填入 --workshop；各表核对结果收进 scopes → meta.workshopScope */
+const WS = { workshop: null, scopes: [] };
+/** 「车间负责人」「车间监护人」这类人员列不当车间列 */
+const NOT_WORKSHOP_COL = /(人|员|长|签字|签名|电话|意见)$/;
+/**
+ * loadData 不走 toRecords，这里按同一口径找车间列（车间 / 所属车间 / 属地车间 / 运行部，全等优先、再前缀；
+ * 维护工厂等 SAP 工厂代码与人员列不算），交给 C.workshopScope 核对，返回保留的原记录
+ */
+function scopeTable(header, records, where) {
+  const exact = header.findIndex((h) => C.WORKSHOP_COLS.includes(h));
+  const j = exact >= 0 ? exact : header.findIndex((h) => h && C.WORKSHOP_COLS.some((c) => h.startsWith(c)) && !NOT_WORKSHOP_COL.test(h));
+  const col = j >= 0 ? header[j] : null;
+  const recs = records.map((r, i) => ({ _i: i, '车间': col ? r[col] : null }));
+  recs.hasCol = (n) => n === '车间' && !!col;
+  recs.colName = (n) => (n === '车间' ? col : null);
+  const { records: kept, scope } = C.workshopScope(recs, WS.workshop, where, warnings);
+  if (!col) { const person = header.find((h) => h && C.WORKSHOP_COLS.some((c) => h.startsWith(c))); if (person) scope.ignoredColumn = person; }
+  WS.scopes.push(scope);
+  return kept.map((x) => records[x._i]);
+}
+
 /**
  * 把每个数据文件的每张工作表读成一个「数据表」对象：
  *  { file, sheet, sourceKey, rows, headerRow, header, records }
@@ -243,7 +265,9 @@ function loadData(paths) {
       }
       const sourceKey = S.sheetSource(n) || S.sheetSource(src);
       if (!sourceKey) warnings.push(`台账「${src}/${n}」无法归入任何已知数据源类别，该表不会被自动取数（可在自查项中写明具体台账名后重试）`);
-      tables.push({ file: src, sheet: n, sourceKey, header, records, count: records.length });
+      // 只核对会被取数的表（能归入数据源类别的）；归不进类别的表不取数，不核对
+      const rowsIn = sourceKey ? scopeTable(header, records, `${src}/${n}`) : records;
+      tables.push({ file: src, sheet: n, sourceKey, header, records: rowsIn, count: rowsIn.length });
     }
   }
   if (!tables.length) throw new Error('所提供的台账与记录文件中没有任何可用数据表');
@@ -538,7 +562,9 @@ function main() {
 
   const dataPaths = String(a.data).split(',').map((x) => x.trim()).filter(Boolean);
   if (!dataPaths.length) throw new Error('--data 未提供任何有效路径');
+  WS.workshop = a.workshop;
   const tables = loadData(dataPaths);
+  const wsNote = C.workshopScopeNote(WS.scopes, a.workshop);
 
   /* ---- 表结构复杂度判定：合并单元格多 / 表头不在首行 → 要用户先确认 */
   const mergeCount = form.merges.length;
@@ -632,7 +658,7 @@ function main() {
       headerRow: form.headerRow >= 0 ? form.headerRow + 1 : null,
       writableCols: form.writable, neverWriteCols: NEVER_WRITE.filter((n) => form.cols[n] >= 0),
       needConfirm, complexReasons,
-      generatedAt: C.localDateTime(), statement: STATEMENT,
+      generatedAt: C.localDateTime(), statement: STATEMENT, workshopScope: WS.scopes,
     },
     counts, items: results, prefilled, needJudgment, noData, unparsed,
     dataTables: tables.map((t) => ({ file: t.file, sheet: t.sheet, source: t.sourceKey ? S.SOURCE_CN.get(t.sourceKey) : null, rows: t.count })),
@@ -695,6 +721,7 @@ function main() {
   const L = [];
   L.push(`# ${a.workshop} 自查表预填说明　${form.src}`);
   L.push('');
+  if (wsNote.alert) { L.push(`> **${wsNote.alert}**`); L.push(''); }
   if (needConfirm) { L.push(`> **${COMPLEX_ALERT}**`); L.push(''); L.push(`> 复杂之处：${complexReasons.join('；')}。`); L.push(''); }
   if (needJudgment.length) {
     L.push(`> **${JUDGMENT_ALERT}**`);
@@ -711,6 +738,7 @@ function main() {
     ['到期判定基准日', asOf],
     ['台账数据来源', result.meta.dataSources.join('、')],
     ['可用数据表', counts.dataTables],
+    ...(wsNote.note ? [['车间范围', wsNote.note.replace(/^车间范围：/, '')]] : []),
     ['上次自查表', a.last ? path.basename(a.last) : '—'],
     ['厂内填报要求', a.spec ? path.basename(a.spec) : '—'],
     ['表头所在行', result.meta.headerRow === null ? '—' : `第 ${result.meta.headerRow} 行`],

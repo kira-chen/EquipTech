@@ -447,6 +447,73 @@ for (const zone of ['UTC', 'Pacific/Kiritimati', 'America/Los_Angeles', 'Asia/Sh
   ok(pend.includes('P-54') && pend.includes('P-55'), `NEG8 「不完成」「不能投用」仍进未完成事项（实际 ${pend.join(',')}）`);
 }
 
+
+// ================================================================ WS. 车间范围核对（D007）：带车间列时剔除其他车间的行
+{
+  const OT = '二车间';
+  const HW = [...HDR, '车间'];
+  const scOf = (r, name) => ((r.ho && r.ho.meta.workshopScope) || []).find((x) => x.sheet.endsWith('/' + name)) || {};
+  const mixed = mk('ws-mixed.xlsx', {
+    '值班记录': [HW,
+      [`${D} 20:00`, 'P-01', '泵1', '异常处理', '机封渗漏', '已紧固', '未完成', '张', '', '测试车间'],
+      [`${D} 21:00`, 'P-02', '泵2', '异常处理', '轴承温高', '加油观察', '未完成', '李', '', '测试'],
+      [`${D} 21:30`, 'P-03', '泵3', '状态变化', '切换运行', '', '已完成', '张', '', ''],
+      [`${D} 22:00`, 'P-91', '外泵1', '异常处理', '外车间泄漏', '', '未完成', '王', '', OT],
+      [`${D} 22:30`, 'P-92', '外泵2', '异常处理', '外车间振动', '', '未完成', '王', '', OT]],
+    '在修设备': [['位号', '设备名称', '当前状态', '车间'], ['P-04', '泵4', '拆检中', '测试车间'], ['P-94', '外泵4', '拆检中', OT]],
+  });
+  let r = run(mixed, [], 'ws-mixed');
+  eq(r.summary.ok, true, 'WS1 两车间混合输入可运行');
+  eq(r.summary.counts.records, 3, 'WS2 本次记录只保留本车间（含「测试」写法与车间列为空的行），剔除二车间 2 行');
+  ok(!r.ho.pending.some((x) => /^P-9/.test(x.tag)) && !/P-91|P-92/.test(r.md), 'WS3 其他车间事项不进未完成事项和交接记录');
+  ok(r.ho.warnings.some((w) => w.includes('本次记录') && w.includes('剔除其他车间 2 行') && w.includes(OT)), 'WS4 剔除行数与车间名写进 warning');
+  eq(scOf(r, '本次记录').status, 'checked', 'WS5 meta.workshopScope 记本次记录已核对');
+  eq(scOf(r, '本次记录').droppedRows, 2, 'WS6 meta.workshopScope 记剔除行数');
+  eq((scOf(r, '本次记录').dropped || {})[OT], 2, 'WS7 meta.workshopScope 记剔除车间名');
+  eq(scOf(r, '本次记录').blank, 1, 'WS8 车间列为空的行保留并计数');
+  ok(r.ho.warnings.some((w) => w.includes('本次记录') && w.includes('车间列为空 1 行')), 'WS9 车间列为空有 warning');
+  ok(/\| 车间范围 \| 已按车间列核对「测试车间」，剔除其他车间的行：「ws-mixed\.xlsx\/本次记录」2 行（二车间 2 行）/.test(r.md), 'WS10 交接信息写明车间范围');
+  ok(!/【注意】/.test(r.md.split('## 一、')[0]), 'WS11 部分剔除时开头不加【注意】');
+  eq(r.summary.counts.inRepair, 1, 'WS12 在修设备剔除其他车间');
+  // 车间列全不一致
+  const mis = mk('ws-mismatch.xlsx', { '值班记录': [HW, [`${D} 22:00`, 'P-91', '外泵1', '异常处理', '外车间泄漏', '', '未完成', '王', '', OT]] });
+  r = run(mis, [], 'ws-mismatch');
+  eq(r.summary.counts.records, 1, 'WS13 车间列全不一致时不筛');
+  eq(scOf(r, '本次记录').status, 'mismatch', 'WS14 meta.workshopScope 记 mismatch');
+  ok(r.ho.warnings.some((w) => w.startsWith('【注意】') && w.includes(OT)), 'WS15 warning 以【注意】开头');
+  ok(/【注意】.*车间列取值与 --workshop「测试车间」不一致，未按车间筛选，请核对输入/.test(r.md.split('## 一、')[0]), 'WS16 md 标题后、第一节前有【注意】');
+  // 无车间列 / 维护工厂 / 车间负责人
+  r = run(base, [], 'ws-nocol');
+  eq(scOf(r, '本次记录').status, 'noColumn', 'WS17 无车间列 status=noColumn');
+  ok(/\| 车间范围 \| 输入未含车间列，车间范围以取数条件为准。 \|/.test(r.md), 'WS18 交接信息写明以取数条件为准');
+  const plant = mk('ws-plant.xlsx', { '值班记录': [[...HDR, '维护工厂'], [`${D} 20:00`, 'P-01', '泵1', '异常处理', '漏', '', '未完成', '张', '', '1100'], [`${D} 21:00`, 'P-02', '泵2', '异常处理', '响', '', '未完成', '张', '', '1200']] });
+  r = run(plant, [], 'ws-plant');
+  eq(scOf(r, '本次记录').status, 'noColumn', 'WS19 「维护工厂」列不当车间列');
+  eq(r.summary.counts.records, 2, 'WS20 维护工厂列不参与筛选');
+  const lead = mk('ws-lead.xlsx', { '值班记录': [[...HDR, '车间负责人'], [`${D} 20:00`, 'P-01', '泵1', '异常处理', '漏', '', '未完成', '张', '', '刘主任']] });
+  r = run(lead, [], 'ws-lead');
+  eq(scOf(r, '本次记录').status, 'noColumn', 'WS21 「车间负责人」人员列不当车间列');
+  ok(!/【注意】/.test(r.md.split('## 一、')[0]), 'WS22 人员列不触发车间不一致提示');
+  // 上次交接：xlsx 未完成事项按车间剔除；JSON 车间不一致只提示不剔除（结转绝不静默丢弃）
+  const prevX = mk('ws-prev.xlsx', { '未完成事项': [['位号', '内容', '责任人', '车间'], ['P-07', '换热器内漏待查', '张', '测试车间'], ['P-97', '外车间遗留', '王', OT]] });
+  r = run(base, ['--prev', prevX], 'ws-prev-xlsx');
+  ok(r.ho.carriedOver.some((x) => x.tag === 'P-07') && !r.ho.carriedOver.some((x) => x.tag === 'P-97'), 'WS23 上次交接未完成事项表剔除其他车间的行');
+  eq(scOf(r, '未完成事项').droppedRows, 1, 'WS24 未完成事项表的核对结果进 meta.workshopScope');
+  r = run(base, [], 'ws-prev-src');
+  const pj = r.ho; pj.meta.workshop = OT;
+  pj.pending.push({ tag: 'P-08', content: '安全阀待校验', owner: '张' });
+  const prevJ = path.join(work, 'ws-prev-other.json'); fs.writeFileSync(prevJ, JSON.stringify(pj));
+  ok(Array.isArray(r.ho.meta.workshopScope), 'WS25 handover.json 输出 meta.workshopScope 数组');
+  r = run(base, ['--prev', prevJ], 'ws-prev-json');
+  ok(r.ho.carriedOver.some((x) => x.tag === 'P-08'), 'WS26 上次交接 JSON 车间不一致仍照常结转，不丢事项');
+  ok(r.ho.warnings.some((w) => w.startsWith('【注意】') && w.includes('ws-prev-other.json') && w.includes(OT)), 'WS27 上次交接 JSON 车间不一致有【注意】提示');
+  // 多份本次记录各自核对
+  const second = mk('ws-second.xlsx', { '值班记录': [HW, [`${D} 23:00`, 'P-05', '泵5', '异常处理', '漏', '', '未完成', '张', '', '测试车间'], [`${D} 23:10`, 'P-95', '外泵5', '异常处理', '漏', '', '未完成', '王', '', OT]] });
+  r = run([mixed, second].join(','), [], 'ws-multi');
+  eq(r.summary.counts.records, 4, 'WS28 多份本次记录各自剔除其他车间');
+  eq(((r.ho.meta.workshopScope || []).filter((x) => /本次记录$/.test(x.sheet))).length, 2, 'WS29 多份本次记录各自记入 meta.workshopScope');
+}
+
 // ================================================================ 输出
 console.log(`\n${'='.repeat(56)}`);
 console.log(`shift-handover-record 自测：${pass} 通过，${fail} 失败`);

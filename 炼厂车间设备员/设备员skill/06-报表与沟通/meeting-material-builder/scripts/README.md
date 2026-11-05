@@ -70,6 +70,8 @@ node "<技能目录>/scripts/build.js" \
 3. **议题无数据写「需补充」**，不编造。
 4. **主要工作与下步打算不代拟**，留占位符。
 
+**车间范围核对**：给了 `--workshop` 时，上游 JSON 取 `meta.workshop`（没有再看顶层 `workshop`）核对：不一致的不纳入并 warning、汇报稿与提纲开头【注意】；未注明车间的照常纳入，口径写「上游 JSON 未注明车间，无法核对」；上游新增的 `meta.workshopScope` 不影响读取。结果写 `outline.json` 的 `meta.upstreamWorkshop`（未给 `--workshop` 时为 null，各 JSON 车间不一致时 warning 提示）。
+
 ### 典型链式用法
 
 ```bash
@@ -98,4 +100,4 @@ node scripts/make-sample.js [--seed <n>]
 node scripts/selftest.js
 ```
 
-145 条断言，覆盖基础生成、数字不新增、听众层级差异（三档 + 旧称拒绝）、`--audience-spec` 名称与详略覆盖、`--weights`（生效 / 缺环节 / 和不为 1 / 未知环节 / 非数字）、`--hide-tags`、`slides` 提纲结构与不代拟、`periodic.json` / `daily.json` 中文标签映射与需复算指标进问题项（需复算指标即使上游带数也不进关键指标）、议题无数据不编造、不代拟、需决策与遗留、无法识别 JSON、隐患 JSON（按上游真实结构读 `metrics.closureRate`、兼容 `closeRate`、null 不补 0；已闭环重大隐患改列主要工作、不进存在问题）、工单责任方取承修单位不点人名（含 periodic.json 重点事项：有 `unit` / `workCenter` 写单位，只有责任人姓名的去掉并 warning）、公司层级需决策与遗留事项同样去位号、超期工单带设备名称与故障描述（公司层级去位号后仍可辨认）、内容量匹配、参数校验、表格输入提示、提纲内容、不做责任归因、无 emoji。
+166 条断言，覆盖车间范围核对（上游 JSON 一致纳入 / 不一致不纳入且不留抽取类提示 / 未注明照常纳入并说明、顶层 workshop、带 meta.workshopScope 的 status / daily / periodic 照常读取、全部不一致报错、未给 --workshop 不核对但提示车间不一致）、基础生成、数字不新增、听众层级差异（三档 + 旧称拒绝）、`--audience-spec` 名称与详略覆盖、`--weights`（生效 / 缺环节 / 和不为 1 / 未知环节 / 非数字）、`--hide-tags`、`slides` 提纲结构与不代拟、`periodic.json` / `daily.json` 中文标签映射与需复算指标进问题项（需复算指标即使上游带数也不进关键指标）、议题无数据不编造、不代拟、需决策与遗留、无法识别 JSON、隐患 JSON（按上游真实结构读 `metrics.closureRate`、兼容 `closeRate`、null 不补 0；已闭环重大隐患改列主要工作、不进存在问题）、工单责任方取承修单位不点人名（含 periodic.json 重点事项：有 `unit` / `workCenter` 写单位，只有责任人姓名的去掉并 warning）、公司层级需决策与遗留事项同样去位号、超期工单带设备名称与故障描述（公司层级去位号后仍可辨认）、内容量匹配、参数校验、表格输入提示、提纲内容、不做责任归因、无 emoji。

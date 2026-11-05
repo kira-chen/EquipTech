@@ -55,7 +55,11 @@
 | `--topics` | 否 | 议题，逗号分隔。无数据支撑的议题写「需补充」 |
 | `--need-decision` | 否 | 需决策事项，分号或换行分隔；公司层级或 `--hide-tags` 时同样去位号、工单号、SAP 单号（`--pending` 同理） |
 | `--pending` | 否 | 上次会议遗留事项 |
-| `--workshop` | 否 | 车间名，写入稿件头部 |
+| `--workshop` | 否 | 车间名，写入稿件头部；给了时按上游 JSON 车间核对（见下） |
+
+## 车间范围核对
+
+上游 JSON 车间核对：给了 `--workshop` 时，各上游 JSON 取 `meta.workshop`（没有再看顶层 `workshop`），与 `--workshop` 比对（规则同上）：一致的纳入；不一致的**不纳入**，warning 写明文件名和两个车间名，汇报稿与要点提纲开头加【注意】；未注明车间的照常纳入，口径处写「上游 JSON 未注明车间，无法核对」。结果写进 `outline.json` 的 `meta.upstreamWorkshop`（`matched` / `unknown` / `excluded`）。上游 A 类技能新增的 `meta.workshopScope` 字段不影响识别与读取。不给 `--workshop` 时不核对、`meta.upstreamWorkshop` 为 null；各上游 JSON 车间不一致时 warning 以【注意】开头提示。所有 JSON 都因车间不一致未纳入时报错。
 
 ## 产出
 

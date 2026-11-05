@@ -54,7 +54,7 @@ node scripts/daily.js --input /tmp/insp/status.json,/tmp/ord/orders.json,/tmp/de
 
 | 文件 | 内容 |
 |---|---|
-| `daily.json` | 各章节数据与 counts，供周报月报使用；`meta.stateScheme` 记录六档 |
+| `daily.json` | 各章节数据与 counts，供周报月报使用；`meta.stateScheme` 记录六档；`meta.workshopScope` 各表车间范围核对结果（数组）；`meta.upstreamWorkshop` 上游 JSON 车间核对（`matched` / `unknown` / `excluded`） |
 | `daily.md` | 十节（有环比时十一节）报告，末尾声明行，无 emoji |
 | `summary.json` | 末行摘要落盘（含 `sections` 节数） |
 
@@ -63,6 +63,8 @@ node scripts/daily.js --input /tmp/insp/status.json,/tmp/ord/orders.json,/tmp/de
 - `1`：失败（含无任何可用数据、非法日期、输入不存在、上一日 daily.json 不存在）
 
 **关键行为**：未提供的章节 counts 为 `null`（不是 0），报告写「本日未提供 XX 数据」。「无异常」与「未提供数据」严格区分。
+
+**车间范围核对**：九张业务表带车间列（车间 / 所属车间 / 属地车间 / 运行部）时按 `--workshop` 剔除其他车间的行并 warning，车间列为空的行保留；车间列全不一致时不筛、日报开头【注意】；无车间列时口径写「以取数条件为准」；维护工厂与「车间监护人」等人员列不当车间列。上游 JSON（含 `--prev`）`meta.workshop` 不一致的不纳入并在开头【注意】，未注明车间的照常纳入并说明无法核对。规则见 `references/input-spec.md`「车间范围核对」。
 
 ## make-sample.js
 
@@ -79,4 +81,4 @@ node scripts/make-sample.js [--seed <n>] [--date <YYYY-MM-DD>]
 node scripts/selftest.js
 ```
 
-186 条断言，覆盖全量 xlsx、缺数据不补零、五类上游 JSON 对接与合并（含 status.json 六档 `sixTier` 与特护标记）、六档状态、待验收单列、特护设备、作业票术语、泄漏点、隐患等级与未判定、SAP 列名（设备编号不是位号）、HSE 平台隐患台账与作业票系统作业清单列名（整改状态、要求整改期限、已整改未验收；完成态与验收态判定与 hazard-closure-tracker 同口径：完成词开头归已整改、否定写法归未整改、无验收记录不计闭环；验收人/验收日期独立列）、「检修作业清单」不当作业票、完成比例异常值、环比、次日计划不编造、参数校验、产出结构与声明行、别名与合计行。
+235 条断言，覆盖车间范围核对（九张表混合剔除、车间列为空保留、全不一致不筛并开头【注意】、无车间列、维护工厂与车间监护人不当车间列、「所属车间」可识别；上游 JSON 一致纳入 / 不一致不纳入 / 未注明照常纳入、顶层 workshop、带 meta.workshopScope 照常读取、`--prev` 车间不一致不做环比）、全量 xlsx、缺数据不补零、五类上游 JSON 对接与合并（含 status.json 六档 `sixTier` 与特护标记）、六档状态、待验收单列、特护设备、作业票术语、泄漏点、隐患等级与未判定、SAP 列名（设备编号不是位号）、HSE 平台隐患台账与作业票系统作业清单列名（整改状态、要求整改期限、已整改未验收；完成态与验收态判定与 hazard-closure-tracker 同口径：完成词开头归已整改、否定写法归未整改、无验收记录不计闭环；验收人/验收日期独立列）、「检修作业清单」不当作业票、完成比例异常值、环比、次日计划不编造、参数校验、产出结构与声明行、别名与合计行。

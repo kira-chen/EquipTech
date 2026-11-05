@@ -589,6 +589,57 @@ eq(itemOf(r, /在用压力容器数量/).value, '1', 'S10 在用压力容器只�
   ok(n1.status !== 'prefilled' && /姓名/.test(JSON.stringify(n1)), 'T10 证书表缺姓名列时持证人数不按行数预填，说明缺姓名列');
 }
 
+/* ==================== WS. 车间范围核对（D007）：--data 数据表带车间列时剔除其他车间的行 ==================== */
+{
+  const OT = '二车间';
+  const scOf = (r, name) => ((r.j && r.j.meta.workshopScope) || []).find((x) => x.sheet.endsWith('/' + name)) || {};
+  const val = (r, text) => ((r.j && r.j.items) || []).find((x) => x.text === text) || {};
+  const WSD = mkx('ws-data.xlsx', {
+    '设备台账': [['位号', '设备名称', '车间'], ['P-1101A', '进料泵', '测试车间'], ['V-2301', '缓冲罐', '测试'], ['E-1', '换热器', ''],
+      ['P-91', '外车间泵', OT], ['P-92', '外车间泵2', OT]],
+    '特种设备检验台账': [['位号', '下次检验日期', '车间'], ['V-2301', '2026-08-10', '测试车间'], ['V-2302', '2027-03-15', '测试车间'], ['V-91', '2026-01-01', OT]],
+    '其他参考': [['名称', '车间'], ['外车间参考', OT]],
+  });
+  let r = run([...BASE, '--form', FORM, '--data', WSD, '--period', ASOF], 'ws-mixed');
+  eq(r.s.ok, true, 'WS1 两车间混合数据表可运行');
+  ok(/^3/.test(val(r, '在用设备台数').value || ''), `WS2 设备台账只保留本车间（含「测试」写法与车间列为空的行），台数 3（实际 ${val(r, '在用设备台数').value}）`);
+  ok(r.j.warnings.some((w) => w.includes('设备台账') && w.includes('剔除其他车间 2 行') && w.includes(OT)), 'WS3 剔除行数与车间名写进 warning');
+  eq(scOf(r, '设备台账').status, 'checked', 'WS4 meta.workshopScope 记设备台账已核对');
+  eq(scOf(r, '设备台账').droppedRows, 2, 'WS5 meta.workshopScope 记剔除行数');
+  eq((scOf(r, '设备台账').dropped || {})[OT], 2, 'WS6 meta.workshopScope 记剔除车间名');
+  eq(scOf(r, '设备台账').blank, 1, 'WS7 车间列为空的行保留并计数');
+  ok(r.j.warnings.some((w) => w.includes('设备台账') && w.includes('车间列为空 1 行')), 'WS8 车间列为空有 warning');
+  ok(/\| 车间范围 \| 已按车间列核对「测试车间」，剔除其他车间的行：「ws-data\.xlsx\/设备台账」2 行（二车间 2 行）/.test(r.md), 'WS9 基本信息写明车间范围');
+  ok(!/车间列取值与 --workshop/.test(r.md.split('## 一、')[0]), 'WS10 部分剔除时开头不加车间不一致提示');
+  ok(/已过期 1 台\/项，未到期 1 台\/项/.test(val(r, '压力容器是否超期未检').value || ''), 'WS11 特种设备检验台账剔除其他车间');
+  eq((r.j.meta.workshopScope || []).length, 2, 'WS12 只核对能取数的数据表，归不进类别的表不核对');
+  eq(r.j.dataTables.find((x) => x.sheet === '设备台账').rows, 3, 'WS13 dataTables 行数为核对后的本车间行数');
+  // 车间列全不一致
+  const WSX = mkx('ws-mismatch.xlsx', { '设备台账': [['位号', '设备名称', '车间'], ['P-91', '外车间泵', OT], ['P-92', '外车间泵2', OT]] });
+  r = run([...BASE, '--form', FORM, '--data', WSX, '--period', ASOF], 'ws-mismatch');
+  ok(/^2/.test(val(r, '在用设备台数').value || ''), 'WS14 车间列全不一致时不筛');
+  eq(scOf(r, '设备台账').status, 'mismatch', 'WS15 meta.workshopScope 记 mismatch');
+  ok(r.j.warnings.some((w) => w.startsWith('【注意】') && w.includes(OT)), 'WS16 warning 以【注意】开头');
+  ok(/【注意】.*车间列取值与 --workshop「测试车间」不一致，未按车间筛选，请核对输入/.test(r.md.split('## 一、')[0]), 'WS17 md 标题后、第一节前有【注意】');
+  // 无车间列 / 维护工厂 / 车间负责人
+  r = run([...BASE, '--form', FORM, '--data', DATA, '--period', ASOF], 'ws-nocol');
+  eq(scOf(r, '设备台账').status, 'noColumn', 'WS18 无车间列 status=noColumn');
+  ok(/\| 车间范围 \| 输入未含车间列，车间范围以取数条件为准。 \|/.test(r.md), 'WS19 基本信息写明以取数条件为准');
+  const WSF = mkx('ws-plant.xlsx', { '设备台账': [['位号', '设备名称', '维护工厂'], ['P-1', '泵1', '1100'], ['P-2', '泵2', '1200']] });
+  r = run([...BASE, '--form', FORM, '--data', WSF, '--period', ASOF], 'ws-plant');
+  eq(scOf(r, '设备台账').status, 'noColumn', 'WS20 「维护工厂」列不当车间列');
+  ok(/^2/.test(val(r, '在用设备台数').value || ''), 'WS21 维护工厂列不参与筛选');
+  const WSL = mkx('ws-lead.xlsx', { '设备台账': [['位号', '设备名称', '车间负责人'], ['P-1', '泵1', '刘主任']] });
+  r = run([...BASE, '--form', FORM, '--data', WSL, '--period', ASOF], 'ws-lead');
+  eq(scOf(r, '设备台账').status, 'noColumn', 'WS22 「车间负责人」人员列不当车间列');
+  ok(!/车间列取值与 --workshop/.test(r.md), 'WS23 人员列不触发车间不一致提示');
+  // 自查表模板本身不核对：模板里有「车间」列也不剔除自查项
+  const FORM_WS = mkx('form-ws.xlsx', { '自查表': [['序号', '自查内容', '现状', '备注', '车间'], ['1', '在用设备台数', '', '', OT], ['2', '是否建立设备台账', '', '', '']] });
+  r = run([...BASE, '--form', FORM_WS, '--data', DATA, '--period', ASOF], 'ws-form');
+  eq(r.s.counts.items, 2, 'WS24 自查表模板不按车间核对，自查项不剔除');
+  ok(!(r.j.meta.workshopScope || []).some((x) => /自查表/.test(x.sheet)), 'WS25 meta.workshopScope 不含自查表模板');
+}
+
 /* ==================== 输出 ==================== */
 console.log(`\n${'='.repeat(56)}`);
 console.log(`self-audit-form-filler 自测：${pass} 通过，${fail} 失败`);
