@@ -410,8 +410,10 @@ function toRecords(rows, required, sheetName, optional = [], warnings = [], alia
 }
 
 // ---------------------------------------------------------------- 车间范围核对（D007）
-/** 认作车间的列名（表头以这些开头）；维护工厂/计划工厂是 SAP 工厂代码，责任单位/作业单位可能是部门或承包商，都不认 */
+/** 认作车间的列名（表头为这些或其后加「名称」）；维护工厂/计划工厂是 SAP 工厂代码，责任单位/作业单位可能是部门或承包商，
+ *  「车间负责人」「车间监护人」等是人员列，都不认 */
 const WORKSHOP_COLS = ['车间', '所属车间', '属地车间', '运行部'];
+const isWorkshopHeader = (h) => WORKSHOP_COLS.some((c) => h === c || h === `${c}名称`);
 const normWorkshop = (v) => str(v).replace(/\s+/g, '').replace(/(车间|运行部)$/, '');
 /** 两个车间名是否同一车间（去空白，忽略末尾「车间/运行部」）；任一为空返回 false */
 function sameWorkshop(a, b) {
@@ -431,7 +433,7 @@ function workshopScope(recs, workshop, sheetName, warnings = []) {
   const keep = (list) => { list.hasCol = recs.hasCol; list.colName = recs.colName; return list; };
   if (!str(workshop)) { scope.status = 'noWorkshop'; return { records: recs, scope }; }
   const col = recs.hasCol && recs.hasCol('车间') && recs.colName ? recs.colName('车间') : null;
-  if (!col || !WORKSHOP_COLS.some((c) => col.startsWith(c))) {
+  if (!col || !isWorkshopHeader(col)) {
     if (col) scope.ignoredColumn = col;
     return { records: recs, scope };
   }
