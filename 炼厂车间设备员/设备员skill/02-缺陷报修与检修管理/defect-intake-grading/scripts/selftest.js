@@ -13,7 +13,22 @@ const work = fs.mkdtempSync(path.join(os.tmpdir(), 'dig-selftest-'));
 const DATE = '2026-09-21';
 let pass = 0, fail = 0;
 const failures = [];
-const ok = (c, n) => { if (c) pass++; else { fail++; failures.push(n); } };
+// 用例分级（见 文档/规范/自测用例分级规范.md）：SELFTEST_LEVEL=BVT|A|B|C 只跑该级及更高优先级的节，不设时跑全量
+const LEVELS = ['BVT', 'A', 'B', 'C'];
+const RUN_LEVEL = LEVELS.indexOf(String(process.env.SELFTEST_LEVEL || 'C').toUpperCase());
+if (RUN_LEVEL < 0) { console.error(`SELFTEST_LEVEL 只能取 ${LEVELS.join('、')}`); process.exit(2); }
+const byLevel = { BVT: 0, A: 0, B: 0, C: 0 };
+let curLevel = null;
+function section(level, fn) {
+  if (!LEVELS.includes(level)) throw new Error(`未知用例级别 ${level}`);
+  if (LEVELS.indexOf(level) > RUN_LEVEL) return;
+  curLevel = level; fn(); curLevel = null;
+}
+const ok = (c, n) => {
+  if (!curLevel) throw new Error(`断言须写在 section() 内：${n}`);
+  byLevel[curLevel]++;
+  if (c) pass++; else { fail++; failures.push(`[${curLevel}] ${n}`); }
+};
 const eq = (a, e, n) => ok(a === e, `${n}（期望 ${JSON.stringify(e)}，实际 ${JSON.stringify(a)}）`);
 
 function run(args, tag) {
@@ -28,150 +43,189 @@ function run(args, tag) {
   return { code: r.status, s, j, md, csv, out };
 }
 const mk = (n, b) => { const p = path.join(work, n); writeXlsx(p, b); return p; };
+let r;
 
-// ============ A. 规则引擎单元测试 ============
 function g(desc, medium, affects) {
   return R.grade({ phenomenon: R.classifyPhenomenon(desc), mediumHazard: R.mediumHazard(medium), affectsRun: R.parseAffects(affects), desc });
 }
-eq(g('机封泄漏', '液化气', '否').level, 'A', 'A1 高危介质泄漏→A级（默认 abc 方案）');
-eq(g('机封泄漏', '液化气', '否').ruleId, 'R2', 'A2 命中规则R2');
-eq(g('塔壁有裂纹', '汽油', '否').level, 'A', 'A3 高危介质结构失效→A级');
-eq(g('泵抽空打不上量', '柴油', '是').level, 'B', 'A4 影响运行+中危→B级');
-eq(g('换热器泄漏', '柴油', '否').level, 'B', 'A5 中危介质泄漏→B级');
-eq(g('筒体变形', '循环水', '否').level, 'B', 'A6 结构失效（低危）→B级');
-eq(g('泵振动偏高', '柴油', '否').level, 'C', 'A7 振动不影响运行→C级');
-eq(g('法兰渗漏', '循环水', '否').level, 'C', 'A8 低危介质泄漏→C级');
-eq(g('外壁锈蚀', '除盐水', '否').level, 'C', 'A9 腐蚀不影响运行→C级（旧 IV 并入 C）');
-eq(g('机封泄漏', '液化气', '否').levelCn, 'A 级（重大）', 'A9a 中文等级名 A 级（重大）');
-eq(g('机封泄漏', '液化气', '否').sapPriority, 1, 'A9b A 级→SAP 优先级 1');
-eq(g('换热器泄漏', '柴油', '否').sapPriority, 2, 'A9c B 级→SAP 优先级 2');
-eq(g('泵振动偏高', '柴油', '否').sapPriority, 3, 'A9d C 级→SAP 优先级 3');
-// 旧四级方案仍可用
+// ============ A. 规则引擎单元测试 ============
+section('A', () => {
+  eq(g('机封泄漏', '液化气', '否').level, 'A', 'A1 高危介质泄漏→A级（默认 abc 方案）');
+  eq(g('机封泄漏', '液化气', '否').ruleId, 'R2', 'A2 命中规则R2');
+  eq(g('塔壁有裂纹', '汽油', '否').level, 'A', 'A3 高危介质结构失效→A级');
+  eq(g('泵抽空打不上量', '柴油', '是').level, 'B', 'A4 影响运行+中危→B级');
+  eq(g('换热器泄漏', '柴油', '否').level, 'B', 'A5 中危介质泄漏→B级');
+  eq(g('筒体变形', '循环水', '否').level, 'B', 'A6 结构失效（低危）→B级');
+  eq(g('泵振动偏高', '柴油', '否').level, 'C', 'A7 振动不影响运行→C级');
+  eq(g('法兰渗漏', '循环水', '否').level, 'C', 'A8 低危介质泄漏→C级');
+  eq(g('外壁锈蚀', '除盐水', '否').level, 'C', 'A9 腐蚀不影响运行→C级（旧 IV 并入 C）');
+  eq(g('机封泄漏', '液化气', '否').levelCn, 'A 级（重大）', 'A9a 中文等级名 A 级（重大）');
+  eq(g('机封泄漏', '液化气', '否').sapPriority, 1, 'A9b A 级→SAP 优先级 1');
+  eq(g('换热器泄漏', '柴油', '否').sapPriority, 2, 'A9c B 级→SAP 优先级 2');
+  eq(g('泵振动偏高', '柴油', '否').sapPriority, 3, 'A9d C 级→SAP 优先级 3');
+});
 const giv = (d, m, af) => R.grade({ phenomenon: R.classifyPhenomenon(d), mediumHazard: R.mediumHazard(m), affectsRun: R.parseAffects(af), desc: d }, { scheme: 'iv' });
-eq(giv('机封泄漏', '液化气', '否').level, 'I', 'A9e iv 方案高危泄漏→I级');
-eq(giv('外壁锈蚀', '除盐水', '否').level, 'IV', 'A9f iv 方案腐蚀→IV级');
-eq(giv('外壁锈蚀', '除盐水', '否').dueDays, 30, 'A9g iv 方案 IV 级 30 天');
-eq(giv('外壁锈蚀', '除盐水', '否').sapPriority, 4, 'A9h iv 方案 IV 级→SAP 优先级 4');
+// 旧四级方案仍可用
+section('B', () => {
+  eq(giv('机封泄漏', '液化气', '否').level, 'I', 'A9e iv 方案高危泄漏→I级');
+  eq(giv('外壁锈蚀', '除盐水', '否').level, 'IV', 'A9f iv 方案腐蚀→IV级');
+  eq(giv('外壁锈蚀', '除盐水', '否').dueDays, 30, 'A9g iv 方案 IV 级 30 天');
+  eq(giv('外壁锈蚀', '除盐水', '否').sapPriority, 4, 'A9h iv 方案 IV 级→SAP 优先级 4');
+});
 // 介质：含硫污水/酸性水/含油污水 为中危，不按"水"归低危
-eq(R.mediumHazard('含硫污水'), 'medium', 'A9i 含硫污水→中危');
-eq(R.mediumHazard('酸性水'), 'medium', 'A9j 酸性水→中危');
-eq(R.mediumHazard('含油污水'), 'medium', 'A9k 含油污水→中危');
-eq(R.mediumHazard('循环水'), 'low', 'A9l 循环水仍为低危');
+section('A', () => {
+  eq(R.mediumHazard('含硫污水'), 'medium', 'A9i 含硫污水→中危');
+  eq(R.mediumHazard('酸性水'), 'medium', 'A9j 酸性水→中危');
+  eq(R.mediumHazard('含油污水'), 'medium', 'A9k 含油污水→中危');
+  eq(R.mediumHazard('循环水'), 'low', 'A9l 循环水仍为低危');
+});
 // --due 覆盖解析
-eq(R.parseDueOverride('A=0.5,B=2,C=10').due.C, 10, 'A9m --due 覆盖 C 级时限');
-eq(R.parseDueOverride('A=0.5,B=2,C=10').due.A, 0.5, 'A9n --due 支持小数天');
-ok(R.parseDueOverride('X=1').errors.length === 1, 'A9o --due 未知等级报错');
-ok(R.parseDueOverride('A=1', 'iv').errors.length === 1, 'A9p --due 等级须属于所选方案');
-eq(R.grade({ phenomenon: 'leak', mediumHazard: 'high', affectsRun: false, desc: '' }, { due: { A: 2, B: 3, C: 7 } }).dueDays, 2, 'A9q grade 使用覆盖后的时限');
+section('B', () => {
+  eq(R.parseDueOverride('A=0.5,B=2,C=10').due.C, 10, 'A9m --due 覆盖 C 级时限');
+  eq(R.parseDueOverride('A=0.5,B=2,C=10').due.A, 0.5, 'A9n --due 支持小数天');
+  ok(R.parseDueOverride('X=1').errors.length === 1, 'A9o --due 未知等级报错');
+  ok(R.parseDueOverride('A=1', 'iv').errors.length === 1, 'A9p --due 等级须属于所选方案');
+  eq(R.grade({ phenomenon: 'leak', mediumHazard: 'high', affectsRun: false, desc: '' }, { due: { A: 2, B: 3, C: 7 } }).dueDays, 2, 'A9q grade 使用覆盖后的时限');
+});
 // 通知单类型建议
-eq(R.notificationType('A', false), 'M2', 'A9r A 级→M2 故障报告');
-eq(R.notificationType('C', false), 'M1', 'A9s C 级不影响运行→M1 维修申请');
-eq(R.notificationType('C', true), 'M2', 'A9t C 级但影响运行→M2');
-eq(R.notificationType('undetermined', null), null, 'A9u 未判定不给通知单类型');
-// undetermined 是核心：缺字段绝不默认
-eq(g('机封泄漏', '液化气', '').level, 'undetermined', 'A10 影响运行未填→未判定');
-eq(g('机封泄漏', '液化气', '').ruleId, 'U1', 'A11 未判定规则U1');
-eq(g('机封泄漏', '', '否').level, 'undetermined', 'A12 泄漏但介质未填→未判定');
-eq(g('机封泄漏', '未知介质XYZ', '否').level, 'undetermined', 'A13 介质不在库→未判定');
-// 口语「还在漏 / 漏得厉害」也是泄漏（EAM 通知单常见写法），不得落成「其他」按 C 级放过
-eq(R.classifyPhenomenon('V-1101 排凝阀关不严，还在漏'), 'leak', 'A13a 口语「还在漏」识别为泄漏');
-eq(g('排凝阀关不严，还在漏', '原油', '否').level, 'A', 'A13b 原油「还在漏」→A级（R2）');
-eq(R.classifyPhenomenon('法兰漏得厉害'), 'leak', 'A13c 「漏得厉害」识别为泄漏');
+section('A', () => {
+  eq(R.notificationType('A', false), 'M2', 'A9r A 级→M2 故障报告');
+  eq(R.notificationType('C', false), 'M1', 'A9s C 级不影响运行→M1 维修申请');
+  eq(R.notificationType('C', true), 'M2', 'A9t C 级但影响运行→M2');
+  eq(R.notificationType('undetermined', null), null, 'A9u 未判定不给通知单类型');
+  // undetermined 是核心：缺字段绝不默认
+  eq(g('机封泄漏', '液化气', '').level, 'undetermined', 'A10 影响运行未填→未判定');
+  eq(g('机封泄漏', '液化气', '').ruleId, 'U1', 'A11 未判定规则U1');
+  eq(g('机封泄漏', '', '否').level, 'undetermined', 'A12 泄漏但介质未填→未判定');
+  eq(g('机封泄漏', '未知介质XYZ', '否').level, 'undetermined', 'A13 介质不在库→未判定');
+  // 口语「还在漏 / 漏得厉害」也是泄漏（EAM 通知单常见写法），不得落成「其他」按 C 级放过
+  eq(R.classifyPhenomenon('V-1101 排凝阀关不严，还在漏'), 'leak', 'A13a 口语「还在漏」识别为泄漏');
+  eq(g('排凝阀关不严，还在漏', '原油', '否').level, 'A', 'A13b 原油「还在漏」→A级（R2）');
+  eq(R.classifyPhenomenon('法兰漏得厉害'), 'leak', 'A13c 「漏得厉害」识别为泄漏');
+});
 // 「漏检 / 漏报 / 漏电」不是介质泄漏
-eq(R.classifyPhenomenon('巡检漏检两个点'), 'other', 'A13d 「漏检」不算泄漏');
-eq(R.classifyPhenomenon('电机漏电跳闸'), 'electrical', 'A13e 「漏电」归电气异常，不算泄漏');
-eq(R.classifyPhenomenon('P-201 泵振动大，巡检遗漏未及时发现'), 'vibration', 'A13f 「遗漏」不算泄漏，按振动');
-eq(g('P-201 泵振动大，巡检遗漏未及时发现', '液化气', '否').level, 'C', 'A13g 「遗漏」不把振动缺陷抬成泄漏A级');
-eq(R.classifyPhenomenon('轴承漏加润滑脂，温度高'), 'temperature', 'A13h 「漏加」不算泄漏');
-eq(R.classifyPhenomenon('检修后漏装联轴器防护罩'), 'other', 'A13i 「漏装」不算泄漏');
-eq(R.classifyPhenomenon('疏漏签字，漏斗堵塞'), 'other', 'A13j 「疏漏」「漏斗」不算泄漏');
-eq(R.classifyPhenomenon('出口法兰又漏了'), 'leak', 'A13k 「又漏了」识别为泄漏');
-eq(R.classifyPhenomenon('排凝阀往外漏，地面有油'), 'leak', 'A13l 「往外漏」识别为泄漏');
-eq(g('法兰发现漏点，有油迹', '液化气', '否').level, 'A', 'A13m 「漏点」仍为泄漏，液化气→A');
-eq(g('排凝阀漏了', '原油', '否').level, 'A', 'A13n 「漏了」仍为泄漏，原油→A');
-eq(g('法兰漏介质', '液化气', '否').level, 'A', 'A13o 「漏介质」仍为泄漏');
+section('C', () => {
+  eq(R.classifyPhenomenon('巡检漏检两个点'), 'other', 'A13d 「漏检」不算泄漏');
+  eq(R.classifyPhenomenon('电机漏电跳闸'), 'electrical', 'A13e 「漏电」归电气异常，不算泄漏');
+  eq(R.classifyPhenomenon('P-201 泵振动大，巡检遗漏未及时发现'), 'vibration', 'A13f 「遗漏」不算泄漏，按振动');
+  eq(g('P-201 泵振动大，巡检遗漏未及时发现', '液化气', '否').level, 'C', 'A13g 「遗漏」不把振动缺陷抬成泄漏A级');
+  eq(R.classifyPhenomenon('轴承漏加润滑脂，温度高'), 'temperature', 'A13h 「漏加」不算泄漏');
+  eq(R.classifyPhenomenon('检修后漏装联轴器防护罩'), 'other', 'A13i 「漏装」不算泄漏');
+  eq(R.classifyPhenomenon('疏漏签字，漏斗堵塞'), 'other', 'A13j 「疏漏」「漏斗」不算泄漏');
+});
+section('A', () => {
+  eq(R.classifyPhenomenon('出口法兰又漏了'), 'leak', 'A13k 「又漏了」识别为泄漏');
+  eq(R.classifyPhenomenon('排凝阀往外漏，地面有油'), 'leak', 'A13l 「往外漏」识别为泄漏');
+  eq(g('法兰发现漏点，有油迹', '液化气', '否').level, 'A', 'A13m 「漏点」仍为泄漏，液化气→A');
+  eq(g('排凝阀漏了', '原油', '否').level, 'A', 'A13n 「漏了」仍为泄漏，原油→A');
+  eq(g('法兰漏介质', '液化气', '否').level, 'A', 'A13o 「漏介质」仍为泄漏');
+});
 // 温升口语与数值写法（与 anomaly-triage-advisor 同口径）
-eq(R.classifyPhenomenon('P-2105A 轴承温度偏高'), 'temperature', 'A13p 「温度偏高」识别为温升');
-eq(R.classifyPhenomenon('电机外壳温度升高'), 'temperature', 'A13q 「温度升高」识别为温升');
-eq(R.classifyPhenomenon('出口温度持续上升'), 'temperature', 'A13r 「温度持续上升」识别为温升');
-eq(R.classifyPhenomenon('轴承箱 91℃，比同类泵高约 15℃'), 'temperature', 'A13s 「高约 15℃」识别为温升');
-eq(R.classifyPhenomenon('前轴承偏高 8℃'), 'temperature', 'A13t 「偏高 8℃」识别为温升');
-eq(R.classifyPhenomenon('温度有点高'), 'temperature', 'A13u 「温度有点高」识别为温升');
-eq(R.classifyPhenomenon('出口压力偏高'), 'other', 'A13v 「压力偏高」不算温升');
-eq(R.classifyPhenomenon('疏水阀漏汽'), 'leak', 'A13p 「漏汽」仍为泄漏（蒸汽→R8）');
-eq(R.classifyPhenomenon('出口管线漏氢'), 'leak', 'A13q 「漏氢」仍为泄漏');
-eq(g('P-201 泵振动大，存在漏检', '液化气', '否').level, 'C', 'A13r 「存在漏检」不算泄漏，振动→C');
-eq(R.classifyPhenomenon('巡检又漏检两个点'), 'other', 'A13s 「又漏检」不算泄漏');
-eq(R.classifyPhenomenon('轴承漏了加润滑脂'), 'other', 'A13t 「漏了加」不算泄漏');
-eq(R.classifyPhenomenon('检查时漏掉一个测点'), 'other', 'A13u 「漏掉」不算泄漏');
-eq(g('泵振动偏高', '', '否').level, 'C', 'A14 振动类不需介质→可定级');
-eq(g('机封泄漏', '液化气', '').dueDays, null, 'A15 未判定无处理时限');
-ok(g('机封泄漏', '液化气', '').missing.includes('是否影响运行'), 'A16 未判定列出缺失字段');
-eq(R.mediumHazard(''), null, 'A17 空介质返回null不是low');
-eq(R.parseAffects(''), null, 'A18 空影响返回null不是false');
-eq(R.parseAffects('否'), false, 'A19 否解析为false');
-eq(R.parseAffects('是'), true, 'A20 是解析为true');
-eq(R.disciplineOf('P-101A', '进料泵'), '动设备', 'A21 专业归属-动设备');
-eq(R.disciplineOf('E-201', '换热器'), '静设备', 'A22 专业归属-静设备');
-eq(R.disciplineOf('XYZ-999', '不明设备'), '待定', 'A23 无法归属→待定');
-eq(R.disciplineOf('EM-2502', '循环水泵B电机'), '电气', 'A24 EM- 电机不被"泵"抢成动设备');
-eq(R.disciplineOf('M-301', '进料泵电机'), '电气', 'A25 M- 位号归电气');
-eq(R.disciplineOf('P-301', '进料泵（电机拖动）'), '电气', 'A26 名称含电机→电气（由设备员确认）');
-eq(R.disciplineOf('PSV-2503', '液化气球罐安全阀'), '静设备', 'A27 安全阀归静设备不归仪表');
-eq(R.disciplineOf('', '塔顶疏水阀'), '静设备', 'A28 疏水阀归静设备');
-eq(R.disciplineOf('FV-101', '进料调节阀'), '仪表', 'A29 调节阀仍归仪表');
-eq(R.disciplineOf('K-101', '富气压缩机'), '动设备', 'A30 K- 压缩机归动设备');
+section('B', () => {
+  eq(R.classifyPhenomenon('P-2105A 轴承温度偏高'), 'temperature', 'A13p 「温度偏高」识别为温升');
+  eq(R.classifyPhenomenon('电机外壳温度升高'), 'temperature', 'A13q 「温度升高」识别为温升');
+  eq(R.classifyPhenomenon('出口温度持续上升'), 'temperature', 'A13r 「温度持续上升」识别为温升');
+  eq(R.classifyPhenomenon('轴承箱 91℃，比同类泵高约 15℃'), 'temperature', 'A13s 「高约 15℃」识别为温升');
+  eq(R.classifyPhenomenon('前轴承偏高 8℃'), 'temperature', 'A13t 「偏高 8℃」识别为温升');
+  eq(R.classifyPhenomenon('温度有点高'), 'temperature', 'A13u 「温度有点高」识别为温升');
+  eq(R.classifyPhenomenon('出口压力偏高'), 'other', 'A13v 「压力偏高」不算温升');
+});
+section('A', () => {
+  eq(R.classifyPhenomenon('疏水阀漏汽'), 'leak', 'A13p 「漏汽」仍为泄漏（蒸汽→R8）');
+  eq(R.classifyPhenomenon('出口管线漏氢'), 'leak', 'A13q 「漏氢」仍为泄漏');
+});
+section('C', () => {
+  eq(g('P-201 泵振动大，存在漏检', '液化气', '否').level, 'C', 'A13r 「存在漏检」不算泄漏，振动→C');
+  eq(R.classifyPhenomenon('巡检又漏检两个点'), 'other', 'A13s 「又漏检」不算泄漏');
+  eq(R.classifyPhenomenon('轴承漏了加润滑脂'), 'other', 'A13t 「漏了加」不算泄漏');
+  eq(R.classifyPhenomenon('检查时漏掉一个测点'), 'other', 'A13u 「漏掉」不算泄漏');
+});
+section('A', () => {
+  eq(g('泵振动偏高', '', '否').level, 'C', 'A14 振动类不需介质→可定级');
+  eq(g('机封泄漏', '液化气', '').dueDays, null, 'A15 未判定无处理时限');
+  ok(g('机封泄漏', '液化气', '').missing.includes('是否影响运行'), 'A16 未判定列出缺失字段');
+  eq(R.mediumHazard(''), null, 'A17 空介质返回null不是low');
+  eq(R.parseAffects(''), null, 'A18 空影响返回null不是false');
+  eq(R.parseAffects('否'), false, 'A19 否解析为false');
+  eq(R.parseAffects('是'), true, 'A20 是解析为true');
+});
+section('B', () => {
+  eq(R.disciplineOf('P-101A', '进料泵'), '动设备', 'A21 专业归属-动设备');
+  eq(R.disciplineOf('E-201', '换热器'), '静设备', 'A22 专业归属-静设备');
+  eq(R.disciplineOf('XYZ-999', '不明设备'), '待定', 'A23 无法归属→待定');
+  eq(R.disciplineOf('EM-2502', '循环水泵B电机'), '电气', 'A24 EM- 电机不被"泵"抢成动设备');
+  eq(R.disciplineOf('M-301', '进料泵电机'), '电气', 'A25 M- 位号归电气');
+  eq(R.disciplineOf('P-301', '进料泵（电机拖动）'), '电气', 'A26 名称含电机→电气（由设备员确认）');
+  eq(R.disciplineOf('PSV-2503', '液化气球罐安全阀'), '静设备', 'A27 安全阀归静设备不归仪表');
+  eq(R.disciplineOf('', '塔顶疏水阀'), '静设备', 'A28 疏水阀归静设备');
+  eq(R.disciplineOf('FV-101', '进料调节阀'), '仪表', 'A29 调节阀仍归仪表');
+  eq(R.disciplineOf('K-101', '富气压缩机'), '动设备', 'A30 K- 压缩机归动设备');
+});
 
 // ============ B. 单条登记 ============
-let r = run(['--desc', '机封处持续滴漏约5滴/分', '--tag', 'P-101A', '--medium', '液化气',
-  '--affects-run', '否', '--found-at', '2026-09-21T08:20:00+08:00', '--by', '甲班王'], 'single');
-eq(r.s.ok, true, 'B1 单条登记成功');
-eq(r.s.counts.total, 1, 'B2 登记 1 条');
-eq(r.j.defects[0].level, 'A', 'B3 定级为 A 级');
-ok(/^QX-\d{8}-001$/.test(r.j.defects[0].no), 'B4 缺陷编号格式');
-eq(r.j.defects[0].dueDays, 1, 'B5 A级时限1天');
-ok(r.j.defects[0].dueDate === '2026-09-22', 'B6 处理期限日期正确');
-ok(/规则 R2/.test(r.md), 'B7 md 标注命中规则号');
-ok(/\*\*A 级（重大）\*\*/.test(r.md), 'B8 等级加粗显示（A 级）');
-ok(!/I 级（紧急）/.test(r.md), 'B8a 默认不出现旧四级名称');
-ok(/分级方案：A\/B\/C 三级/.test(r.md), 'B8b md 标注分级方案');
-ok(r.md.includes('本材料由脚本汇总、模型成文，仅供设备员复核参考'), 'B8c 声明行写入 md');
-ok(/【注意】建议处理时限为经验默认值/.test(r.md), 'B8d 时限默认值提示');
-ok(/## 五、维修通知单草稿/.test(r.md), 'B8e 通知单草稿一节');
-ok(/通知单号由 SAP 系统生成/.test(r.md), 'B8f 声明通知单号由 SAP 生成');
-ok(!/[\u2705\u26a0\ufe0f]/.test(r.md), 'B8g md 不含 emoji');
-ok(fs.existsSync(path.join(r.out, 'notification.csv')), 'B8h notification.csv 生成');
-const ncsv = fs.readFileSync(path.join(r.out, 'notification.csv'), 'utf8');
-ok(ncsv.charCodeAt(0) === 0xFEFF, 'B8i notification.csv 带 BOM');
-ok(/功能位置.*设备编号.*通知单类型.*优先级.*故障代码.*长文本.*要求开始.*要求结束/.test(ncsv.split('\n')[0]), 'B8j 通知单草稿 SAP 列头');
-ok(/"M2","1"/.test(ncsv), 'B8k A 级→M2、优先级 1');
-eq(r.j.defects[0].notification.requiredEnd, '2026-09-22', 'B8l 要求结束=处理期限');
-eq(r.j.meta.gradingScheme, 'abc', 'B8m meta 记录分级方案');
-// --found-at 接受本地时间
-r = run(['--desc', '机封泄漏', '--tag', 'P-101A', '--medium', '液化气', '--affects-run', '否', '--found-at', '2026-09-21 08:20'], 'localtime');
-eq(r.s.ok, true, 'B8n --found-at 接受北京时间写法');
-eq(r.j.defects[0].foundAt, '2026-09-21 08:20', 'B8o 本地时间解析正确');
-// --grading-scheme iv
-r = run(['--desc', '外壁锈蚀', '--tag', 'V-1', '--medium', '除盐水', '--affects-run', '否', '--grading-scheme', 'iv'], 'iv');
-eq(r.j.defects[0].level, 'IV', 'B8p --grading-scheme iv 仍可用');
-ok(/IV 级（轻微）/.test(r.md), 'B8q iv 方案 md 显示旧等级');
-r = run(['--desc', '外壁锈蚀', '--tag', 'V-1', '--medium', '除盐水', '--affects-run', '否', '--grading-scheme', 'xyz'], 'badscheme');
-eq(r.s.ok, false, 'B8r 未知分级方案报错');
-// --due 覆盖生效
-r = run(['--desc', '外壁锈蚀', '--tag', 'V-1', '--medium', '除盐水', '--affects-run', '否', '--found-at', '2026-09-21 08:00', '--due', 'C=15'], 'due');
-eq(r.j.defects[0].dueDays, 15, 'B8s --due 覆盖 C 级时限');
-eq(r.j.defects[0].dueDate, '2026-10-06', 'B8t 覆盖后期限日期随之变化');
-r = run(['--desc', 'x', '--tag', 'V-1', '--due', 'Z=1'], 'baddue');
-eq(r.s.ok, false, 'B8u --due 非法报错');
-// 单条可带功能位置与设备编号
-r = run(['--desc', '机封泄漏', '--tag', 'P-101A', '--medium', '液化气', '--affects-run', '否', '--func-loc', 'A1-U100-P101A', '--equip-no', '10001234'], 'funcloc');
-ok(/"A1-U100-P101A","10001234"/.test(fs.readFileSync(path.join(r.out, 'notification.csv'), 'utf8')), 'B8v 通知单草稿带功能位置与设备编号');
+section('BVT', () => {
+  r = run(['--desc', '机封处持续滴漏约5滴/分', '--tag', 'P-101A', '--medium', '液化气',
+    '--affects-run', '否', '--found-at', '2026-09-21T08:20:00+08:00', '--by', '甲班王'], 'single');
+  eq(r.s.ok, true, 'B1 单条登记成功');
+  eq(r.s.counts.total, 1, 'B2 登记 1 条');
+});
+section('A', () => {
+  eq(r.j.defects[0].level, 'A', 'B3 定级为 A 级');
+  ok(/^QX-\d{8}-001$/.test(r.j.defects[0].no), 'B4 缺陷编号格式');
+  eq(r.j.defects[0].dueDays, 1, 'B5 A级时限1天');
+  ok(r.j.defects[0].dueDate === '2026-09-22', 'B6 处理期限日期正确');
+  ok(/规则 R2/.test(r.md), 'B7 md 标注命中规则号');
+});
+section('C', () => {
+  ok(/\*\*A 级（重大）\*\*/.test(r.md), 'B8 等级加粗显示（A 级）');
+  ok(!/I 级（紧急）/.test(r.md), 'B8a 默认不出现旧四级名称');
+  ok(/分级方案：A\/B\/C 三级/.test(r.md), 'B8b md 标注分级方案');
+});
+section('A', () => {
+  ok(r.md.includes('本材料由脚本汇总、模型成文，仅供设备员复核参考'), 'B8c 声明行写入 md');
+  ok(/【注意】建议处理时限为经验默认值/.test(r.md), 'B8d 时限默认值提示');
+  ok(/## 五、维修通知单草稿/.test(r.md), 'B8e 通知单草稿一节');
+  ok(/通知单号由 SAP 系统生成/.test(r.md), 'B8f 声明通知单号由 SAP 生成');
+});
+section('C', () => {
+  ok(!/[\u2705\u26a0\ufe0f]/.test(r.md), 'B8g md 不含 emoji');
+});
+section('A', () => {
+  ok(fs.existsSync(path.join(r.out, 'notification.csv')), 'B8h notification.csv 生成');
+  const ncsv = fs.readFileSync(path.join(r.out, 'notification.csv'), 'utf8');
+  ok(ncsv.charCodeAt(0) === 0xFEFF, 'B8i notification.csv 带 BOM');
+  ok(/功能位置.*设备编号.*通知单类型.*优先级.*故障代码.*长文本.*要求开始.*要求结束/.test(ncsv.split('\n')[0]), 'B8j 通知单草稿 SAP 列头');
+  ok(/"M2","1"/.test(ncsv), 'B8k A 级→M2、优先级 1');
+  eq(r.j.defects[0].notification.requiredEnd, '2026-09-22', 'B8l 要求结束=处理期限');
+});
+section('B', () => {
+  eq(r.j.meta.gradingScheme, 'abc', 'B8m meta 记录分级方案');
+  // --found-at 接受本地时间
+  r = run(['--desc', '机封泄漏', '--tag', 'P-101A', '--medium', '液化气', '--affects-run', '否', '--found-at', '2026-09-21 08:20'], 'localtime');
+  eq(r.s.ok, true, 'B8n --found-at 接受北京时间写法');
+  eq(r.j.defects[0].foundAt, '2026-09-21 08:20', 'B8o 本地时间解析正确');
+  // --grading-scheme iv
+  r = run(['--desc', '外壁锈蚀', '--tag', 'V-1', '--medium', '除盐水', '--affects-run', '否', '--grading-scheme', 'iv'], 'iv');
+  eq(r.j.defects[0].level, 'IV', 'B8p --grading-scheme iv 仍可用');
+  ok(/IV 级（轻微）/.test(r.md), 'B8q iv 方案 md 显示旧等级');
+  r = run(['--desc', '外壁锈蚀', '--tag', 'V-1', '--medium', '除盐水', '--affects-run', '否', '--grading-scheme', 'xyz'], 'badscheme');
+  eq(r.s.ok, false, 'B8r 未知分级方案报错');
+  // --due 覆盖生效
+  r = run(['--desc', '外壁锈蚀', '--tag', 'V-1', '--medium', '除盐水', '--affects-run', '否', '--found-at', '2026-09-21 08:00', '--due', 'C=15'], 'due');
+  eq(r.j.defects[0].dueDays, 15, 'B8s --due 覆盖 C 级时限');
+  eq(r.j.defects[0].dueDate, '2026-10-06', 'B8t 覆盖后期限日期随之变化');
+  r = run(['--desc', 'x', '--tag', 'V-1', '--due', 'Z=1'], 'baddue');
+  eq(r.s.ok, false, 'B8u --due 非法报错');
+  // 单条可带功能位置与设备编号
+  r = run(['--desc', '机封泄漏', '--tag', 'P-101A', '--medium', '液化气', '--affects-run', '否', '--func-loc', 'A1-U100-P101A', '--equip-no', '10001234'], 'funcloc');
+  ok(/"A1-U100-P101A","10001234"/.test(fs.readFileSync(path.join(r.out, 'notification.csv'), 'utf8')), 'B8v 通知单草稿带功能位置与设备编号');
 
-// found-at 非法 → 报错
-r = run(['--desc', 'x', '--tag', 'P-1', '--found-at', '昨天下午'], 'badtime');
-eq(r.s.ok, false, 'B9 非法时间报错');
-eq(r.code, 1, 'B10 退出码1');
-ok(/ISO 8601/.test(r.s.error), 'B11 错误信息提示格式');
+  // found-at 非法 → 报错
+  r = run(['--desc', 'x', '--tag', 'P-1', '--found-at', '昨天下午'], 'badtime');
+  eq(r.s.ok, false, 'B9 非法时间报错');
+  eq(r.code, 1, 'B10 退出码1');
+  ok(/ISO 8601/.test(r.s.error), 'B11 错误信息提示格式');
+});
 
 // ============ C. 批量登记 ============
 const batch = mk('batch.xlsx', {
@@ -183,18 +237,20 @@ const batch = mk('batch.xlsx', {
     ['', '无位号', '异响', '柴油', '否', `${DATE} 08:30`, '王'],
   ],
 });
-r = run(['--input', batch], 'batch');
-eq(r.s.ok, true, 'C1 批量登记成功');
-eq(r.s.counts.total, 3, 'C2 空位号行被跳过');
-ok(r.j.warnings.some((w) => w.includes('位号为空')), 'C3 空位号 warning');
-eq(r.s.counts.undetermined, 1, 'C4 未判定 1 条');
-ok(r.j.undetermined[0].tag === 'P-03', 'C5 未判定为 P-03');
-ok(/## 三、未判定清单/.test(r.md), 'C6 未判定单列一节');
-ok(r.j.defects.every((d) => d.no), 'C7 每条都有编号');
-ok(new Set(r.j.defects.map((d) => d.no)).size === 3, 'C8 编号不重复');
-eq(r.s.counts.notificationDrafts, 2, 'C9 未判定不进入通知单草稿');
-ok(/【未判定】/.test(r.md), 'C10 未判定节带【未判定】提示');
-eq(r.j.defects.find((d) => d.tag === 'P-03').notification.type, null, 'C11 未判定缺陷无通知单类型');
+section('A', () => {
+  r = run(['--input', batch], 'batch');
+  eq(r.s.ok, true, 'C1 批量登记成功');
+  eq(r.s.counts.total, 3, 'C2 空位号行被跳过');
+  ok(r.j.warnings.some((w) => w.includes('位号为空')), 'C3 空位号 warning');
+  eq(r.s.counts.undetermined, 1, 'C4 未判定 1 条');
+  ok(r.j.undetermined[0].tag === 'P-03', 'C5 未判定为 P-03');
+  ok(/## 三、未判定清单/.test(r.md), 'C6 未判定单列一节');
+  ok(r.j.defects.every((d) => d.no), 'C7 每条都有编号');
+  ok(new Set(r.j.defects.map((d) => d.no)).size === 3, 'C8 编号不重复');
+  eq(r.s.counts.notificationDrafts, 2, 'C9 未判定不进入通知单草稿');
+  ok(/【未判定】/.test(r.md), 'C10 未判定节带【未判定】提示');
+  eq(r.j.defects.find((d) => d.tag === 'P-03').notification.type, null, 'C11 未判定缺陷无通知单类型');
+});
 
 // ============ D. 查重 ============
 const led = mk('led.xlsx', {
@@ -213,21 +269,23 @@ const ledSap = mk('led-sap.xlsx', {
     ['10000003', 'P-03', '出口法兰渗漏', '未关闭'],
   ],
 });
-r = run(['--input', batch, '--ledger', led], 'dup');
-eq(r.s.counts.possibleDuplicate, 1, 'D1 检出 1 条疑似重复');
-eq(r.j.possibleDuplicate[0].tag, 'P-01', 'D2 疑似重复位号正确');
-ok(r.j.possibleDuplicate[0].similar[0].no === 'QX-001', 'D3 匹配到台账编号');
-ok(r.j.possibleDuplicate[0].similar[0].score >= 0.45, 'D4 相似度达阈值');
-ok(/疑似与台账中未闭环缺陷（或通知单）重复/.test(r.md), 'D5 md 提示需确认');
-ok(r.j.defects.length === 3, 'D6 疑似重复不自动剔除（仍登记）');
-// 已闭环的不参与查重
-ok(!r.j.possibleDuplicate.some((p) => p.similar.some((s) => s.no === 'QX-002')), 'D7 已闭环缺陷不参与查重');
-r = run(['--input', batch, '--ledger', ledSap], 'dupsap');
-eq(r.s.ok, true, 'D8 SAP 通知单列名台账可读（通知单/功能位置/短文本/系统状态）');
-ok(r.j.possibleDuplicate.some((p) => p.tag === 'P-01' && p.similar[0].no === '10000001'), 'D9 NOPR 通知单参与查重');
-ok(r.j.possibleDuplicate.find((p) => p.tag === 'P-01').similar[0].statusNorm === '已派工', 'D10 状态按 normSapStatus 归一');
-ok(!r.j.possibleDuplicate.some((p) => p.tag === 'P-02'), 'D11 NOCO 已完成不参与查重');
-ok(r.j.possibleDuplicate.some((p) => p.tag === 'P-03'), 'D12 "未关闭"按未闭环参与查重（否定前缀先判）');
+section('A', () => {
+  r = run(['--input', batch, '--ledger', led], 'dup');
+  eq(r.s.counts.possibleDuplicate, 1, 'D1 检出 1 条疑似重复');
+  eq(r.j.possibleDuplicate[0].tag, 'P-01', 'D2 疑似重复位号正确');
+  ok(r.j.possibleDuplicate[0].similar[0].no === 'QX-001', 'D3 匹配到台账编号');
+  ok(r.j.possibleDuplicate[0].similar[0].score >= 0.45, 'D4 相似度达阈值');
+  ok(/疑似与台账中未闭环缺陷（或通知单）重复/.test(r.md), 'D5 md 提示需确认');
+  ok(r.j.defects.length === 3, 'D6 疑似重复不自动剔除（仍登记）');
+  // 已闭环的不参与查重
+  ok(!r.j.possibleDuplicate.some((p) => p.similar.some((s) => s.no === 'QX-002')), 'D7 已闭环缺陷不参与查重');
+  r = run(['--input', batch, '--ledger', ledSap], 'dupsap');
+  eq(r.s.ok, true, 'D8 SAP 通知单列名台账可读（通知单/功能位置/短文本/系统状态）');
+  ok(r.j.possibleDuplicate.some((p) => p.tag === 'P-01' && p.similar[0].no === '10000001'), 'D9 NOPR 通知单参与查重');
+  ok(r.j.possibleDuplicate.find((p) => p.tag === 'P-01').similar[0].statusNorm === '已派工', 'D10 状态按 normSapStatus 归一');
+  ok(!r.j.possibleDuplicate.some((p) => p.tag === 'P-02'), 'D11 NOCO 已完成不参与查重');
+  ok(r.j.possibleDuplicate.some((p) => p.tag === 'P-03'), 'D12 "未关闭"按未闭环参与查重（否定前缀先判）');
+});
 
 // ============ E. 设备台账校验 ============
 const eq_led = mk('eqled.xlsx', {
@@ -240,40 +298,50 @@ const noMedium = mk('nomedium.xlsx', {
     ['P-99', '机封泄漏', '', '否', `${DATE} 08:10`],
   ],
 });
-r = run(['--input', noMedium, '--equip-ledger', eq_led], 'eqled');
-eq(r.j.defects[0].medium, '液化气', 'E1 从台账补全介质');
-eq(r.j.defects[0].level, 'A', 'E2 补全后可定级');
-ok(r.j.warnings.some((w) => w.includes('P-99') && w.includes('不在设备台账')), 'E3 位号不在台账 warning');
-eq(r.j.defects[1].level, 'undetermined', 'E4 台账查不到且介质空→未判定');
-eq(r.j.defects[0].equipNo, '10000101', 'E5 SAP 台账"设备"列补出设备编号（不当位号）');
-eq(r.j.defects[0].name, '进料泵1', 'E6 SAP"设备描述"补出设备名称');
+section('B', () => {
+  r = run(['--input', noMedium, '--equip-ledger', eq_led], 'eqled');
+  eq(r.j.defects[0].medium, '液化气', 'E1 从台账补全介质');
+  eq(r.j.defects[0].level, 'A', 'E2 补全后可定级');
+  ok(r.j.warnings.some((w) => w.includes('P-99') && w.includes('不在设备台账')), 'E3 位号不在台账 warning');
+  eq(r.j.defects[1].level, 'undetermined', 'E4 台账查不到且介质空→未判定');
+  eq(r.j.defects[0].equipNo, '10000101', 'E5 SAP 台账"设备"列补出设备编号（不当位号）');
+  eq(r.j.defects[0].name, '进料泵1', 'E6 SAP"设备描述"补出设备名称');
+});
 
 // ============ F. 产出完整性 ============
-r = run(['--input', batch], 'outputs');
-ok(fs.existsSync(path.join(r.out, 'defects.json')), 'F1 defects.json 生成');
-ok(fs.existsSync(path.join(r.out, 'defects.md')), 'F2 defects.md 生成');
-ok(fs.existsSync(path.join(r.out, 'ledger.csv')), 'F3 ledger.csv 生成');
-ok(fs.existsSync(path.join(r.out, 'summary.json')), 'F4 summary.json 生成');
-ok(/## 一、登记概览/.test(r.md) && /## 二、缺陷单/.test(r.md) && /## 三、未判定清单/.test(r.md) && /## 四、疑似重复清单/.test(r.md) && /## 五、维修通知单草稿/.test(r.md), 'F5 五节结构齐全');
-ok(r.csv.split('\n')[0].includes('设备编号'), 'F5a ledger.csv 含设备编号列');
-ok(r.csv.charCodeAt(0) === 0xFEFF, 'F6 CSV 带 BOM（Excel 中文不乱码）');
-ok(r.csv.includes('定级依据'), 'F7 CSV 含定级依据列');
-const mdUnd = r.md.match(/## 一、登记概览[\s\S]*?## 二/)[0];
-eq((mdUnd.match(/未判定/g) || []).length, 1, 'F8 概览表未判定不重复出现');
+section('BVT', () => {
+  r = run(['--input', batch], 'outputs');
+  ok(fs.existsSync(path.join(r.out, 'defects.json')), 'F1 defects.json 生成');
+  ok(fs.existsSync(path.join(r.out, 'defects.md')), 'F2 defects.md 生成');
+  ok(fs.existsSync(path.join(r.out, 'ledger.csv')), 'F3 ledger.csv 生成');
+  ok(fs.existsSync(path.join(r.out, 'summary.json')), 'F4 summary.json 生成');
+  ok(/## 一、登记概览/.test(r.md) && /## 二、缺陷单/.test(r.md) && /## 三、未判定清单/.test(r.md) && /## 四、疑似重复清单/.test(r.md) && /## 五、维修通知单草稿/.test(r.md), 'F5 五节结构齐全');
+});
+section('B', () => {
+  ok(r.csv.split('\n')[0].includes('设备编号'), 'F5a ledger.csv 含设备编号列');
+  ok(r.csv.charCodeAt(0) === 0xFEFF, 'F6 CSV 带 BOM（Excel 中文不乱码）');
+  ok(r.csv.includes('定级依据'), 'F7 CSV 含定级依据列');
+});
+section('C', () => {
+  const mdUnd = r.md.match(/## 一、登记概览[\s\S]*?## 二/)[0];
+  eq((mdUnd.match(/未判定/g) || []).length, 1, 'F8 概览表未判定不重复出现');
+});
 
-// ============ G. 参数校验 ============
 function raw(args) {
   const x = spawnSync(process.execPath, [INTAKE, ...args], { encoding: 'utf8' });
   const l = x.stdout.trim().split('\n');
   try { return { code: x.status, s: JSON.parse(l[l.length - 1]) }; } catch (e) { return { code: x.status, s: { ok: false } }; }
 }
-eq(raw([]).s.ok, false, 'G1 无参数报错');
-eq(raw(['--desc']).s.ok, false, 'G2 --desc 缺值报错');
-ok(/缺少取值/.test(raw(['--desc']).s.error), 'G3 缺值信息正确');
-eq(raw(['--desc', 'x']).s.ok, false, 'G4 单条缺 --tag 报错');
-eq(raw(['--input', '/不存在.xlsx']).s.ok, false, 'G5 输入不存在报错');
-eq(raw(['--desc', 'x', '--tag', 'P', '--未知', 'v']).s.ok, false, 'G6 未知参数报错');
-eq(raw(['--input', mk('empty.xlsx', { '别的表': [['a'], [1]] })]).s.ok, false, 'G7 无缺陷记录表报错');
+// ============ G. 参数校验 ============
+section('B', () => {
+  eq(raw([]).s.ok, false, 'G1 无参数报错');
+  eq(raw(['--desc']).s.ok, false, 'G2 --desc 缺值报错');
+  ok(/缺少取值/.test(raw(['--desc']).s.error), 'G3 缺值信息正确');
+  eq(raw(['--desc', 'x']).s.ok, false, 'G4 单条缺 --tag 报错');
+  eq(raw(['--input', '/不存在.xlsx']).s.ok, false, 'G5 输入不存在报错');
+  eq(raw(['--desc', 'x', '--tag', 'P', '--未知', 'v']).s.ok, false, 'G6 未知参数报错');
+  eq(raw(['--input', mk('empty.xlsx', { '别的表': [['a'], [1]] })]).s.ok, false, 'G7 无缺陷记录表报错');
+});
 
 // ============ H. 合计行与别名列头 ============
 const alias = mk('alias.xlsx', {
@@ -285,10 +353,12 @@ const alias = mk('alias.xlsx', {
     ['合计', '', '', '', '', ''],
   ],
 });
-r = run(['--input', alias], 'alias');
-eq(r.s.ok, true, 'H1 别名列头可读');
-eq(r.s.counts.total, 1, 'H2 合计行被跳过');
-ok(r.j.warnings.some((w) => w.includes('合计行')), 'H3 合计行 warning');
+section('B', () => {
+  r = run(['--input', alias], 'alias');
+  eq(r.s.ok, true, 'H1 别名列头可读');
+  eq(r.s.counts.total, 1, 'H2 合计行被跳过');
+  ok(r.j.warnings.some((w) => w.includes('合计行')), 'H3 合计行 warning');
+});
 const sap = mk('sap.xlsx', {
   '通知单': [
     ['功能位置', '设备', '设备描述', '对象部件', '通知单短文本', '介质', '故障停机', '通知日期', '报告人'],
@@ -296,15 +366,17 @@ const sap = mk('sap.xlsx', {
     ['EM-12', '10000012', '泵电机', '轴承', '轴承异响', '', '否', `${DATE} 08:00`, '刘'],
   ],
 });
-r = run(['--input', sap], 'sap');
-eq(r.s.ok, true, 'H4 SAP 通知单导出列名可读');
-eq(r.s.counts.total, 2, 'H5 SAP 样式 2 条全部登记');
-eq(r.j.defects[0].equipNo, '10000011', 'H6 "设备"列作设备编号');
-eq(r.j.defects[0].part, '机械密封', 'H7 "对象部件"作缺陷部位');
-eq(r.j.defects[0].level, 'B', 'H8 含硫污水泄漏→B 级（中危）');
-eq(r.j.defects[0].foundAt, `${DATE} 07:50`, 'H9 "通知日期"作发现时间');
-eq(r.j.defects[0].by, '刘', 'H10 "报告人"作发现人');
-eq(r.j.defects[1].discipline, '电气', 'H11 EM- 位号归电气');
+section('A', () => {
+  r = run(['--input', sap], 'sap');
+  eq(r.s.ok, true, 'H4 SAP 通知单导出列名可读');
+  eq(r.s.counts.total, 2, 'H5 SAP 样式 2 条全部登记');
+  eq(r.j.defects[0].equipNo, '10000011', 'H6 "设备"列作设备编号');
+  eq(r.j.defects[0].part, '机械密封', 'H7 "对象部件"作缺陷部位');
+  eq(r.j.defects[0].level, 'B', 'H8 含硫污水泄漏→B 级（中危）');
+  eq(r.j.defects[0].foundAt, `${DATE} 07:50`, 'H9 "通知日期"作发现时间');
+  eq(r.j.defects[0].by, '刘', 'H10 "报告人"作发现人');
+  eq(r.j.defects[1].discipline, '电气', 'H11 EM- 位号归电气');
+});
 // 原记录编号与等级带出（sourceNo / sourceLevel），便于与系统等级对比
 const srcSap = mk('src-sap.xlsx', {
   '通知单': [
@@ -314,27 +386,31 @@ const srcSap = mk('src-sap.xlsx', {
     ['10046691', 'P-2109', '回流泵', '盘车沉重', '', '', '', `${DATE} 10:00`],
   ],
 });
-r = run(['--input', srcSap], 'src-sap');
-const s0 = (r.j && r.j.defects) || [];
-eq(s0[0] && s0[0].sourceNo, '10046716', 'H18 原记录通知单号带出到 sourceNo');
-eq(s0[0] && s0[0].sourceNoKind, 'notification', 'H19 来源为通知单号列 → sourceNoKind=notification');
-eq(s0[0] && s0[0].sourceLevel, 'C', 'H20 原记录缺陷等级原文带出到 sourceLevel');
-ok(s0[0] && s0[0].level !== 'C' && s0[0].sourceLevelDiffers === true, 'H21 系统等级 C 与脚本定级不同 → sourceLevelDiffers=true');
-eq(s0[1] && s0[1].sourceLevelDiffers, false, 'H22 系统等级与脚本定级相同 → sourceLevelDiffers=false');
-ok(s0[2] && s0[2].sourceLevel === null && s0[2].sourceLevelDiffers === null, 'H23 原记录无等级 → sourceLevel、sourceLevelDiffers 为 null');
-ok(r.j && /10046716/.test(r.md) && /系统等级/.test(r.md), 'H24 md 列出原记录编号与系统等级');
-eq(r.j && r.j.counts.sourceLevelDiffers, 1, 'H25 counts.sourceLevelDiffers 计 1');
-ok(r.j && r.j.warnings.some((w) => /10046716/.test(w) && /系统等级/.test(w)), 'H26 系统等级与脚本定级不一致给 warning');
+section('B', () => {
+  r = run(['--input', srcSap], 'src-sap');
+  const s0 = (r.j && r.j.defects) || [];
+  eq(s0[0] && s0[0].sourceNo, '10046716', 'H18 原记录通知单号带出到 sourceNo');
+  eq(s0[0] && s0[0].sourceNoKind, 'notification', 'H19 来源为通知单号列 → sourceNoKind=notification');
+  eq(s0[0] && s0[0].sourceLevel, 'C', 'H20 原记录缺陷等级原文带出到 sourceLevel');
+  ok(s0[0] && s0[0].level !== 'C' && s0[0].sourceLevelDiffers === true, 'H21 系统等级 C 与脚本定级不同 → sourceLevelDiffers=true');
+  eq(s0[1] && s0[1].sourceLevelDiffers, false, 'H22 系统等级与脚本定级相同 → sourceLevelDiffers=false');
+  ok(s0[2] && s0[2].sourceLevel === null && s0[2].sourceLevelDiffers === null, 'H23 原记录无等级 → sourceLevel、sourceLevelDiffers 为 null');
+  ok(r.j && /10046716/.test(r.md) && /系统等级/.test(r.md), 'H24 md 列出原记录编号与系统等级');
+  eq(r.j && r.j.counts.sourceLevelDiffers, 1, 'H25 counts.sourceLevelDiffers 计 1');
+  ok(r.j && r.j.warnings.some((w) => /10046716/.test(w) && /系统等级/.test(w)), 'H26 系统等级与脚本定级不一致给 warning');
+});
 const srcLed = mk('src-led.xlsx', {
   '缺陷记录': [['缺陷编号', '位号', '缺陷描述', '等级', '介质', '是否影响运行'],
     ['QX-0901', 'P-11', '机封滴漏', 'B 级（严重）', '柴油', '否']],
 });
-r = run(['--input', srcLed], 'src-led');
-const s1 = ((r.j && r.j.defects) || [])[0] || {};
-ok(s1.sourceNo === 'QX-0901' && s1.sourceNoKind === 'defect', 'H27 来源为缺陷编号列 → sourceNoKind=defect');
-r = run(['--desc', '机封滴漏', '--tag', 'P-11', '--medium', '柴油', '--affects-run', '否'], 'src-single');
-const s2 = ((r.j && r.j.defects) || [])[0] || {};
-ok(s2.sourceNo === null && s2.sourceNoKind === null && s2.sourceLevel === null, 'H28 单条登记无原记录 → 三个字段为 null');
+section('B', () => {
+  r = run(['--input', srcLed], 'src-led');
+  const s1 = ((r.j && r.j.defects) || [])[0] || {};
+  ok(s1.sourceNo === 'QX-0901' && s1.sourceNoKind === 'defect', 'H27 来源为缺陷编号列 → sourceNoKind=defect');
+  r = run(['--desc', '机封滴漏', '--tag', 'P-11', '--medium', '柴油', '--affects-run', '否'], 'src-single');
+  const s2 = ((r.j && r.j.defects) || [])[0] || {};
+  ok(s2.sourceNo === null && s2.sourceNoKind === null && s2.sourceLevel === null, 'H28 单条登记无原记录 → 三个字段为 null');
+});
 
 // ============ W. 车间范围核对（D007，批量 --input） ============
 const wsHead = ['位号', '缺陷描述', '介质', '是否影响运行'];
@@ -342,51 +418,58 @@ const wsBook = (col, vals) => mk(`ws-${col}-${vals.join('_') || 'none'}.xlsx`, {
   '缺陷记录': [col ? [...wsHead, col] : wsHead,
     ...vals.map((v, i) => (col ? [`P-90${i}`, '机封滴漏', '柴油', '否', v] : [`P-90${i}`, '机封滴漏', '柴油', '否']))],
 });
-r = run(['--input', wsBook('车间', ['常减压车间', '催化车间', '', '常减压']), '--workshop', '常减压车间'], 'ws-mix');
 const wsOf = (x) => ((x.j && x.j.meta && x.j.meta.workshopScope) || [])[0] || {};
-let wsc = wsOf(r);
-eq(r.j && r.j.counts.total, 3, 'W1 两车间混合：只登记本车间与车间为空的行（3 条）');
-ok(r.j && !r.j.defects.some((d) => d.tag === 'P-901'), 'W2 催化车间的 P-901 未登记');
-ok(r.j && r.j.warnings.some((w) => /剔除其他车间 1 行/.test(w) && /催化车间 1 行/.test(w)), 'W3 warning 写明剔除行数与车间名');
-ok(wsc.status === 'checked' && wsc.droppedRows === 1 && wsc.dropped && wsc.dropped['催化车间'] === 1, 'W4 meta.workshopScope 记录剔除情况');
-ok(wsc.blank === 1 && r.j.defects.some((d) => d.tag === 'P-902'), 'W5 车间列为空的行按本车间保留');
-ok(r.j && r.j.warnings.some((w) => /车间列为空 1 行/.test(w)), 'W6 车间为空的行数写进 warning');
-ok(r.md && /车间范围：已按车间列核对「常减压车间」，剔除其他车间的行/.test(r.md), 'W7 md 口径写明按车间核对');
-r = run(['--input', wsBook('车间', ['催化车间', '焦化车间']), '--workshop', '常减压车间'], 'ws-mis');
-eq(r.j && r.j.counts.total, 2, 'W8 车间列全不一致：不筛');
-eq(wsOf(r).status, 'mismatch', 'W9 车间列全不一致 status=mismatch');
-ok(r.j && r.j.warnings.some((w) => /^【注意】/.test(w)), 'W10 车间列全不一致 warning 以【注意】开头');
-ok(r.md && r.md.indexOf('【注意】工作表「缺陷记录」的车间列取值') > 0 && r.md.indexOf('【注意】工作表「缺陷记录」的车间列取值') < r.md.indexOf('## 一'), 'W11 md 开头（第一节之前）有【注意】提示');
-r = run(['--input', wsBook(null, ['', '']), '--workshop', '常减压车间'], 'ws-nocol');
-eq(wsOf(r).status, 'noColumn', 'W12 无车间列 status=noColumn');
-ok(r.md && /输入未含车间列，车间范围以取数条件为准/.test(r.md), 'W13 无车间列：md 口径说明以取数条件为准');
-r = run(['--input', wsBook('维护工厂', ['1100', '1200']), '--workshop', '常减压车间'], 'ws-plant');
-ok(wsOf(r).status === 'noColumn' && r.j.counts.total === 2, 'W14 「维护工厂」列不当车间列（noColumn，不筛）');
-r = run(['--input', wsBook('车间', ['催化车间'])], 'ws-nows');
-ok(wsOf(r).status === 'noWorkshop' && !/车间范围：/.test(r.md), 'W15 未给 --workshop 不核对、不写口径句');
+section('A', () => {
+  r = run(['--input', wsBook('车间', ['常减压车间', '催化车间', '', '常减压']), '--workshop', '常减压车间'], 'ws-mix');
+  let wsc = wsOf(r);
+  eq(r.j && r.j.counts.total, 3, 'W1 两车间混合：只登记本车间与车间为空的行（3 条）');
+  ok(r.j && !r.j.defects.some((d) => d.tag === 'P-901'), 'W2 催化车间的 P-901 未登记');
+  ok(r.j && r.j.warnings.some((w) => /剔除其他车间 1 行/.test(w) && /催化车间 1 行/.test(w)), 'W3 warning 写明剔除行数与车间名');
+  ok(wsc.status === 'checked' && wsc.droppedRows === 1 && wsc.dropped && wsc.dropped['催化车间'] === 1, 'W4 meta.workshopScope 记录剔除情况');
+  ok(wsc.blank === 1 && r.j.defects.some((d) => d.tag === 'P-902'), 'W5 车间列为空的行按本车间保留');
+  ok(r.j && r.j.warnings.some((w) => /车间列为空 1 行/.test(w)), 'W6 车间为空的行数写进 warning');
+  ok(r.md && /车间范围：已按车间列核对「常减压车间」，剔除其他车间的行/.test(r.md), 'W7 md 口径写明按车间核对');
+  r = run(['--input', wsBook('车间', ['催化车间', '焦化车间']), '--workshop', '常减压车间'], 'ws-mis');
+  eq(r.j && r.j.counts.total, 2, 'W8 车间列全不一致：不筛');
+  eq(wsOf(r).status, 'mismatch', 'W9 车间列全不一致 status=mismatch');
+  ok(r.j && r.j.warnings.some((w) => /^【注意】/.test(w)), 'W10 车间列全不一致 warning 以【注意】开头');
+  ok(r.md && r.md.indexOf('【注意】工作表「缺陷记录」的车间列取值') > 0 && r.md.indexOf('【注意】工作表「缺陷记录」的车间列取值') < r.md.indexOf('## 一'), 'W11 md 开头（第一节之前）有【注意】提示');
+});
+section('B', () => {
+  r = run(['--input', wsBook(null, ['', '']), '--workshop', '常减压车间'], 'ws-nocol');
+  eq(wsOf(r).status, 'noColumn', 'W12 无车间列 status=noColumn');
+  ok(r.md && /输入未含车间列，车间范围以取数条件为准/.test(r.md), 'W13 无车间列：md 口径说明以取数条件为准');
+  r = run(['--input', wsBook('维护工厂', ['1100', '1200']), '--workshop', '常减压车间'], 'ws-plant');
+  ok(wsOf(r).status === 'noColumn' && r.j.counts.total === 2, 'W14 「维护工厂」列不当车间列（noColumn，不筛）');
+  r = run(['--input', wsBook('车间', ['催化车间'])], 'ws-nows');
+  ok(wsOf(r).status === 'noWorkshop' && !/车间范围：/.test(r.md), 'W15 未给 --workshop 不核对、不写口径句');
 
-r = run(['--input', wsBook('所属车间', ['常减压车间', '催化车间']), '--workshop', '常减压车间'], 'ws-ssc');
-ok(wsOf(r).status === 'checked' && wsOf(r).column === '所属车间' && r.j.counts.total === 1, 'W16 「所属车间」列同样核对');
-r = run(['--input', wsBook('属地单位', ['常减压车间', '催化车间']), '--workshop', '常减压车间'], 'ws-unit');
-ok(wsOf(r).status === 'noColumn' && r.j.counts.total === 2, 'W17 「属地单位」不当车间列（noColumn，不筛）');
+  r = run(['--input', wsBook('所属车间', ['常减压车间', '催化车间']), '--workshop', '常减压车间'], 'ws-ssc');
+  ok(wsOf(r).status === 'checked' && wsOf(r).column === '所属车间' && r.j.counts.total === 1, 'W16 「所属车间」列同样核对');
+  r = run(['--input', wsBook('属地单位', ['常减压车间', '催化车间']), '--workshop', '常减压车间'], 'ws-unit');
+  ok(wsOf(r).status === 'noColumn' && r.j.counts.total === 2, 'W17 「属地单位」不当车间列（noColumn，不筛）');
+});
 
 // 演示case 样例预期计数
 // 演示样例：仓库内在 炼厂车间设备员/演示case/<分类>/<技能>/，开发包内在技能目录 examples/
 const skillsRoot = path.resolve(__dirname, '../../..');
 const EX = path.basename(skillsRoot) === '设备员skill' ? path.join(skillsRoot, '..', '演示case', path.relative(skillsRoot, path.resolve(__dirname, '..'))) : path.join(__dirname, '..', 'examples');
-if (fs.existsSync(path.join(EX, 'sample-sap-notification-export.xlsx'))) {
-  r = run(['--input', path.join(EX, 'sample-sap-notification-export.xlsx')], 'ex-sap');
-  eq(r.s.counts.total, 4, 'H12 演示case SAP 样例 4 条');
-  eq(r.s.counts.undetermined, 1, 'H13 演示case SAP 样例未判定 1');
-  eq(r.s.counts.byLevel['A 级（重大）'], 1, 'H14 演示case SAP 样例 A 级 1（安全阀液化气内漏）');
-  r = run(['--input', path.join(EX, 'sample-defects-2026-09-21.xlsx'), '--ledger', path.join(EX, 'sample-defect-ledger.xlsx')], 'ex-main');
-  eq(r.s.counts.byLevel['A 级（重大）'], 2, 'H15 演示case 主样例 A 级 2');
-  eq(r.s.counts.byLevel['C 级（一般）'], 2, 'H16 演示case 主样例 C 级 2');
-  eq(r.s.counts.possibleDuplicate, 1, 'H17 演示case 主样例配 SAP 台账查重 1 条');
-}
+section('A', () => {
+  if (fs.existsSync(path.join(EX, 'sample-sap-notification-export.xlsx'))) {
+    r = run(['--input', path.join(EX, 'sample-sap-notification-export.xlsx')], 'ex-sap');
+    eq(r.s.counts.total, 4, 'H12 演示case SAP 样例 4 条');
+    eq(r.s.counts.undetermined, 1, 'H13 演示case SAP 样例未判定 1');
+    eq(r.s.counts.byLevel['A 级（重大）'], 1, 'H14 演示case SAP 样例 A 级 1（安全阀液化气内漏）');
+    r = run(['--input', path.join(EX, 'sample-defects-2026-09-21.xlsx'), '--ledger', path.join(EX, 'sample-defect-ledger.xlsx')], 'ex-main');
+    eq(r.s.counts.byLevel['A 级（重大）'], 2, 'H15 演示case 主样例 A 级 2');
+    eq(r.s.counts.byLevel['C 级（一般）'], 2, 'H16 演示case 主样例 C 级 2');
+    eq(r.s.counts.possibleDuplicate, 1, 'H17 演示case 主样例配 SAP 台账查重 1 条');
+  }
+});
 
 console.log(`\n${'='.repeat(56)}`);
 console.log(`defect-intake-grading 自测：${pass} 通过，${fail} 失败`);
+console.log(`用例级别 ${LEVELS[RUN_LEVEL]}：BVT ${byLevel.BVT}，A ${byLevel.A}，B ${byLevel.B}，C ${byLevel.C}`);
 if (failures.length) { console.log('\n失败项：'); failures.forEach((f) => console.log('  ✗ ' + f)); }
 console.log('='.repeat(56));
 try { fs.rmSync(work, { recursive: true, force: true }); } catch (e) {}

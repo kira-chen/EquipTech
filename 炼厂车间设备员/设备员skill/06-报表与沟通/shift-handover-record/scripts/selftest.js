@@ -19,7 +19,22 @@ const TIME = '2026-09-22T08:00:00+08:00';
 let pass = 0, fail = 0;
 const failures = [];
 
-function ok(cond, name) { if (cond) { pass++; } else { fail++; failures.push(name); } }
+// 用例分级（见 文档/规范/自测用例分级规范.md）：SELFTEST_LEVEL=BVT|A|B|C 只跑该级及更高优先级的节，不设时跑全量
+const LEVELS = ['BVT', 'A', 'B', 'C'];
+const RUN_LEVEL = LEVELS.indexOf(String(process.env.SELFTEST_LEVEL || 'C').toUpperCase());
+if (RUN_LEVEL < 0) { console.error(`SELFTEST_LEVEL 只能取 ${LEVELS.join('、')}`); process.exit(2); }
+const byLevel = { BVT: 0, A: 0, B: 0, C: 0 };
+let curLevel = null;
+function section(level, fn) {
+  if (!LEVELS.includes(level)) throw new Error(`未知用例级别 ${level}`);
+  if (LEVELS.indexOf(level) > RUN_LEVEL) return;
+  curLevel = level; fn(); curLevel = null;
+}
+const ok = (c, n) => {
+  if (!curLevel) throw new Error(`断言须写在 section() 内：${n}`);
+  byLevel[curLevel]++;
+  if (c) pass++; else { fail++; failures.push(`[${curLevel}] ${n}`); }
+};
 function eq(actual, expect, name) { ok(actual === expect, `${name}（期望 ${JSON.stringify(expect)}，实际 ${JSON.stringify(actual)}）`); }
 
 function run(file, extra = [], tag, opt = {}) {
@@ -37,6 +52,13 @@ function run(file, extra = [], tag, opt = {}) {
 }
 function mk(name, book) { const p = path.join(work, name); writeXlsx(p, book); return p; }
 const HDR = ['时间', '位号', '设备名称', '事项类型', '内容', '处理情况', '状态', '责任人', '要求完成时间'];
+function runRaw(args) {
+  const x = spawnSync(process.execPath, [HO, ...args], { encoding: 'utf8' });
+  const lines = x.stdout.trim().split('\n');
+  try { return { code: x.status, s: JSON.parse(lines[lines.length - 1]) }; } catch (e) { return { code: x.status, s: { ok: false, error: 'no-json' } }; }
+}
+let r;
+let x;
 
 // ================================================================ 1. 基础分类
 const base = mk('base.xlsx', {
@@ -48,24 +70,27 @@ const base = mk('base.xlsx', {
     [`${D} 23:00`, 'P-04', '泵4', '在修', '机封更换施工中', '已拆解等备件', '未完成', '王检修', '2026-09-23 12:00'],
   ],
 });
-let r = run(base, [], 'base');
-eq(r.summary.ok, true, '1.1 基础运行成功');
-eq(r.summary.counts.records, 4, '1.2 记录条数');
-eq(r.summary.counts.statusChanges, 1, '1.3 状态变化数');
-eq(r.summary.counts.abnormalHandled, 2, '1.4 异常处理数');
-eq(r.summary.counts.abnormalClosed, 1, '1.5 异常已闭环数');
-eq(r.summary.counts.inRepair, 1, '1.6 在修设备数（由在修事项补入）');
-eq(r.summary.counts.pending, 2, '1.7 未完成事项数（P-03 + P-04）');
-eq(r.summary.counts.carriedOver, null, '1.8 未提供 --prev 时结转为 null');
-ok(r.ho.warnings.some((w) => w.includes('无法核对上次交接遗留事项')), '1.9 未提供 --prev 的 warning');
-ok(/未提供上次交接记录/.test(r.md), '1.10 md 说明无法核对遗留事项');
-eq(r.ho.meta.skill, 'shift-handover-record', '1.11 meta.skill 约定，供 worklog-todo-manager 识别');
-ok(Array.isArray(r.ho.pending), '1.12 pending 为数组');
-eq(r.ho.meta.type, '值班交接', '1.13 meta.type 记录交接类型');
-ok(/设备员值班交接记录/.test(r.md), '1.14 标题为设备员值班交接记录');
-ok(!/交接班/.test(r.md.replace(/不是操作班组交接班/g, '')), '1.15 md 不出现「交接班」（排除操作班组交接班的说明句）');
-ok(/不是操作班组交接班/.test(r.md), '1.16 md 声明不是操作班组交接班');
-ok(/## 一、交接信息/.test(r.md) && /交接人 \| /.test(r.md) && /接手人 \| /.test(r.md), '1.17 交接信息表用交接人/接手人');
+const OKARGS = ['--input', base, '--workshop', '车间', '--type', '值班交接', '--by', '张'];
+section('BVT', () => {
+  r = run(base, [], 'base');
+  eq(r.summary.ok, true, '1.1 基础运行成功');
+  eq(r.summary.counts.records, 4, '1.2 记录条数');
+  eq(r.summary.counts.statusChanges, 1, '1.3 状态变化数');
+  eq(r.summary.counts.abnormalHandled, 2, '1.4 异常处理数');
+  eq(r.summary.counts.abnormalClosed, 1, '1.5 异常已闭环数');
+  eq(r.summary.counts.inRepair, 1, '1.6 在修设备数（由在修事项补入）');
+  eq(r.summary.counts.pending, 2, '1.7 未完成事项数（P-03 + P-04）');
+  eq(r.summary.counts.carriedOver, null, '1.8 未提供 --prev 时结转为 null');
+  ok(r.ho.warnings.some((w) => w.includes('无法核对上次交接遗留事项')), '1.9 未提供 --prev 的 warning');
+  ok(/未提供上次交接记录/.test(r.md), '1.10 md 说明无法核对遗留事项');
+  eq(r.ho.meta.skill, 'shift-handover-record', '1.11 meta.skill 约定，供 worklog-todo-manager 识别');
+  ok(Array.isArray(r.ho.pending), '1.12 pending 为数组');
+  eq(r.ho.meta.type, '值班交接', '1.13 meta.type 记录交接类型');
+  ok(/设备员值班交接记录/.test(r.md), '1.14 标题为设备员值班交接记录');
+  ok(!/交接班/.test(r.md.replace(/不是操作班组交接班/g, '')), '1.15 md 不出现「交接班」（排除操作班组交接班的说明句）');
+  ok(/不是操作班组交接班/.test(r.md), '1.16 md 声明不是操作班组交接班');
+  ok(/## 一、交接信息/.test(r.md) && /交接人 \| /.test(r.md) && /接手人 \| /.test(r.md), '1.17 交接信息表用交接人/接手人');
+});
 
 // ================================================================ 2. 结转路径 A：上次交接遗留、本次完全无记录 → 必须原样结转
 const prevXlsx = mk('prev.xlsx', {
@@ -76,35 +101,37 @@ const prevXlsx = mk('prev.xlsx', {
     ['P-99', '泵99', '联轴器护罩螺栓缺失2条待补装', '', `${D} 12:00`, '2026-09-20 值班交接'], // 本次无任何记录
   ],
 });
-r = run(base, ['--prev', prevXlsx], 'carry');
-eq(r.summary.ok, true, '2.1 带 --prev 运行成功');
-const carried = r.ho.carriedOver;
-ok(carried.some((x) => x.tag === 'P-99'), '2.2 本次无对应记录的遗留项被结转（P-99）');
-const p99 = carried.find((x) => x.tag === 'P-99') || {};
-eq(p99.note, '上次交接遗留，本次未处理', '2.3 结转项标注「上次交接遗留，本次未处理」');
-eq(p99.originShift, '2026-09-20 值班交接', '2.4 结转项保留原始来源交接');
-eq(p99.originDue, `${D} 12:00`, '2.5 结转项保留原始要求完成时间');
-eq(p99.dueText, `${D} 12:00`, '2.6 结转项未被自动延期到本次之后');
-eq(p99.owner, '待明确', '2.7 责任人缺失写「待明确」');
-ok(r.ho.pending.some((x) => x.tag === 'P-99'), '2.8 结转项同时进入 pending，未被丢弃');
-ok(r.ho.warnings.some((w) => w.includes('P-99') && w.includes('未见处理')), '2.9 结转 warning 具体到事项');
-ok(/P-99/.test(r.md), '2.10 md 中出现结转项 P-99');
-ok(/上次交接遗留，本次未处理/.test(r.md), '2.11 md 中保留结转标注原文');
-ok(!/上班次遗留/.test(r.md), '2.11b md 不再出现倒班口径的「上班次」');
+section('A', () => {
+  r = run(base, ['--prev', prevXlsx], 'carry');
+  eq(r.summary.ok, true, '2.1 带 --prev 运行成功');
+  const carried = r.ho.carriedOver;
+  ok(carried.some((x) => x.tag === 'P-99'), '2.2 本次无对应记录的遗留项被结转（P-99）');
+  const p99 = carried.find((x) => x.tag === 'P-99') || {};
+  eq(p99.note, '上次交接遗留，本次未处理', '2.3 结转项标注「上次交接遗留，本次未处理」');
+  eq(p99.originShift, '2026-09-20 值班交接', '2.4 结转项保留原始来源交接');
+  eq(p99.originDue, `${D} 12:00`, '2.5 结转项保留原始要求完成时间');
+  eq(p99.dueText, `${D} 12:00`, '2.6 结转项未被自动延期到本次之后');
+  eq(p99.owner, '待明确', '2.7 责任人缺失写「待明确」');
+  ok(r.ho.pending.some((x) => x.tag === 'P-99'), '2.8 结转项同时进入 pending，未被丢弃');
+  ok(r.ho.warnings.some((w) => w.includes('P-99') && w.includes('未见处理')), '2.9 结转 warning 具体到事项');
+  ok(/P-99/.test(r.md), '2.10 md 中出现结转项 P-99');
+  ok(/上次交接遗留，本次未处理/.test(r.md), '2.11 md 中保留结转标注原文');
+  ok(!/上班次遗留/.test(r.md), '2.11b md 不再出现倒班口径的「上班次」');
 
-// 路径 B：本次有记录但未闭环 → 结转，来源记回原始交接，保留原始期限
-const p03 = carried.find((x) => x.tag === 'P-03') || {};
-ok(!!p03.note, '2.12 本次跟进但未闭环的遗留项也计入结转');
-eq(p03.originShift, '2026-09-20 值班交接', '2.13 未闭环结转项来源记回原始交接');
-eq(p03.originDue, `${D} 10:00`, '2.14 未闭环结转项保留原始要求完成时间');
-eq(p03.note, '上次交接遗留，本次已跟进但未闭环', '2.15 未闭环结转项标注本次已跟进');
+  // 路径 B：本次有记录但未闭环 → 结转，来源记回原始交接，保留原始期限
+  const p03 = carried.find((x) => x.tag === 'P-03') || {};
+  ok(!!p03.note, '2.12 本次跟进但未闭环的遗留项也计入结转');
+  eq(p03.originShift, '2026-09-20 值班交接', '2.13 未闭环结转项来源记回原始交接');
+  eq(p03.originDue, `${D} 10:00`, '2.14 未闭环结转项保留原始要求完成时间');
+  eq(p03.note, '上次交接遗留，本次已跟进但未闭环', '2.15 未闭环结转项标注本次已跟进');
 
-// 路径 C：本次已闭环 → 不结转
-ok(!carried.some((x) => x.tag === 'P-02'), '2.16 本次已闭环的遗留项不结转');
-const pc = r.ho.prevClosed.find((x) => x.tag === 'P-02') || {};
-eq(pc.closed, true, '2.17 已闭环遗留项在 prevClosed 中标记 closed');
-eq(r.summary.counts.carriedOver, 2, '2.18 结转项计数（P-99 + P-03）');
-eq(r.summary.counts.prevClosedOk, 1, '2.19 上次遗留闭环数');
+  // 路径 C：本次已闭环 → 不结转
+  ok(!carried.some((x) => x.tag === 'P-02'), '2.16 本次已闭环的遗留项不结转');
+  const pc = r.ho.prevClosed.find((x) => x.tag === 'P-02') || {};
+  eq(pc.closed, true, '2.17 已闭环遗留项在 prevClosed 中标记 closed');
+  eq(r.summary.counts.carriedOver, 2, '2.18 结转项计数（P-99 + P-03）');
+  eq(r.summary.counts.prevClosedOk, 1, '2.19 上次遗留闭环数');
+});
 
 // ================================================================ 3. 连续两次结转：第三次交接仍能看到第一次的遗留项
 // 第二次：读第一次 handover.json
@@ -114,23 +141,25 @@ const shift2src = mk('shift2.xlsx', {
     [`${D} 20:00`, 'P-01', '泵1', '状态变化', '由备用切运行', '已确认', '已完成', '张', ''],
   ],
 });
-const s2 = run(shift2src, ['--prev', path.join(r.out, 'handover.json')], 'shift2', { shift: '第二次值班', type: '休假交接' });
-eq(s2.summary.ok, true, '3.1 第二次交接运行成功');
-const s2p99 = s2.ho.carriedOver.find((x) => x.tag === 'P-99') || {};
-ok(!!s2p99.note, '3.2 第二次仍结转 P-99');
-eq(s2p99.originShift, '2026-09-20 值班交接', '3.3 第二次保留最初来源交接（非上一次）');
-eq(s2p99.originDue, `${D} 12:00`, '3.4 第二次保留最初要求完成时间');
-eq(s2p99.carryTimes, 2, '3.5 累计结转次数递增');
-// 第三次：读第二次 handover.json
-const s3 = run(shift2src, ['--prev', path.join(s2.out, 'handover.json')], 'shift3', { type: '调岗交接' });
-const s3p99 = s3.ho.carriedOver.find((x) => x.tag === 'P-99') || {};
-ok(!!s3p99.note, '3.6 第三次仍能看到第一次的遗留项 P-99');
-eq(s3p99.originShift, '2026-09-20 值班交接', '3.7 第三次仍指向最初来源交接');
-eq(s3p99.originDue, `${D} 12:00`, '3.8 连续结转未自动延期');
-eq(s3p99.carryTimes, 3, '3.9 第三次累计结转次数为 3');
-ok(/P-99/.test(s3.md), '3.10 第三次 md 仍列出该遗留项');
-ok(/设备员调岗交接记录/.test(s3.md), '3.11 调岗交接类型写入标题');
-ok(s3.ho.pending.some((x) => x.tag === 'P-99' && x.source === '2026-09-20 值班交接'), '3.12 结转项 source 指向最初来源而非上一次交接标签');
+section('A', () => {
+  const s2 = run(shift2src, ['--prev', path.join(r.out, 'handover.json')], 'shift2', { shift: '第二次值班', type: '休假交接' });
+  eq(s2.summary.ok, true, '3.1 第二次交接运行成功');
+  const s2p99 = s2.ho.carriedOver.find((x) => x.tag === 'P-99') || {};
+  ok(!!s2p99.note, '3.2 第二次仍结转 P-99');
+  eq(s2p99.originShift, '2026-09-20 值班交接', '3.3 第二次保留最初来源交接（非上一次）');
+  eq(s2p99.originDue, `${D} 12:00`, '3.4 第二次保留最初要求完成时间');
+  eq(s2p99.carryTimes, 2, '3.5 累计结转次数递增');
+  // 第三次：读第二次 handover.json
+  const s3 = run(shift2src, ['--prev', path.join(s2.out, 'handover.json')], 'shift3', { type: '调岗交接' });
+  const s3p99 = s3.ho.carriedOver.find((x) => x.tag === 'P-99') || {};
+  ok(!!s3p99.note, '3.6 第三次仍能看到第一次的遗留项 P-99');
+  eq(s3p99.originShift, '2026-09-20 值班交接', '3.7 第三次仍指向最初来源交接');
+  eq(s3p99.originDue, `${D} 12:00`, '3.8 连续结转未自动延期');
+  eq(s3p99.carryTimes, 3, '3.9 第三次累计结转次数为 3');
+  ok(/P-99/.test(s3.md), '3.10 第三次 md 仍列出该遗留项');
+  ok(/设备员调岗交接记录/.test(s3.md), '3.11 调岗交接类型写入标题');
+  ok(s3.ho.pending.some((x) => x.tag === 'P-99' && x.source === '2026-09-20 值班交接'), '3.12 结转项 source 指向最初来源而非上一次交接标签');
+});
 
 // ================================================================ 4. 责任人 / 期限缺失写「待明确」，绝不省略条目
 const miss = mk('missing.xlsx', {
@@ -140,33 +169,31 @@ const miss = mk('missing.xlsx', {
     [`${D} 21:00`, 'P-12', '泵12', '异常处理', '声音异常', '观察中', '未完成', '孙', ''],
   ],
 });
-r = run(miss, [], 'missing');
-eq(r.summary.counts.pending, 2, '4.1 责任人缺失的事项仍完整保留');
-const m11 = r.ho.pending.find((x) => x.tag === 'P-11') || {};
-eq(m11.owner, '待明确', '4.2 责任人缺失写「待明确」');
-eq(m11.dueText, '待明确', '4.3 要求完成时间缺失写「待明确」');
-eq(m11.ownerMissing, true, '4.4 标记 ownerMissing 供下游识别');
-ok(/P-11/.test(r.md) && /待明确/.test(r.md), '4.5 md 中该条未被省略且写「待明确」');
+section('A', () => {
+  r = run(miss, [], 'missing');
+  eq(r.summary.counts.pending, 2, '4.1 责任人缺失的事项仍完整保留');
+  const m11 = r.ho.pending.find((x) => x.tag === 'P-11') || {};
+  eq(m11.owner, '待明确', '4.2 责任人缺失写「待明确」');
+  eq(m11.dueText, '待明确', '4.3 要求完成时间缺失写「待明确」');
+  eq(m11.ownerMissing, true, '4.4 标记 ownerMissing 供下游识别');
+  ok(/P-11/.test(r.md) && /待明确/.test(r.md), '4.5 md 中该条未被省略且写「待明确」');
+});
 
 // ================================================================ 5. --time 强校验
-function runRaw(args) {
-  const x = spawnSync(process.execPath, [HO, ...args], { encoding: 'utf8' });
-  const lines = x.stdout.trim().split('\n');
-  try { return { code: x.status, s: JSON.parse(lines[lines.length - 1]) }; } catch (e) { return { code: x.status, s: { ok: false, error: 'no-json' } }; }
-}
-const OKARGS = ['--input', base, '--workshop', '车间', '--type', '值班交接', '--by', '张'];
-let x = runRaw([...OKARGS, '--time', '今天早上']);
-eq(x.s.ok, false, '5.1 模糊时间报错');
-eq(x.code, 1, '5.2 退出码为 1');
-ok(/ISO 8601/.test(x.s.error), '5.3 错误信息说明需带时区 ISO 8601');
-x = runRaw([...OKARGS, '--time', '2026-09-22']);
-eq(x.s.ok, false, '5.4 仅日期无时点报错');
-x = runRaw([...OKARGS, '--time', '2026-09-22T08:00:00']);
-eq(x.s.ok, false, '5.5 无时区的时点报错');
-x = runRaw([...OKARGS, '--time', '2026-09-22T08:00:00+08:00']);
-eq(x.s.ok, true, '5.6 带时区 ISO 8601 通过');
-x = runRaw([...OKARGS, '--time', '2026-13-45T08:00:00+08:00']);
-eq(x.s.ok, false, '5.7 非法月日报错');
+section('B', () => {
+  x = runRaw([...OKARGS, '--time', '今天早上']);
+  eq(x.s.ok, false, '5.1 模糊时间报错');
+  eq(x.code, 1, '5.2 退出码为 1');
+  ok(/ISO 8601/.test(x.s.error), '5.3 错误信息说明需带时区 ISO 8601');
+  x = runRaw([...OKARGS, '--time', '2026-09-22']);
+  eq(x.s.ok, false, '5.4 仅日期无时点报错');
+  x = runRaw([...OKARGS, '--time', '2026-09-22T08:00:00']);
+  eq(x.s.ok, false, '5.5 无时区的时点报错');
+  x = runRaw([...OKARGS, '--time', '2026-09-22T08:00:00+08:00']);
+  eq(x.s.ok, true, '5.6 带时区 ISO 8601 通过');
+  x = runRaw([...OKARGS, '--time', '2026-13-45T08:00:00+08:00']);
+  eq(x.s.ok, false, '5.7 非法月日报错');
+});
 
 // ================================================================ 6. 在修设备无状态说明 → warning
 const rep = mk('repair.xlsx', {
@@ -177,14 +204,16 @@ const rep = mk('repair.xlsx', {
     ['E-02', '换热器2', '', 'WO-2', '王', ''],
   ],
 });
-r = run(rep, [], 'repair');
-eq(r.summary.counts.inRepair, 2, '6.1 在修设备数（SAP 列名 功能位置/设备描述/订单/主工作中心/基本结束日期 可读）');
-eq((r.ho.inRepair.find((y) => y.tag === 'E-01') || {}).order, '4000001', '6.1b SAP「订单」归工单号');
-eq((r.ho.inRepair.find((y) => y.tag === 'E-01') || {}).eta, '2026-09-23 12:00', '6.1c 基本结束日期归预计完工');
-ok(r.ho.warnings.some((w) => w.includes('E-02') && w.includes('无当前状态说明')), '6.2 在修无状态说明 warning');
-eq((r.ho.inRepair.find((y) => y.tag === 'E-02') || {}).state, null, '6.3 无状态说明为 null，不猜测');
-ok(/E-02/.test(r.md) && /无状态说明，需当面确认/.test(r.md), '6.4 md 标注需当面确认');
-ok(r.ho.focusItems.some((f) => f.tag === 'E-02'), '6.5 在修无状态说明进入重点关注');
+section('A', () => {
+  r = run(rep, [], 'repair');
+  eq(r.summary.counts.inRepair, 2, '6.1 在修设备数（SAP 列名 功能位置/设备描述/订单/主工作中心/基本结束日期 可读）');
+  eq((r.ho.inRepair.find((y) => y.tag === 'E-01') || {}).order, '4000001', '6.1b SAP「订单」归工单号');
+  eq((r.ho.inRepair.find((y) => y.tag === 'E-01') || {}).eta, '2026-09-23 12:00', '6.1c 基本结束日期归预计完工');
+  ok(r.ho.warnings.some((w) => w.includes('E-02') && w.includes('无当前状态说明')), '6.2 在修无状态说明 warning');
+  eq((r.ho.inRepair.find((y) => y.tag === 'E-02') || {}).state, null, '6.3 无状态说明为 null，不猜测');
+  ok(/E-02/.test(r.md) && /无状态说明，需当面确认/.test(r.md), '6.4 md 标注需当面确认');
+  ok(r.ho.focusItems.some((f) => f.tag === 'E-02'), '6.5 在修无状态说明进入重点关注');
+});
 
 // ================================================================ 7. 未判定：事项类型 / 完成状态
 const und = mk('undet.xlsx', {
@@ -195,15 +224,17 @@ const und = mk('undet.xlsx', {
     [`${D} 22:00`, 'P-23', '泵23', '', '阀门内漏', '已记录', '已完成', '张', ''],
   ],
 });
-r = run(und, [], 'undet');
-eq(r.summary.counts.undetermined, 2, '7.1 事项类型未判定 2 条（「待定」+ 空）');
-eq(r.summary.counts.statusUndetermined, 1, '7.2 完成状态未判定 1 条（「观察中」）');
-eq(r.summary.counts.statusChanges, 0, '7.3 未归类事项未被默认塞入状态变化');
-eq(r.summary.counts.abnormalHandled, 1, '7.4 未归类事项未被默认塞入异常处理');
-ok(r.ho.pending.some((y) => y.tag === 'P-22'), '7.5 状态未判定的事项仍随本次交接（就严）');
-eq((r.ho.pending.find((y) => y.tag === 'P-22') || {}).stateDetermined, false, '7.6 标记状态未判定');
-ok(/## 七、未判定事项/.test(r.md), '7.7 md 单列未判定一节');
-ok(r.ho.focusItems.some((f) => f.reason.includes('完成状态未判定')), '7.8 状态未判定进入重点关注');
+section('A', () => {
+  r = run(und, [], 'undet');
+  eq(r.summary.counts.undetermined, 2, '7.1 事项类型未判定 2 条（「待定」+ 空）');
+  eq(r.summary.counts.statusUndetermined, 1, '7.2 完成状态未判定 1 条（「观察中」）');
+  eq(r.summary.counts.statusChanges, 0, '7.3 未归类事项未被默认塞入状态变化');
+  eq(r.summary.counts.abnormalHandled, 1, '7.4 未归类事项未被默认塞入异常处理');
+  ok(r.ho.pending.some((y) => y.tag === 'P-22'), '7.5 状态未判定的事项仍随本次交接（就严）');
+  eq((r.ho.pending.find((y) => y.tag === 'P-22') || {}).stateDetermined, false, '7.6 标记状态未判定');
+  ok(/## 七、未判定事项/.test(r.md), '7.7 md 单列未判定一节');
+  ok(r.ho.focusItems.some((f) => f.reason.includes('完成状态未判定')), '7.8 状态未判定进入重点关注');
+});
 
 // ================================================================ 8. 合计行 / 标题行表头 / 别名列头
 const mes = mk('mes.xlsx', {
@@ -216,42 +247,48 @@ const mes = mk('mes.xlsx', {
     ['合计', '', '', '', '', '', '', '', ''],
   ],
 });
-r = run(mes, [], 'mes');
-eq(r.summary.ok, true, '8.1 导出风格可读');
-eq(r.summary.counts.records, 2, '8.2 合计行被跳过');
-ok(r.ho.warnings.some((w) => w.includes('合计行')), '8.3 合计行 warning');
-eq(r.summary.counts.abnormalHandled, 1, '8.4 别名列头「类型/事项内容」识别正确');
-eq(r.summary.counts.statusChanges, 1, '8.5 「状态变更」归入状态变化');
+section('B', () => {
+  r = run(mes, [], 'mes');
+  eq(r.summary.ok, true, '8.1 导出风格可读');
+  eq(r.summary.counts.records, 2, '8.2 合计行被跳过');
+  ok(r.ho.warnings.some((w) => w.includes('合计行')), '8.3 合计行 warning');
+  eq(r.summary.counts.abnormalHandled, 1, '8.4 别名列头「类型/事项内容」识别正确');
+  eq(r.summary.counts.statusChanges, 1, '8.5 「状态变更」归入状态变化');
+});
 
 // ================================================================ 9. 参数校验
-x = runRaw(['--input']);
-eq(x.s.ok, false, '9.1 --input 缺值报错');
-ok(/缺少取值/.test(x.s.error), '9.2 缺值错误信息正确');
-x = runRaw(['--input', base, '--type', '值班交接', '--time', TIME, '--by', '张']);
-eq(x.s.ok, false, '9.3 缺 --workshop 报错');
-x = runRaw(['--input', base, '--workshop', '车间', '--time', TIME, '--by', '张']);
-eq(x.s.ok, false, '9.4 缺 --type 报错');
-ok(/值班交接 \/ 休假交接 \/ 调岗交接/.test(x.s.error) && /操作班组/.test(x.s.error), '9.4b 错误信息列出三种交接类型并排除操作班组交接班');
-x = runRaw(['--input', base, '--workshop', '车间', '--type', '夜班交接班', '--time', TIME, '--by', '张']);
-eq(x.s.ok, false, '9.4c --type 取值「夜班交接班」被拒绝');
-x = runRaw(['--input', base, '--workshop', '车间', '--type', '休假交接', '--time', TIME, '--by', '张', '--out', path.join(work, 'noshift-out')]);
-eq(x.s.ok, true, '9.4d --shift 可选，不传也能运行');
-eq(x.s.type, '休假交接', '9.4e summary 记录交接类型');
-x = runRaw(['--input', base, '--workshop', '车间', '--type', '值班交接', '--time', TIME]);
-eq(x.s.ok, false, '9.5 缺 --by 报错');
-x = runRaw([...OKARGS, '--time', TIME, '--未知参数', 'x']);
-eq(x.s.ok, false, '9.6 未知参数报错');
-x = runRaw(['--input', '/不存在的路径.xlsx', '--workshop', '车间', '--type', '值班交接', '--time', TIME, '--by', '张']);
-eq(x.s.ok, false, '9.7 输入不存在报错');
-x = runRaw([...OKARGS, '--time', TIME, '--prev', '/不存在的上班记录.json']);
-eq(x.s.ok, false, '9.8 --prev 不存在报错');
+section('B', () => {
+  x = runRaw(['--input']);
+  eq(x.s.ok, false, '9.1 --input 缺值报错');
+  ok(/缺少取值/.test(x.s.error), '9.2 缺值错误信息正确');
+  x = runRaw(['--input', base, '--type', '值班交接', '--time', TIME, '--by', '张']);
+  eq(x.s.ok, false, '9.3 缺 --workshop 报错');
+  x = runRaw(['--input', base, '--workshop', '车间', '--time', TIME, '--by', '张']);
+  eq(x.s.ok, false, '9.4 缺 --type 报错');
+  ok(/值班交接 \/ 休假交接 \/ 调岗交接/.test(x.s.error) && /操作班组/.test(x.s.error), '9.4b 错误信息列出三种交接类型并排除操作班组交接班');
+  x = runRaw(['--input', base, '--workshop', '车间', '--type', '夜班交接班', '--time', TIME, '--by', '张']);
+  eq(x.s.ok, false, '9.4c --type 取值「夜班交接班」被拒绝');
+  x = runRaw(['--input', base, '--workshop', '车间', '--type', '休假交接', '--time', TIME, '--by', '张', '--out', path.join(work, 'noshift-out')]);
+  eq(x.s.ok, true, '9.4d --shift 可选，不传也能运行');
+  eq(x.s.type, '休假交接', '9.4e summary 记录交接类型');
+  x = runRaw(['--input', base, '--workshop', '车间', '--type', '值班交接', '--time', TIME]);
+  eq(x.s.ok, false, '9.5 缺 --by 报错');
+  x = runRaw([...OKARGS, '--time', TIME, '--未知参数', 'x']);
+  eq(x.s.ok, false, '9.6 未知参数报错');
+  x = runRaw(['--input', '/不存在的路径.xlsx', '--workshop', '车间', '--type', '值班交接', '--time', TIME, '--by', '张']);
+  eq(x.s.ok, false, '9.7 输入不存在报错');
+  x = runRaw([...OKARGS, '--time', TIME, '--prev', '/不存在的上班记录.json']);
+  eq(x.s.ok, false, '9.8 --prev 不存在报错');
+});
 
 // ================================================================ 10. 无「本班记录」表 → ok:false exit 1
 const bad = mk('bad.xlsx', { '随便一张表': [['a', 'b'], [1, 2]] });
-r = run(bad, [], 'bad');
-eq(r.summary.ok, false, '10.1 无本次记录表时 ok:false');
-eq(r.code, 1, '10.2 退出码为 1');
-ok(/未在输入中找到/.test(r.summary.error), '10.3 错误信息明确');
+section('B', () => {
+  r = run(bad, [], 'bad');
+  eq(r.summary.ok, false, '10.1 无本次记录表时 ok:false');
+  eq(r.code, 1, '10.2 退出码为 1');
+  ok(/未在输入中找到/.test(r.summary.error), '10.3 错误信息明确');
+});
 
 // ================================================================ 11. 位号为空不丢事项
 const notag = mk('notag.xlsx', {
@@ -261,34 +298,44 @@ const notag = mk('notag.xlsx', {
     [`${D} 21:00`, 'P-41', '泵41', '状态变化', '投用', '正常', '已完成', '张', ''],
   ],
 });
-r = run(notag, [], 'notag');
-eq(r.summary.counts.records, 2, '11.1 位号为空的事项未被丢弃（旧 sheet 名「本班记录」仍可读）');
-eq((r.ho.pending.find((y) => y.content.includes('异响')) || {}).tag, '待明确', '11.2 位号缺失记为「待明确」');
-ok(r.ho.warnings.some((w) => w.includes('位号为空') && w.includes('仍予保留')), '11.3 位号为空 warning 说明已保留');
+section('B', () => {
+  r = run(notag, [], 'notag');
+  eq(r.summary.counts.records, 2, '11.1 位号为空的事项未被丢弃（旧 sheet 名「本班记录」仍可读）');
+  eq((r.ho.pending.find((y) => y.content.includes('异响')) || {}).tag, '待明确', '11.2 位号缺失记为「待明确」');
+  ok(r.ho.warnings.some((w) => w.includes('位号为空') && w.includes('仍予保留')), '11.3 位号为空 warning 说明已保留');
+});
 
 // ================================================================ 12. 声明行与产出结构
-r = run(base, ['--prev', prevXlsx, '--to', '李设备'], 'struct');
-ok(/交接以双方现场确认签字为准，本记录为辅助整理/.test(r.md), '12.1 md 保留声明行');
-eq((r.md.match(/交接以双方现场确认签字为准，本记录为辅助整理/g) || []).length >= 2, true, '12.2 声明行在开头与签字栏均出现');
-eq(r.ho.meta.declaration, '交接以双方现场确认签字为准，本记录为辅助整理', '12.3 json 中记录声明行');
-ok(/## 一、交接信息/.test(r.md) && /## 二、设备状态变化/.test(r.md) && /## 三、异常与处理/.test(r.md)
-  && /## 四、在修设备状态/.test(r.md) && /## 五、未完成事项/.test(r.md) && /## 六、需重点关注事项/.test(r.md)
-  && /## 八、交接说明/.test(r.md) && /## 九、交接签字/.test(r.md), '12.4 各章节齐全');
-ok(/<!-- ANALYSIS_START -->/.test(r.md) && /<!-- ANALYSIS_END -->/.test(r.md), '12.5 分析段占位符存在');
-ok(/2026-09-22 08:00:00/.test(r.md), '12.6 交接时间明确到时点（北京时间）');
-ok(/2026-09-22T08:00:00\+08:00/.test(r.md), '12.7 md 保留原始 ISO 入参');
-eq(r.ho.meta.to, '李设备', '12.8 接手人写入 meta');
-r = run(base, [], 'noto');
-ok(/接手人 \| 待明确/.test(r.md), '12.9 接手人未提供时写「待明确」');
-ok(!/⚠|✅|❌/.test(r.md), '12.10 产出 md 不含 emoji');
-ok(/【注意】/.test(run(base, ['--prev', prevXlsx], 'notice').md), '12.11 结转提示用「【注意】」');
+section('BVT', () => {
+  r = run(base, ['--prev', prevXlsx, '--to', '李设备'], 'struct');
+  ok(/交接以双方现场确认签字为准，本记录为辅助整理/.test(r.md), '12.1 md 保留声明行');
+  eq((r.md.match(/交接以双方现场确认签字为准，本记录为辅助整理/g) || []).length >= 2, true, '12.2 声明行在开头与签字栏均出现');
+  eq(r.ho.meta.declaration, '交接以双方现场确认签字为准，本记录为辅助整理', '12.3 json 中记录声明行');
+  ok(/## 一、交接信息/.test(r.md) && /## 二、设备状态变化/.test(r.md) && /## 三、异常与处理/.test(r.md)
+    && /## 四、在修设备状态/.test(r.md) && /## 五、未完成事项/.test(r.md) && /## 六、需重点关注事项/.test(r.md)
+    && /## 八、交接说明/.test(r.md) && /## 九、交接签字/.test(r.md), '12.4 各章节齐全');
+  ok(/<!-- ANALYSIS_START -->/.test(r.md) && /<!-- ANALYSIS_END -->/.test(r.md), '12.5 分析段占位符存在');
+  ok(/2026-09-22 08:00:00/.test(r.md), '12.6 交接时间明确到时点（北京时间）');
+  ok(/2026-09-22T08:00:00\+08:00/.test(r.md), '12.7 md 保留原始 ISO 入参');
+  eq(r.ho.meta.to, '李设备', '12.8 接手人写入 meta');
+});
+section('B', () => {
+  r = run(base, [], 'noto');
+  ok(/接手人 \| 待明确/.test(r.md), '12.9 接手人未提供时写「待明确」');
+});
+section('C', () => {
+  ok(!/⚠|✅|❌/.test(r.md), '12.10 产出 md 不含 emoji');
+  ok(/【注意】/.test(run(base, ['--prev', prevXlsx], 'notice').md), '12.11 结转提示用「【注意】」');
+});
 
 // ================================================================ 13. summary.json 落盘
-r = run(base, [], 'summaryfile');
-ok(fs.existsSync(path.join(r.out, 'summary.json')), '13.1 summary.json 已写入');
-const sj = JSON.parse(fs.readFileSync(path.join(r.out, 'summary.json'), 'utf8'));
-eq(sj.ok, true, '13.2 summary.json 内容正确');
-ok(fs.existsSync(path.join(r.out, 'handover.json')), '13.3 handover.json 已写入');
+section('BVT', () => {
+  r = run(base, [], 'summaryfile');
+  ok(fs.existsSync(path.join(r.out, 'summary.json')), '13.1 summary.json 已写入');
+  const sj = JSON.parse(fs.readFileSync(path.join(r.out, 'summary.json'), 'utf8'));
+  eq(sj.ok, true, '13.2 summary.json 内容正确');
+  ok(fs.existsSync(path.join(r.out, 'handover.json')), '13.3 handover.json 已写入');
+});
 
 // ================================================================ 14. 超期事项进入重点关注
 const over = mk('overdue.xlsx', {
@@ -298,32 +345,40 @@ const over = mk('overdue.xlsx', {
     [`${D} 20:30`, 'P-52', '泵52', '异常处理', '待复查振动', '已安排', '未完成', '张', '2026-09-30 08:00'],
   ],
 });
-r = run(over, [], 'overdue');
-ok(r.ho.focusItems.some((f) => f.tag === 'P-51' && f.reason.includes('已超过交接时点')), '14.1 超期事项进入重点关注');
-ok(!r.ho.focusItems.some((f) => f.tag === 'P-52'), '14.2 未到期事项不误报超期');
+section('A', () => {
+  r = run(over, [], 'overdue');
+  ok(r.ho.focusItems.some((f) => f.tag === 'P-51' && f.reason.includes('已超过交接时点')), '14.1 超期事项进入重点关注');
+  ok(!r.ho.focusItems.some((f) => f.tag === 'P-52'), '14.2 未到期事项不误报超期');
+});
 
 // ================================================================ 15. JSON 形式的 --prev
-r = run(base, ['--prev', prevXlsx], 'jsonprev-src');
-const jsonPrev = path.join(r.out, 'handover.json');
-r = run(shift2src, ['--prev', jsonPrev], 'jsonprev');
-eq(r.summary.ok, true, '15.1 JSON 形式 --prev 可读');
-ok(r.ho.carriedOver.length >= 2, '15.2 JSON --prev 的未完成事项全部核对');
-ok(r.ho.carriedOver.every((y) => y.originShift && y.originDue !== undefined), '15.3 结转项均带原始来源与原始期限');
+section('B', () => {
+  r = run(base, ['--prev', prevXlsx], 'jsonprev-src');
+  const jsonPrev = path.join(r.out, 'handover.json');
+  r = run(shift2src, ['--prev', jsonPrev], 'jsonprev');
+  eq(r.summary.ok, true, '15.1 JSON 形式 --prev 可读');
+  ok(r.ho.carriedOver.length >= 2, '15.2 JSON --prev 的未完成事项全部核对');
+  ok(r.ho.carriedOver.every((y) => y.originShift && y.originDue !== undefined), '15.3 结转项均带原始来源与原始期限');
+});
 
 // ================================================================ 16. 与 worklog-todo-manager 的衔接字段
-r = run(base, ['--prev', prevXlsx], 'worklog');
-ok(r.ho.pending.every((x) => 'tag' in x && 'content' in x && 'state' in x && 'owner' in x && 'due' in x && 'dueText' in x && 'originShift' in x && 'carryTimes' in x), '16.1 pending 每条含 worklog 读取的字段');
-ok(r.ho.focusItems !== undefined && r.ho.carriedOver !== undefined, '16.2 focusItems / carriedOver 存在');
+section('B', () => {
+  r = run(base, ['--prev', prevXlsx], 'worklog');
+  ok(r.ho.pending.every((x) => 'tag' in x && 'content' in x && 'state' in x && 'owner' in x && 'due' in x && 'dueText' in x && 'originShift' in x && 'carryTimes' in x), '16.1 pending 每条含 worklog 读取的字段');
+  ok(r.ho.focusItems !== undefined && r.ho.carriedOver !== undefined, '16.2 focusItems / carriedOver 存在');
+});
 // 设备编号不作位号：SAP「设备」列是流水号
 const sap = mk('sap.xlsx', {
   '值班记录': [['发生时间', '功能位置', '设备', '设备描述', '事项类型', '通知单描述', '处理情况', '状态', '责任人', '基本结束日期'],
     [`${D} 20:00`, 'P-61', '10000061', '泵61', '异常处理', '机封漏', '已报通知单', '未完成', '张', `${D} 23:00`]],
 });
-r = run(sap, [], 'sap');
-eq(r.summary.counts.records, 1, '16.3 SAP 列名的记录可读');
-eq(r.ho.pending[0].tag, 'P-61', '16.4 功能位置归位号，「设备」流水号不作位号');
-eq(r.ho.pending[0].content, '机封漏', '16.5 通知单描述归内容');
-eq(r.ho.pending[0].due, `${D} 23:00`, '16.6 基本结束日期归要求完成时间');
+section('A', () => {
+  r = run(sap, [], 'sap');
+  eq(r.summary.counts.records, 1, '16.3 SAP 列名的记录可读');
+  eq(r.ho.pending[0].tag, 'P-61', '16.4 功能位置归位号，「设备」流水号不作位号');
+  eq(r.ho.pending[0].content, '机封漏', '16.5 通知单描述归内容');
+  eq(r.ho.pending[0].due, `${D} 23:00`, '16.6 基本结束日期归要求完成时间');
+});
 
 // ================================================================ 17. SAP 状态码归一（口径对照第四节：CLSD/NOCO 已闭环，TECO/CNF 待验收不算闭环）
 const sapSt = mk('sap-status.xlsx', {
@@ -341,23 +396,25 @@ const sapSt = mk('sap-status.xlsx', {
     [`${D} 09:40`, 'P-80', '泵80', '异常处理', '压力表失灵', '已报仪表', 'CRTD', '赵', ''],
   ],
 });
-r = run(sapSt, [], 'sap-status');
-eq(r.summary.ok, true, '17.1 SAP 状态码记录可运行');
-eq(r.summary.counts.statusUndetermined, 1, '17.2 SAP 状态码不再整体判「状态未判定」，仅 DLFL（已取消，需确认）1 条');
-eq(r.summary.counts.abnormalClosed, 3, '17.3 CLSD / NOCO / 已关闭 判已闭环（3 条）');
-const sp = (t) => r.ho.pending.find((y) => y.tag === t);
-ok(!sp('P-71') && !sp('P-72') && !sp('P-78'), '17.4 CLSD / NOCO / 已关闭 不进未完成事项');
-ok(!!sp('P-73') && sp('P-73').stateDetermined === true, '17.5 TECO（技术完成）不算闭环，进未完成事项且状态已判定');
-ok(/待验收/.test((sp('P-73') || {}).state || ''), '17.6 TECO 未完成事项注明「待验收」');
-ok(!!sp('P-76') && /待验收/.test(sp('P-76').state), '17.7 「技术完成」归待验收，不按已完成销账');
-ok(!!sp('P-74') && sp('P-74').stateDetermined === true, '17.8 OSNO（通知单未处理）判未完成');
-ok(!!sp('P-75') && sp('P-75').stateDetermined === true, '17.9 REL（已下达）判未完成');
-ok(!!sp('P-77') && /待验收/.test(sp('P-77').state), '17.10 多码组合「REL CNF」取最靠后的状态（待验收）');
-ok(!!sp('P-80') && sp('P-80').stateDetermined === true, '17.11 CRTD（已创建）判未完成');
-ok(!!sp('P-79') && sp('P-79').stateDetermined === false, '17.12 DLFL（删除标记）不默认销账，随本次交接并标状态未判定');
-ok(r.ho.statusUndetermined.some((y) => y.tag === 'P-79' && /已取消|删除标记/.test(y.reason)), '17.13 DLFL 未判定原因写明已取消/删除标记需确认');
-eq(r.summary.counts.pending, 7, '17.14 未完成事项 7 条（TECO/OSNO/REL/技术完成/REL CNF/CRTD + DLFL 待确认）');
-ok(!r.ho.warnings.some((w) => /「(CLSD|NOCO|TECO|OSNO|REL|CRTD)」无法判定/.test(w)), '17.15 SAP 状态码不再出「无法判定」warning');
+section('A', () => {
+  r = run(sapSt, [], 'sap-status');
+  eq(r.summary.ok, true, '17.1 SAP 状态码记录可运行');
+  eq(r.summary.counts.statusUndetermined, 1, '17.2 SAP 状态码不再整体判「状态未判定」，仅 DLFL（已取消，需确认）1 条');
+  eq(r.summary.counts.abnormalClosed, 3, '17.3 CLSD / NOCO / 已关闭 判已闭环（3 条）');
+  const sp = (t) => r.ho.pending.find((y) => y.tag === t);
+  ok(!sp('P-71') && !sp('P-72') && !sp('P-78'), '17.4 CLSD / NOCO / 已关闭 不进未完成事项');
+  ok(!!sp('P-73') && sp('P-73').stateDetermined === true, '17.5 TECO（技术完成）不算闭环，进未完成事项且状态已判定');
+  ok(/待验收/.test((sp('P-73') || {}).state || ''), '17.6 TECO 未完成事项注明「待验收」');
+  ok(!!sp('P-76') && /待验收/.test(sp('P-76').state), '17.7 「技术完成」归待验收，不按已完成销账');
+  ok(!!sp('P-74') && sp('P-74').stateDetermined === true, '17.8 OSNO（通知单未处理）判未完成');
+  ok(!!sp('P-75') && sp('P-75').stateDetermined === true, '17.9 REL（已下达）判未完成');
+  ok(!!sp('P-77') && /待验收/.test(sp('P-77').state), '17.10 多码组合「REL CNF」取最靠后的状态（待验收）');
+  ok(!!sp('P-80') && sp('P-80').stateDetermined === true, '17.11 CRTD（已创建）判未完成');
+  ok(!!sp('P-79') && sp('P-79').stateDetermined === false, '17.12 DLFL（删除标记）不默认销账，随本次交接并标状态未判定');
+  ok(r.ho.statusUndetermined.some((y) => y.tag === 'P-79' && /已取消|删除标记/.test(y.reason)), '17.13 DLFL 未判定原因写明已取消/删除标记需确认');
+  eq(r.summary.counts.pending, 7, '17.14 未完成事项 7 条（TECO/OSNO/REL/技术完成/REL CNF/CRTD + DLFL 待确认）');
+  ok(!r.ho.warnings.some((w) => /「(CLSD|NOCO|TECO|OSNO|REL|CRTD)」无法判定/.test(w)), '17.15 SAP 状态码不再出「无法判定」warning');
+});
 // 中文「已删除」（EAM 导出的 DLFL 中文写法）与 DLFL 同口径：列入待确认并写明已取消/删除，不销账、不按未完成
 const delSt = mk('deleted-status.xlsx', {
   '本次记录': [
@@ -366,13 +423,17 @@ const delSt = mk('deleted-status.xlsx', {
     [`${D} 09:40`, 'P-82', '泵82', '异常处理', '误建工单', '', '删除', '李', ''],
   ],
 });
-r = run(delSt, [], 'deleted-status');
-eq(r.summary.counts.statusUndetermined, 2, '17.17 「已删除」「删除」与 DLFL 同口径，列入状态未判定（待确认）');
-ok(r.ho.statusUndetermined.every((y) => /已取消/.test(y.reason)), '17.18 原因写明已取消/删除标记需确认，不是笼统的「无法判定」');
-ok(!r.ho.warnings.some((w) => /「(已删除|删除)」无法判定/.test(w)), '17.19 「已删除」不再出「无法判定」warning');
+section('B', () => {
+  r = run(delSt, [], 'deleted-status');
+  eq(r.summary.counts.statusUndetermined, 2, '17.17 「已删除」「删除」与 DLFL 同口径，列入状态未判定（待确认）');
+  ok(r.ho.statusUndetermined.every((y) => /已取消/.test(y.reason)), '17.18 原因写明已取消/删除标记需确认，不是笼统的「无法判定」');
+  ok(!r.ho.warnings.some((w) => /「(已删除|删除)」无法判定/.test(w)), '17.19 「已删除」不再出「无法判定」warning');
+});
 // 原有中文状态口径不变
-r = run(base, [], 'sap-status-cn');
-eq(r.summary.counts.pending, 2, '17.16 中文「已完成 / 未完成」口径不变');
+section('A', () => {
+  r = run(base, [], 'sap-status-cn');
+  eq(r.summary.counts.pending, 2, '17.16 中文「已完成 / 未完成」口径不变');
+});
 
 // ================================================================ 18. 「要求完成时间已过」统一按北京时间（+08:00）解析，与主机时区无关
 const tz = mk('tz.xlsx', {
@@ -383,25 +444,29 @@ const tz = mk('tz.xlsx', {
     [`${D} 20:10`, 'P-92', '泵92', '异常处理', '振动复测', '已安排', '未完成', '张', '2026-09-22 10:00'],      // 未到
   ],
 });
-for (const zone of ['UTC', 'Pacific/Kiritimati', 'America/Los_Angeles', 'Asia/Shanghai']) {
-  r = run(tz, [], `tz-${zone.replace(/\W/g, '')}`, { env: { TZ: zone } });
-  ok(r.ho.focusItems.some((f) => f.tag === 'P-91' && f.reason.includes('已超过交接时点')), `18.1 TZ=${zone}：北京时间 07:30 到期、08:00 交接判已超期`);
-  ok(!r.ho.focusItems.some((f) => f.tag === 'P-92'), `18.2 TZ=${zone}：北京时间 10:00 到期不误报超期`);
-}
+section('B', () => {
+  for (const zone of ['UTC', 'Pacific/Kiritimati', 'America/Los_Angeles', 'Asia/Shanghai']) {
+    r = run(tz, [], `tz-${zone.replace(/\W/g, '')}`, { env: { TZ: zone } });
+    ok(r.ho.focusItems.some((f) => f.tag === 'P-91' && f.reason.includes('已超过交接时点')), `18.1 TZ=${zone}：北京时间 07:30 到期、08:00 交接判已超期`);
+    ok(!r.ho.focusItems.some((f) => f.tag === 'P-92'), `18.2 TZ=${zone}：北京时间 10:00 到期不误报超期`);
+  }
+});
 
 // ================================================================ 19. make-sample 主样例结论与 README 一致
 {
-  const msOut = path.join(work, 'ms');
-  const ms = spawnSync(process.execPath, [path.join(__dirname, 'make-sample.js'), '--out', msOut, '--seed', '3'], { encoding: 'utf8' });
-  eq(ms.status, 0, '19.1 make-sample 运行成功');
-  const mainS = path.join(msOut, 'sample-handover-2026-09-21.xlsx');
-  r = run(mainS, [], 'ms-main');
-  eq(r.summary.counts.pending, 5, '19.2 主样例（不带 --prev）未完成事项 5 项');
-  eq(r.summary.counts.statusChanges, 3, '19.3 主样例状态变化 3 项');
-  eq(r.summary.counts.abnormalHandled, 5, '19.4 主样例异常处理 5 项');
-  r = run(mainS, ['--prev', path.join(msOut, 'sample-prev-handover-2026-09-20.xlsx')], 'ms-main-prev');
-  eq(r.summary.counts.pending, 6, '19.5 主样例带上次交接 --prev 后未完成事项 6 项（含 1 项本次未处理结转）');
-  eq(r.summary.counts.carriedOver, 2, '19.6 带 --prev 结转 2 项');
+  section('C', () => {
+    const msOut = path.join(work, 'ms');
+    const ms = spawnSync(process.execPath, [path.join(__dirname, 'make-sample.js'), '--out', msOut, '--seed', '3'], { encoding: 'utf8' });
+    eq(ms.status, 0, '19.1 make-sample 运行成功');
+    const mainS = path.join(msOut, 'sample-handover-2026-09-21.xlsx');
+    r = run(mainS, [], 'ms-main');
+    eq(r.summary.counts.pending, 5, '19.2 主样例（不带 --prev）未完成事项 5 项');
+    eq(r.summary.counts.statusChanges, 3, '19.3 主样例状态变化 3 项');
+    eq(r.summary.counts.abnormalHandled, 5, '19.4 主样例异常处理 5 项');
+    r = run(mainS, ['--prev', path.join(msOut, 'sample-prev-handover-2026-09-20.xlsx')], 'ms-main-prev');
+    eq(r.summary.counts.pending, 6, '19.5 主样例带上次交接 --prev 后未完成事项 6 项（含 1 项本次未处理结转）');
+    eq(r.summary.counts.carriedOver, 2, '19.6 带 --prev 结转 2 项');
+  });
 }
 
 // ================================================================ 否定写法不被「完成/处理/恢复」误判为已完成（2026-11-04）
@@ -412,10 +477,12 @@ for (const zone of ['UTC', 'Pacific/Kiritimati', 'America/Los_Angeles', 'Asia/Sh
     [`${D} 20:20`, 'P-33', '泵33', '异常处理', '出口压力低', '已切泵', '尚未恢复', '张', ''],
     [`${D} 20:30`, 'P-34', '泵34', '异常处理', '振动大', '已检查', '暂未处理', '张', ''],
     [`${D} 20:40`, 'P-35', '泵35', '异常处理', '异响', '已处理', '处理完毕', '张', '']] });
-  const r = run(neg, [], 'neg');
-  const pend = (r.ho ? r.ho.pending : []).map((x) => x.tag);
-  ok(['P-31', 'P-32', 'P-33', 'P-34'].every((t) => pend.includes(t)), `NEG1 「待完成/没完成/尚未恢复/暂未处理」进未完成事项（实际 ${pend.join(',')}）`);
-  ok(!pend.includes('P-35'), 'NEG2 「处理完毕」仍按已完成');
+  section('A', () => {
+    const r = run(neg, [], 'neg');
+    const pend = (r.ho ? r.ho.pending : []).map((x) => x.tag);
+    ok(['P-31', 'P-32', 'P-33', 'P-34'].every((t) => pend.includes(t)), `NEG1 「待完成/没完成/尚未恢复/暂未处理」进未完成事项（实际 ${pend.join(',')}）`);
+    ok(!pend.includes('P-35'), 'NEG2 「处理完毕」仍按已完成');
+  });
 }
 // 否定词与完成类动词之间隔 0~3 个字（未全部完成）、「部分完成」也是未完成（2026-11-04 复核）
 {
@@ -425,12 +492,14 @@ for (const zone of ['UTC', 'Pacific/Kiritimati', 'America/Los_Angeles', 'Asia/Sh
     [`${D} 21:20`, 'P-43', '泵43', '异常处理', '出口压力低', '已切泵', '还没有都完成', '张', ''],
     [`${D} 21:30`, 'P-44', '泵44', '异常处理', '振动大', '已检查', '不再振动，已处理', '张', ''],
     [`${D} 21:40`, 'P-45', '泵45', '异常处理', '异响', '已处理', '已完成', '张', '']] });
-  const r = run(neg2, [], 'neg2');
-  const pend = (r.ho ? r.ho.pending : []).map((x) => x.tag);
-  ok(pend.includes('P-41'), `NEG3 「未全部完成」进未完成事项（实际 ${pend.join(',')}）`);
-  ok(pend.includes('P-42'), `NEG4 「部分完成」进未完成事项（实际 ${pend.join(',')}）`);
-  ok(pend.includes('P-43'), `NEG5 「还没有都完成」（否定词与动词隔 1~2 字）进未完成事项（实际 ${pend.join(',')}）`);
-  ok(!pend.includes('P-44') && !pend.includes('P-45'), 'NEG6 「不再振动，已处理」「已完成」仍按已完成');
+  section('A', () => {
+    const r = run(neg2, [], 'neg2');
+    const pend = (r.ho ? r.ho.pending : []).map((x) => x.tag);
+    ok(pend.includes('P-41'), `NEG3 「未全部完成」进未完成事项（实际 ${pend.join(',')}）`);
+    ok(pend.includes('P-42'), `NEG4 「部分完成」进未完成事项（实际 ${pend.join(',')}）`);
+    ok(pend.includes('P-43'), `NEG5 「还没有都完成」（否定词与动词隔 1~2 字）进未完成事项（实际 ${pend.join(',')}）`);
+    ok(!pend.includes('P-44') && !pend.includes('P-45'), 'NEG6 「不再振动，已处理」「已完成」仍按已完成');
+  });
 }
 
 // 「不」只认紧贴完成类动词（不完成 / 不能投用），「不对中 / 不平衡 / 不合格品 处理完毕」里的「不」修饰名词，仍按已完成（R9）
@@ -441,10 +510,12 @@ for (const zone of ['UTC', 'Pacific/Kiritimati', 'America/Los_Angeles', 'Asia/Sh
     [`${D} 22:20`, 'P-53', '泵53', '异常处理', '不合格品', '已隔离', '不合格品处理完毕', '张', ''],
     [`${D} 22:30`, 'P-54', '泵54', '异常处理', '机封滴漏', '已联系检修', '今天不完成', '张', ''],
     [`${D} 22:40`, 'P-55', '泵55', '异常处理', '出口压力低', '已切泵', '备泵不能投用', '张', '']] });
-  const r = run(neg3, [], 'neg3');
-  const pend = (r.ho ? r.ho.pending : []).map((x) => x.tag);
-  ok(!pend.includes('P-51') && !pend.includes('P-52') && !pend.includes('P-53'), `NEG7 「不对中 / 不平衡 / 不合格品 处理完毕」按已完成（实际未完成 ${pend.join(',')}）`);
-  ok(pend.includes('P-54') && pend.includes('P-55'), `NEG8 「不完成」「不能投用」仍进未完成事项（实际 ${pend.join(',')}）`);
+  section('B', () => {
+    const r = run(neg3, [], 'neg3');
+    const pend = (r.ho ? r.ho.pending : []).map((x) => x.tag);
+    ok(!pend.includes('P-51') && !pend.includes('P-52') && !pend.includes('P-53'), `NEG7 「不对中 / 不平衡 / 不合格品 处理完毕」按已完成（实际未完成 ${pend.join(',')}）`);
+    ok(pend.includes('P-54') && pend.includes('P-55'), `NEG8 「不完成」「不能投用」仍进未完成事项（实际 ${pend.join(',')}）`);
+  });
 }
 
 
@@ -462,61 +533,68 @@ for (const zone of ['UTC', 'Pacific/Kiritimati', 'America/Los_Angeles', 'Asia/Sh
       [`${D} 22:30`, 'P-92', '外泵2', '异常处理', '外车间振动', '', '未完成', '王', '', OT]],
     '在修设备': [['位号', '设备名称', '当前状态', '车间'], ['P-04', '泵4', '拆检中', '测试车间'], ['P-94', '外泵4', '拆检中', OT]],
   });
-  let r = run(mixed, [], 'ws-mixed');
-  eq(r.summary.ok, true, 'WS1 两车间混合输入可运行');
-  eq(r.summary.counts.records, 3, 'WS2 本次记录只保留本车间（含「测试」写法与车间列为空的行），剔除二车间 2 行');
-  ok(!r.ho.pending.some((x) => /^P-9/.test(x.tag)) && !/P-91|P-92/.test(r.md), 'WS3 其他车间事项不进未完成事项和交接记录');
-  ok(r.ho.warnings.some((w) => w.includes('本次记录') && w.includes('剔除其他车间 2 行') && w.includes(OT)), 'WS4 剔除行数与车间名写进 warning');
-  eq(scOf(r, '本次记录').status, 'checked', 'WS5 meta.workshopScope 记本次记录已核对');
-  eq(scOf(r, '本次记录').droppedRows, 2, 'WS6 meta.workshopScope 记剔除行数');
-  eq((scOf(r, '本次记录').dropped || {})[OT], 2, 'WS7 meta.workshopScope 记剔除车间名');
-  eq(scOf(r, '本次记录').blank, 1, 'WS8 车间列为空的行保留并计数');
-  ok(r.ho.warnings.some((w) => w.includes('本次记录') && w.includes('车间列为空 1 行')), 'WS9 车间列为空有 warning');
-  ok(/\| 车间范围 \| 已按车间列核对「测试车间」，剔除其他车间的行：「ws-mixed\.xlsx\/本次记录」2 行（二车间 2 行）/.test(r.md), 'WS10 交接信息写明车间范围');
-  ok(!/【注意】/.test(r.md.split('## 一、')[0]), 'WS11 部分剔除时开头不加【注意】');
-  eq(r.summary.counts.inRepair, 1, 'WS12 在修设备剔除其他车间');
+  section('A', () => {
+    r = run(mixed, [], 'ws-mixed');
+    eq(r.summary.ok, true, 'WS1 两车间混合输入可运行');
+    eq(r.summary.counts.records, 3, 'WS2 本次记录只保留本车间（含「测试」写法与车间列为空的行），剔除二车间 2 行');
+    ok(!r.ho.pending.some((x) => /^P-9/.test(x.tag)) && !/P-91|P-92/.test(r.md), 'WS3 其他车间事项不进未完成事项和交接记录');
+    ok(r.ho.warnings.some((w) => w.includes('本次记录') && w.includes('剔除其他车间 2 行') && w.includes(OT)), 'WS4 剔除行数与车间名写进 warning');
+    eq(scOf(r, '本次记录').status, 'checked', 'WS5 meta.workshopScope 记本次记录已核对');
+    eq(scOf(r, '本次记录').droppedRows, 2, 'WS6 meta.workshopScope 记剔除行数');
+    eq((scOf(r, '本次记录').dropped || {})[OT], 2, 'WS7 meta.workshopScope 记剔除车间名');
+    eq(scOf(r, '本次记录').blank, 1, 'WS8 车间列为空的行保留并计数');
+    ok(r.ho.warnings.some((w) => w.includes('本次记录') && w.includes('车间列为空 1 行')), 'WS9 车间列为空有 warning');
+    ok(/\| 车间范围 \| 已按车间列核对「测试车间」，剔除其他车间的行：「ws-mixed\.xlsx\/本次记录」2 行（二车间 2 行）/.test(r.md), 'WS10 交接信息写明车间范围');
+    ok(!/【注意】/.test(r.md.split('## 一、')[0]), 'WS11 部分剔除时开头不加【注意】');
+    eq(r.summary.counts.inRepair, 1, 'WS12 在修设备剔除其他车间');
+  });
   // 车间列全不一致
   const mis = mk('ws-mismatch.xlsx', { '值班记录': [HW, [`${D} 22:00`, 'P-91', '外泵1', '异常处理', '外车间泄漏', '', '未完成', '王', '', OT]] });
-  r = run(mis, [], 'ws-mismatch');
-  eq(r.summary.counts.records, 1, 'WS13 车间列全不一致时不筛');
-  eq(scOf(r, '本次记录').status, 'mismatch', 'WS14 meta.workshopScope 记 mismatch');
-  ok(r.ho.warnings.some((w) => w.startsWith('【注意】') && w.includes(OT)), 'WS15 warning 以【注意】开头');
-  ok(/【注意】.*车间列取值与 --workshop「测试车间」不一致，未按车间筛选，请核对输入/.test(r.md.split('## 一、')[0]), 'WS16 md 标题后、第一节前有【注意】');
+  section('A', () => {
+    r = run(mis, [], 'ws-mismatch');
+    eq(r.summary.counts.records, 1, 'WS13 车间列全不一致时不筛');
+    eq(scOf(r, '本次记录').status, 'mismatch', 'WS14 meta.workshopScope 记 mismatch');
+    ok(r.ho.warnings.some((w) => w.startsWith('【注意】') && w.includes(OT)), 'WS15 warning 以【注意】开头');
+    ok(/【注意】.*车间列取值与 --workshop「测试车间」不一致，未按车间筛选，请核对输入/.test(r.md.split('## 一、')[0]), 'WS16 md 标题后、第一节前有【注意】');
+  });
   // 无车间列 / 维护工厂 / 车间负责人
-  r = run(base, [], 'ws-nocol');
-  eq(scOf(r, '本次记录').status, 'noColumn', 'WS17 无车间列 status=noColumn');
-  ok(/\| 车间范围 \| 输入未含车间列，车间范围以取数条件为准。 \|/.test(r.md), 'WS18 交接信息写明以取数条件为准');
   const plant = mk('ws-plant.xlsx', { '值班记录': [[...HDR, '维护工厂'], [`${D} 20:00`, 'P-01', '泵1', '异常处理', '漏', '', '未完成', '张', '', '1100'], [`${D} 21:00`, 'P-02', '泵2', '异常处理', '响', '', '未完成', '张', '', '1200']] });
-  r = run(plant, [], 'ws-plant');
-  eq(scOf(r, '本次记录').status, 'noColumn', 'WS19 「维护工厂」列不当车间列');
-  eq(r.summary.counts.records, 2, 'WS20 维护工厂列不参与筛选');
   const lead = mk('ws-lead.xlsx', { '值班记录': [[...HDR, '车间负责人'], [`${D} 20:00`, 'P-01', '泵1', '异常处理', '漏', '', '未完成', '张', '', '刘主任']] });
-  r = run(lead, [], 'ws-lead');
-  eq(scOf(r, '本次记录').status, 'noColumn', 'WS21 「车间负责人」人员列不当车间列');
-  ok(!/【注意】/.test(r.md.split('## 一、')[0]), 'WS22 人员列不触发车间不一致提示');
   // 上次交接：xlsx 未完成事项按车间剔除；JSON 车间不一致只提示不剔除（结转绝不静默丢弃）
   const prevX = mk('ws-prev.xlsx', { '未完成事项': [['位号', '内容', '责任人', '车间'], ['P-07', '换热器内漏待查', '张', '测试车间'], ['P-97', '外车间遗留', '王', OT]] });
-  r = run(base, ['--prev', prevX], 'ws-prev-xlsx');
-  ok(r.ho.carriedOver.some((x) => x.tag === 'P-07') && !r.ho.carriedOver.some((x) => x.tag === 'P-97'), 'WS23 上次交接未完成事项表剔除其他车间的行');
-  eq(scOf(r, '未完成事项').droppedRows, 1, 'WS24 未完成事项表的核对结果进 meta.workshopScope');
-  r = run(base, [], 'ws-prev-src');
-  const pj = r.ho; pj.meta.workshop = OT;
-  pj.pending.push({ tag: 'P-08', content: '安全阀待校验', owner: '张' });
-  const prevJ = path.join(work, 'ws-prev-other.json'); fs.writeFileSync(prevJ, JSON.stringify(pj));
-  ok(Array.isArray(r.ho.meta.workshopScope), 'WS25 handover.json 输出 meta.workshopScope 数组');
-  r = run(base, ['--prev', prevJ], 'ws-prev-json');
-  ok(r.ho.carriedOver.some((x) => x.tag === 'P-08'), 'WS26 上次交接 JSON 车间不一致仍照常结转，不丢事项');
-  ok(r.ho.warnings.some((w) => w.startsWith('【注意】') && w.includes('ws-prev-other.json') && w.includes(OT)), 'WS27 上次交接 JSON 车间不一致有【注意】提示');
   // 多份本次记录各自核对
   const second = mk('ws-second.xlsx', { '值班记录': [HW, [`${D} 23:00`, 'P-05', '泵5', '异常处理', '漏', '', '未完成', '张', '', '测试车间'], [`${D} 23:10`, 'P-95', '外泵5', '异常处理', '漏', '', '未完成', '王', '', OT]] });
-  r = run([mixed, second].join(','), [], 'ws-multi');
-  eq(r.summary.counts.records, 4, 'WS28 多份本次记录各自剔除其他车间');
-  eq(((r.ho.meta.workshopScope || []).filter((x) => /本次记录$/.test(x.sheet))).length, 2, 'WS29 多份本次记录各自记入 meta.workshopScope');
+  section('B', () => {
+    r = run(base, [], 'ws-nocol');
+    eq(scOf(r, '本次记录').status, 'noColumn', 'WS17 无车间列 status=noColumn');
+    ok(/\| 车间范围 \| 输入未含车间列，车间范围以取数条件为准。 \|/.test(r.md), 'WS18 交接信息写明以取数条件为准');
+    r = run(plant, [], 'ws-plant');
+    eq(scOf(r, '本次记录').status, 'noColumn', 'WS19 「维护工厂」列不当车间列');
+    eq(r.summary.counts.records, 2, 'WS20 维护工厂列不参与筛选');
+    r = run(lead, [], 'ws-lead');
+    eq(scOf(r, '本次记录').status, 'noColumn', 'WS21 「车间负责人」人员列不当车间列');
+    ok(!/【注意】/.test(r.md.split('## 一、')[0]), 'WS22 人员列不触发车间不一致提示');
+    r = run(base, ['--prev', prevX], 'ws-prev-xlsx');
+    ok(r.ho.carriedOver.some((x) => x.tag === 'P-07') && !r.ho.carriedOver.some((x) => x.tag === 'P-97'), 'WS23 上次交接未完成事项表剔除其他车间的行');
+    eq(scOf(r, '未完成事项').droppedRows, 1, 'WS24 未完成事项表的核对结果进 meta.workshopScope');
+    r = run(base, [], 'ws-prev-src');
+    const pj = r.ho; pj.meta.workshop = OT;
+    pj.pending.push({ tag: 'P-08', content: '安全阀待校验', owner: '张' });
+    const prevJ = path.join(work, 'ws-prev-other.json'); fs.writeFileSync(prevJ, JSON.stringify(pj));
+    ok(Array.isArray(r.ho.meta.workshopScope), 'WS25 handover.json 输出 meta.workshopScope 数组');
+    r = run(base, ['--prev', prevJ], 'ws-prev-json');
+    ok(r.ho.carriedOver.some((x) => x.tag === 'P-08'), 'WS26 上次交接 JSON 车间不一致仍照常结转，不丢事项');
+    ok(r.ho.warnings.some((w) => w.startsWith('【注意】') && w.includes('ws-prev-other.json') && w.includes(OT)), 'WS27 上次交接 JSON 车间不一致有【注意】提示');
+    r = run([mixed, second].join(','), [], 'ws-multi');
+    eq(r.summary.counts.records, 4, 'WS28 多份本次记录各自剔除其他车间');
+    eq(((r.ho.meta.workshopScope || []).filter((x) => /本次记录$/.test(x.sheet))).length, 2, 'WS29 多份本次记录各自记入 meta.workshopScope');
+  });
 }
 
 // ================================================================ 输出
 console.log(`\n${'='.repeat(56)}`);
 console.log(`shift-handover-record 自测：${pass} 通过，${fail} 失败`);
+console.log(`用例级别 ${LEVELS[RUN_LEVEL]}：BVT ${byLevel.BVT}，A ${byLevel.A}，B ${byLevel.B}，C ${byLevel.C}`);
 if (failures.length) { console.log('\n失败项：'); failures.forEach((f) => console.log('  ✗ ' + f)); }
 console.log('='.repeat(56));
 try { fs.rmSync(work, { recursive: true, force: true }); } catch (e) {}
